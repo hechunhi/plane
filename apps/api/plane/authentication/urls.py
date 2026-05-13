@@ -44,6 +44,8 @@ from .views import (
     GiteaOauthInitiateEndpoint,
     GiteaCallbackSpaceEndpoint,
     GiteaOauthInitiateSpaceEndpoint,
+    AutheliaCallbackEndpoint,
+    AutheliaOauthInitiateEndpoint,
 )
 
 urlpatterns = [
@@ -150,4 +152,7 @@ urlpatterns = [
         GiteaCallbackSpaceEndpoint.as_view(),
         name="space-gitea-callback",
     ),
+    ## Authelia OIDC SSO
+    path("authelia/", AutheliaOauthInitiateEndpoint.as_view(), name="authelia-initiate"),
+    path("authelia/callback/", AutheliaCallbackEndpoint.as_view(), name="authelia-callback"),
 ]
