@@ -103,6 +103,21 @@ class AutheliaOAuthProvider(OauthAdapter):
             callback=callback,
         )
 
+    def _internal_proxy_headers(self):
+        """
+        When AUTHELIA_INTERNAL_URL points at http://authelia:9091 (in-cluster),
+        Authelia still constructs the OIDC issuer from the public AUTHELIA_HOST
+        and requires X-Forwarded-Proto/Host headers to match. Inject them.
+        """
+        parsed = urlparse(self.userinfo_url)
+        public = urlparse(os.environ.get("AUTHELIA_HOST", ""))
+        if parsed.scheme == "http" and public.scheme == "https":
+            return {
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": public.netloc,
+            }
+        return {}
+
     def set_token_data(self):
         data = {
             "code": self.code,
@@ -111,7 +126,7 @@ class AutheliaOAuthProvider(OauthAdapter):
             "redirect_uri": self.redirect_uri,
             "grant_type": "authorization_code",
         }
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", **self._internal_proxy_headers()}
         token_response = self.get_user_token(data=data, headers=headers)
         super().set_token_data(
             {
@@ -127,6 +142,22 @@ class AutheliaOAuthProvider(OauthAdapter):
                 "id_token": token_response.get("id_token", ""),
             }
         )
+
+    def get_user_response(self):
+        """Override base to inject X-Forwarded-* headers for internal calls."""
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.token_data.get('access_token')}",
+                **self._internal_proxy_headers(),
+            }
+            response = requests.get(self.get_user_info_url(), headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException:
+            raise AuthenticationException(
+                error_code=AUTHENTICATION_ERROR_CODES["AUTHELIA_OAUTH_PROVIDER_ERROR"],
+                error_message="AUTHELIA_OAUTH_PROVIDER_ERROR: userinfo call failed",
+            )
 
     def set_user_data(self):
         user_info_response = self.get_user_response()
