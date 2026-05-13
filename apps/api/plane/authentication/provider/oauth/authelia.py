@@ -25,6 +25,7 @@ class AutheliaOAuthProvider(OauthAdapter):
             AUTHELIA_CLIENT_ID,
             AUTHELIA_CLIENT_SECRET,
             AUTHELIA_HOST,
+            AUTHELIA_INTERNAL_URL,
         ) = get_configuration_value(
             [
                 {
@@ -38,6 +39,15 @@ class AutheliaOAuthProvider(OauthAdapter):
                 {
                     "key": "AUTHELIA_HOST",
                     "default": os.environ.get("AUTHELIA_HOST"),
+                },
+                {
+                    # Optional — server-side host for token/userinfo calls.
+                    # Use this when AUTHELIA_HOST is a public domain that
+                    # the Plane backend container cannot resolve (e.g. behind
+                    # reverse-proxy with self-signed TLS). Falls back to
+                    # AUTHELIA_HOST.
+                    "key": "AUTHELIA_INTERNAL_URL",
+                    "default": os.environ.get("AUTHELIA_INTERNAL_URL"),
                 },
             ]
         )
@@ -55,10 +65,13 @@ class AutheliaOAuthProvider(OauthAdapter):
                 error_message="AUTHELIA_NOT_CONFIGURED",
             )
         AUTHELIA_HOST = AUTHELIA_HOST.rstrip("/")
+        AUTHELIA_INTERNAL_URL = (AUTHELIA_INTERNAL_URL or AUTHELIA_HOST).rstrip("/")
 
-        # Standard OIDC endpoints exposed by Authelia
-        self.token_url = f"{AUTHELIA_HOST}/api/oidc/token"
-        self.userinfo_url = f"{AUTHELIA_HOST}/api/oidc/userinfo"
+        # Browser-facing URL (sent in 302 to the user's browser).
+        # Token / userinfo calls are server-side from this container,
+        # so they go via AUTHELIA_INTERNAL_URL — defaults to AUTHELIA_HOST.
+        self.token_url = f"{AUTHELIA_INTERNAL_URL}/api/oidc/token"
+        self.userinfo_url = f"{AUTHELIA_INTERNAL_URL}/api/oidc/userinfo"
 
         client_id = AUTHELIA_CLIENT_ID
         client_secret = AUTHELIA_CLIENT_SECRET
