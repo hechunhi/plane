@@ -25,6 +25,15 @@ from plane.utils.telemetry import init_tracer, shutdown_tracer
 
 @shared_task
 def instance_traces():
+    # BARSOUL: テレメトリ phone-home(telemetry.plane.so gRPC) は到達不能 +
+    # fork 非安全で、Celery prefork 子プロセスを恒久ハングさせ全タスクを
+    # 停止させていた根本原因。テレメトリは不要なため即 return で無効化。
+    # init_tracer() 側でも二重に無効化済み。再有効化は OTEL_ENABLED=1。
+    import os
+
+    if os.environ.get("OTEL_ENABLED", "0") != "1":
+        return
+
     try:
         init_tracer()
         # Check if the instance is registered

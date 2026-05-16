@@ -22,6 +22,18 @@ def init_tracer():
     """Initialize OpenTelemetry with proper shutdown handling"""
     global _TRACER_PROVIDER
 
+    # BARSOUL: 既定の OTLP エクスポータは gRPC で telemetry.plane.so:4317 へ
+    # phone-home する。当社環境ではこのエンドポイントが到達不能で、しかも
+    # gRPC は fork 非安全。Celery prefork の子プロセスで init_tracer →
+    # finally: shutdown_tracer() の force_flush が無限ブロックし、pool スロット
+    # が恒久 busy 化 → 全 Celery タスク（notification 含む）が実行されず
+    # Plane 受信箱に通知が届かない根本原因だった。
+    # テレメトリは不要（プライバシー上も送りたくない）ため完全に無効化する。
+    # 復活させたい場合は OTEL_ENABLED=1 かつ到達可能な OTLP_ENDPOINT を設定し、
+    # かつ prefork ではなく solo/threads pool で動かすこと。
+    if os.environ.get("OTEL_ENABLED", "0") != "1":
+        return None
+
     # If already initialized, return existing provider
     if _TRACER_PROVIDER is not None:
         return _TRACER_PROVIDER

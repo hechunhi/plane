@@ -1463,6 +1463,12 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
                 project_id=str(self.kwargs.get("project_id")),
                 current_instance=None,
                 epoch=int(timezone.now().timestamp()),
+                # BARSOUL: 外部 API 経由のコメントでも @メンション通知を発火させる。
+                # 上流はここで notification=True を渡し忘れており（app 側の
+                # plane/app/views/issue/comment.py は渡している）、API 投稿
+                # コメント（Ai bot 含む）の @メンションが受信箱に届かなかった。
+                notification=True,
+                origin=base_host(request=request, is_app=True),
             )
 
             # Send the model activity
@@ -1603,6 +1609,9 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
                 project_id=str(project_id),
                 current_instance=current_instance,
                 epoch=int(timezone.now().timestamp()),
+                # BARSOUL: 上流の渡し忘れ修正（create 側と同様）。
+                notification=True,
+                origin=base_host(request=request, is_app=True),
             )
             # Send the model activity
             model_activity.delay(
