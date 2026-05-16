@@ -480,6 +480,10 @@ class IssueListCreateAPIEndpoint(BaseAPIView):
                 project_id=str(project_id),
                 current_instance=None,
                 epoch=int(timezone.now().timestamp()),
+                # BARSOUL: 上流の渡し忘れ修正。外部 API での issue 作成時の
+                # 説明文 @メンション / 担当割当通知を app 側と同様に発火させる。
+                notification=True,
+                origin=base_host(request=request, is_app=True),
             )
 
             # Send the model activity
@@ -697,6 +701,9 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                         project_id=str(project_id),
                         current_instance=None,
                         epoch=int(timezone.now().timestamp()),
+                        # BARSOUL: 上流の渡し忘れ修正（upsert 経路）。
+                        notification=True,
+                        origin=base_host(request=request, is_app=True),
                     )
                     # Send the model activity for webhook dispatch
                     model_activity.delay(
@@ -782,6 +789,10 @@ class IssueDetailAPIEndpoint(BaseAPIView):
                 project_id=str(project_id),
                 current_instance=current_instance,
                 epoch=int(timezone.now().timestamp()),
+                # BARSOUL: 上流の渡し忘れ修正。外部 API での issue 更新時の
+                # 担当変更 / 説明文 @メンション通知を発火させる。
+                notification=True,
+                origin=base_host(request=request, is_app=True),
             )
             # Send the model activity for webhook dispatch
             model_activity.delay(
@@ -839,6 +850,9 @@ class IssueDetailAPIEndpoint(BaseAPIView):
             project_id=str(project_id),
             current_instance=current_instance,
             epoch=int(timezone.now().timestamp()),
+            # BARSOUL: 上流の渡し忘れ修正（削除通知）。
+            notification=True,
+            origin=base_host(request=request, is_app=True),
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1457,7 +1471,16 @@ class IssueCommentListCreateAPIEndpoint(BaseAPIView):
 
             issue_activity.delay(
                 type="comment.activity.created",
-                requested_data=json.dumps(serializer.data, cls=DjangoJSONEncoder),
+                # BARSOUL: IssueCommentCreateSerializer は Meta.fields に "id" を
+                # 含まないため serializer.data に id が無く、create_comment_activity
+                # が issue_comment_id=None で記録 → notification_task の
+                # `if issue_comment is not None` が偽になりコメント @メンション
+                # 通知が一切飛ばなかった。app 側は完全 serializer を使うので、
+                # 同等になるよう id を明示注入する。
+                requested_data=json.dumps(
+                    {**serializer.data, "id": str(issue_comment.id)},
+                    cls=DjangoJSONEncoder,
+                ),
                 actor_id=str(issue_comment.created_by_id),
                 issue_id=str(self.kwargs.get("issue_id")),
                 project_id=str(self.kwargs.get("project_id")),
