@@ -96,15 +96,19 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
       {userProjectsData ? (
         <>
           <div className="relative h-[110px]">
-            {/* BARSOUL: 窄屏下该面板是 fixed w-full 全屏覆盖且无关闭入口
-                （outside-click 在满屏时无"外部"可点 → 死锁）。补一个仅小屏
-                可见的关闭按钮，点 = 折叠面板。md+ 是正常 300px 列，不显示。 */}
-            <div className="absolute top-3.5 left-3.5 md:hidden z-[1]">
-              <IconButton
-                variant="secondary"
-                icon={X}
-                onClick={() => toggleProfileSidebar(true)}
-              />
+            {/* BARSOUL: 该面板会以 fixed 覆盖在内容前且面板内无关闭入口，
+                outside-click 仅 <768 生效（满屏时无"外部"可点 → 死锁）。
+                始终显示一个关闭按钮（不能 md:hidden——桌面正是被覆盖的场景），
+                点击 toggleProfileSidebar(true) 折叠（marginLeft 推出屏幕，
+                任何尺寸都生效），状态持久化到 localStorage。 */}
+            <div className="absolute top-3.5 left-3.5 z-[1]">
+              <Tooltip tooltipContent="閉じる / 关闭">
+                <IconButton
+                  variant="secondary"
+                  icon={X}
+                  onClick={() => toggleProfileSidebar(true)}
+                />
+              </Tooltip>
             </div>
             {currentUser?.id === userId && (
               <div className="absolute top-3.5 right-3.5">
