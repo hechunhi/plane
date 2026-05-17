@@ -85,13 +85,19 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
     return () => window.removeEventListener("resize", handleToggleProfileSidebar);
   }, []);
 
+  // BARSOUL: 折叠 = 真正不渲染该面板，主内容自然回填整宽。
+  // 原实现 style={{marginLeft: 整屏宽}} 推走面板——只对移动端 fixed 全屏
+  // 覆盖变体有效；桌面 md:relative 300px 列时，巨大左边距把主内容挤出
+  // 视口（用户实测："关闭把主窗口也关了，只剩左导航"）。return null 两种
+  // 布局变体都正确；离开后再进入页面(remount)会重新显示，非永久陷阱。
+  if (profileSidebarCollapsed) return null;
+
   return (
     <div
       className={cn(
         `vertical-scrollbar fixed z-5 scrollbar-md h-full w-full shrink-0 overflow-hidden overflow-y-auto border-l border-subtle bg-surface-1 shadow-raised-200 transition-all md:relative md:w-[300px]`,
         className
       )}
-      style={profileSidebarCollapsed ? { marginLeft: `${window?.innerWidth || 0}px` } : {}}
     >
       {userProjectsData ? (
         <>
