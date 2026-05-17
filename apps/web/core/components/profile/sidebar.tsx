@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { Disclosure, Transition } from "@headlessui/react";
@@ -95,6 +96,16 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
       {userProjectsData ? (
         <>
           <div className="relative h-[110px]">
+            {/* BARSOUL: 窄屏下该面板是 fixed w-full 全屏覆盖且无关闭入口
+                （outside-click 在满屏时无"外部"可点 → 死锁）。补一个仅小屏
+                可见的关闭按钮，点 = 折叠面板。md+ 是正常 300px 列，不显示。 */}
+            <div className="absolute top-3.5 left-3.5 md:hidden z-[1]">
+              <IconButton
+                variant="secondary"
+                icon={X}
+                onClick={() => toggleProfileSidebar(true)}
+              />
+            </div>
             {currentUser?.id === userId && (
               <div className="absolute top-3.5 right-3.5">
                 <IconButton

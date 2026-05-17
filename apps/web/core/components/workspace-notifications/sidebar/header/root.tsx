@@ -4,13 +4,17 @@
  * See the LICENSE file for details.
  */
 
+import { ArrowLeft } from "lucide-react";
 import { observer } from "mobx-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
+import { IconButton } from "@plane/propel/icon-button";
 import { InboxIcon } from "@plane/propel/icons";
 import { Breadcrumbs, Header } from "@plane/ui";
 // components
 import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
+// hooks
+import { useAppRouter } from "@/hooks/use-app-router";
 // local imports
 import { NotificationSidebarHeaderOptions } from "./options";
 
@@ -23,11 +27,20 @@ export const NotificationSidebarHeader = observer(function NotificationSidebarHe
 ) {
   const { workspaceSlug } = props;
   const { t } = useTranslation();
+  // router — BARSOUL: 通知页是全路由页，原本无任何返回/首页入口，进去出不来。
+  // 加一个返回按钮（与 设置页 sidebar header 同款），回到工作区首页。
+  const router = useAppRouter();
 
   if (!workspaceSlug) return <></>;
   return (
     <Header className="my-auto bg-surface-1">
       <Header.LeftItem>
+        <IconButton
+          variant="ghost"
+          size="base"
+          icon={ArrowLeft}
+          onClick={() => router.push(`/${workspaceSlug}/`)}
+        />
         <Breadcrumbs>
           <Breadcrumbs.Item
             component={
