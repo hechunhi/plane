@@ -32,7 +32,13 @@ import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
 // BARSOUL: 卡片未読バッジ
-import { IssueUnreadBadge } from "@/components/notifications/issue-unread-badge";
+import {
+  IssueUnreadBadge,
+  useIssueUnreadCount,
+  useIssueUnreadKind,
+  isMutedState,
+} from "@/components/notifications/issue-unread-badge";
+import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 // types
 import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
@@ -109,6 +115,14 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
 
   // derived values
   const issue = issuesMap[issueId];
+  // BARSOUL: 未読更新 → 行に左端アクセントバー＋薄い底色（通知中心と統一）
+  // A4: 已托管/已归档 等は静默。A1: mention は太く。
+  const { getStateById: _getStateById } = useProjectState();
+  const _lstState = _getStateById(issue?.state_id);
+  const _lstMuted = isMutedState(_lstState?.name, _lstState?.group);
+  const _lstKind = useIssueUnreadKind(issueId);
+  const hasUnread = !_lstMuted && useIssueUnreadCount(issueId) > 0;
+  const isMentionUnread = hasUnread && _lstKind === "mention";
   const subIssuesCount = issue?.sub_issues_count ?? 0;
   const canEditIssueProperties = canEditProperties(issue?.project_id ?? undefined);
   const isDraggingAllowed = canDrag && canEditIssueProperties;
@@ -192,6 +206,12 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             "border-strong-1": isIssueActive,
             "last:border-b-transparent": !getIsIssuePeeked(issue.id) && !isIssueActive,
             "bg-accent-primary/5 hover:bg-accent-primary/10": isIssueSelected,
+            // BARSOUL 未読: 左端アクセントバー＋薄い底色（行は relative 既存）。
+            // A1: 通常 3px/6%、@メンション(要対応)は 4px/10%。
+            "bg-accent-primary/[0.06] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-accent-primary before:content-['']":
+              hasUnread && !isIssueSelected && !isMentionUnread,
+            "bg-accent-primary/[0.10] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-accent-primary before:content-['']":
+              isMentionUnread && !isIssueSelected,
             "bg-layer-1": isCurrentBlockDragging,
             "md:flex-row md:items-center": isSidebarCollapsed,
             "lg:flex-row lg:items-center": !isSidebarCollapsed,
@@ -252,7 +272,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                     />
                   )}
                   {/* BARSOUL: 未読更新の赤バッジ */}
-                  <IssueUnreadBadge issueId={issueId} />
+                  <IssueUnreadBadge issueId={issueId} muted={_lstMuted} />
                 </div>
               )}
 

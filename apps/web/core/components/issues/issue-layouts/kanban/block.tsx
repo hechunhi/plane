@@ -34,7 +34,13 @@ import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
 // BARSOUL: 卡片未読バッジ
-import { IssueUnreadBadge } from "@/components/notifications/issue-unread-badge";
+import {
+  IssueUnreadBadge,
+  useIssueUnreadCount,
+  useIssueUnreadKind,
+  isMutedState,
+} from "@/components/notifications/issue-unread-badge";
+import { useProjectState } from "@/hooks/store/use-project-state";
 // local components
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 import type { TRenderQuickActions } from "../list/list-view-types";
@@ -76,6 +82,10 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props:
   const [isMenuActive, setIsMenuActive] = useState(false);
   // hooks
   const { isMobile } = usePlatformOS();
+  const { getStateById } = useProjectState();
+  // BARSOUL A4: 已托管/已归档 等の状態は未読印を出さない（静默）
+  const _st = getStateById(issue?.state_id);
+  const issueMuted = isMutedState(_st?.name, _st?.group);
 
   const customActionButton = (
     <div
@@ -112,7 +122,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props:
           />
         )}
         {/* BARSOUL: 未読更新の赤バッジ（ID 横に表示） */}
-        <IssueUnreadBadge issueId={issue.id} />
+        <IssueUnreadBadge issueId={issue.id} muted={issueMuted} />
         <div
           className={cn("absolute -top-1 right-0", {
             "hidden group-hover/kanban-block:block": !isMobile,
@@ -198,6 +208,15 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
 
   const isDragAllowed = canDragIssuesInCurrentGrouping && !issue?.tempId && canEditIssueProperties;
   const projectIdentifier = getProjectIdentifierById(issue?.project_id);
+  // BARSOUL: 未読更新があればカードに左端アクセントバー＋薄い底色を付与
+  // （通知中心の未読行と同じ accent-primary 視覚言語。一覧で一目判別）。
+  // A4: 已托管/已归档 等は静默（バー無し）。A1: mention は左バーを太く。
+  const { getStateById: _getStateById } = useProjectState();
+  const _kbState = _getStateById(issue?.state_id);
+  const _kbMuted = isMutedState(_kbState?.name, _kbState?.group);
+  const _kbKind = useIssueUnreadKind(issue?.id);
+  const hasUnread = !_kbMuted && useIssueUnreadCount(issue?.id) > 0;
+  const isMentionUnread = hasUnread && _kbKind === "mention";
 
   const workItemLink = generateWorkItemLink({
     workspaceSlug,
@@ -279,9 +298,20 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           href={workItemLink}
           ref={cardRef}
           className={cn(
-            "block w-full rounded-lg border border-subtle bg-layer-2 p-3 text-13 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
+            "relative block w-full rounded-lg border border-subtle bg-layer-2 p-3 text-13 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
             { "hover:cursor-pointer": isDragAllowed },
             { "border border-accent-strong hover:border-accent-strong": getIsIssuePeeked(issue.id) },
+            // BARSOUL 未読: 左端アクセントバー＋薄い accent 底色（overlay で
+            // bg-layer-2 と競合せず確実に出る）。通知中心と同一トークン。
+            // A1: 通常 3px/6%、@メンション(要対応)は 4px/10% で強調。
+            {
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-accent-primary before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-accent-primary/[0.06] after:content-['']":
+                hasUnread && !isMentionUnread,
+            },
+            {
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-accent-primary before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-accent-primary/[0.10] after:content-['']":
+                isMentionUnread,
+            },
             { "z-[100] bg-layer-1": isCurrentBlockDragging }
           )}
           onClick={() => handleIssuePeekOverview(issue)}

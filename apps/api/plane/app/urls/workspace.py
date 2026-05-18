@@ -21,6 +21,7 @@ from plane.app.views import (
     WorkspaceUserProfileEndpoint,
     WorkspaceUserProfileIssuesEndpoint,
     WorkspaceLabelsEndpoint,
+    KeiriOrderEndpoint,
     WorkspaceProjectMemberEndpoint,
     WorkspaceUserPropertiesEndpoint,
     WorkspaceStatesEndpoint,
@@ -44,6 +45,12 @@ urlpatterns = [
         "workspace-slug-check/",
         WorkSpaceAvailabilityCheckEndpoint.as_view(),
         name="workspace-availability",
+    ),
+    # BARSOUL C1: Plane↔keiri 単据反链プロキシ
+    path(
+        "workspaces/<str:slug>/keiri-order/<str:issue_id>/",
+        KeiriOrderEndpoint.as_view(),
+        name="keiri-order",
     ),
     path(
         "workspaces/",

@@ -67,9 +67,14 @@ export const IssueActivityCommentRoot = observer(function IssueActivityCommentRo
       const el = document.getElementById(`ac-${target}`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.style.transition = "background-color .35s ease";
-        el.style.backgroundColor = "rgba(239,68,68,0.12)";
+        // BARSOUL: accent 主題色のソフトハイライト（カード/ドットと統一）。
+        // ゆっくり浮かび上がり(0.7s)→ 少し留め → ゆっくり消える(1.4s)。
+        const HL = "color-mix(in oklab, var(--bg-accent-primary) 14%, transparent)";
+        el.style.borderRadius = "6px";
+        el.style.transition = "background-color .7s ease";
+        el.style.backgroundColor = HL;
         window.setTimeout(() => {
+          el.style.transition = "background-color 1.4s ease";
           el.style.backgroundColor = "";
         }, 2200);
         setScrollToActivityCommentId(undefined);

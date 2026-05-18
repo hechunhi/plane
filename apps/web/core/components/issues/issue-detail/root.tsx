@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import { EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
@@ -18,6 +18,7 @@ import emptyIssue from "@/app/assets/empty-state/issue.svg?url";
 import { EmptyState } from "@/components/common/empty-state";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
+import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -81,6 +82,17 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
   } = useIssues(EIssuesStoreType.ARCHIVED);
   const { allowPermissions } = useUserPermissions();
   const { issueDetailSidebarCollapsed } = useAppTheme();
+  const { markIssueNotificationsAsRead } = useWorkspaceNotifications();
+
+  // BARSOUL: この issue を開いたら、その issue 宛の未読通知を全て既読化
+  // → カードの未読印（左バー/底色/ドット）と通知中心が自動で消える。
+  // Plane 既定は「通知中心で個別クリック時のみ read」だったため、カードを
+  // 開いて戻っても印が残る不具合を解消（issueId 変化ごとに発火）。
+  useEffect(() => {
+    if (workspaceSlug && issueId) {
+      markIssueNotificationsAsRead(workspaceSlug, issueId);
+    }
+  }, [workspaceSlug, issueId, markIssueNotificationsAsRead]);
 
   const issueOperations: TIssueOperations = useMemo(
     () => ({

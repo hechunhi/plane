@@ -6,7 +6,7 @@
 
 // components
 import { observer } from "mobx-react";
-import { useParams, usePathname } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { cn } from "@plane/utils";
 import { TopNavPowerK } from "@/components/navigation";
 import { HelpMenuRoot } from "@/components/workspace/sidebar/help-section/root";
@@ -25,6 +25,17 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
   // router
   const { workspaceSlug } = useParams();
   const pathname = usePathname();
+  const router = useRouter();
+
+  // BARSOUL: Inbox は通常はリンク遷移。だが既に通知页を開いている時に
+  // もう一度押したら「閉じる」= 来た所へ戻る（無ければ首页）トグル。
+  // AppSidebarItem の link 変体は onClick を無視するため、active 時のみ
+  // button 変体に切替えて戻る挙動を与える（ヘッダー戻ると同一ロジック）。
+  const isNotificationsActive = !!pathname?.includes("/notifications/");
+  const handleNotificationsToggleClose = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push(`/${workspaceSlug?.toString()}/`);
+  };
 
   // store hooks
   const { unreadNotificationsCount, getUnreadNotificationsCount } = useWorkspaceNotifications();
@@ -62,9 +73,10 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
       <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
         <Tooltip tooltipContent="Inbox" position="bottom">
           <AppSidebarItem
-            variant="link"
+            variant={isNotificationsActive ? "button" : "link"}
             item={{
               href: `/${workspaceSlug?.toString()}/notifications/`,
+              onClick: isNotificationsActive ? handleNotificationsToggleClose : undefined,
               icon: (
                 <div className="relative">
                   <InboxIcon className="size-5" />
@@ -73,7 +85,7 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
                   )}
                 </div>
               ),
-              isActive: pathname?.includes("/notifications/"),
+              isActive: isNotificationsActive,
             }}
           />
         </Tooltip>

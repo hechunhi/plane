@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { observer } from "mobx-react";
 import { usePathname } from "next/navigation";
 // Plane imports
@@ -15,6 +15,7 @@ import { TOAST_TYPE, setPromiseToast, setToast } from "@plane/propel/toast";
 import type { IWorkItemPeekOverview, TIssue } from "@plane/types";
 import { EIssueServiceType, EIssuesStoreType } from "@plane/types";
 // hooks
+import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssues } from "@/hooks/store/use-issues";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -45,10 +46,35 @@ export const IssuePeekOverview = observer(function IssuePeekOverview(props: IWor
     setPeekIssue,
     issue: { fetchIssue },
     fetchActivities,
+    setScrollToActivityCommentId,
   } = useIssueDetail();
   const issueStoreType = useIssueStoreType();
   const storeType = issueStoreFromProps ?? issueStoreType;
   const { issues } = useIssues(storeType);
+  const { markIssueNotificationsAsRead, firstUnreadActivityTarget } = useWorkspaceNotifications();
+
+  // BARSOUL: カード(=peek)を開いたら:
+  //   1) 未読が始まる活動へ自動スクロール＆緩やかにハイライト淡出
+  //      （通知中心クリックと同じ scrollToActivityCommentId 機構を再利用。
+  //       既読化より先に対象を確定する＝read 後も data は不変だが意図明確）
+  //   2) その issue 宛の未読通知を全て既読化 → カードの未読印
+  //      （左バー/底色/ドット）と通知中心が自動で消える
+  // 注意: カードクリックは peek 浮層を開くので IssueDetailRoot は通らない。
+  // 既読化の本処理はこの peek 経路に置く必要がある（issueId 変化ごと）。
+  useEffect(() => {
+    const ws = peekIssue?.workspaceSlug;
+    const iid = peekIssue?.issueId;
+    if (!ws || !iid) return;
+    const target = firstUnreadActivityTarget(iid);
+    if (target) setScrollToActivityCommentId(target);
+    markIssueNotificationsAsRead(ws, iid);
+  }, [
+    peekIssue?.workspaceSlug,
+    peekIssue?.issueId,
+    markIssueNotificationsAsRead,
+    firstUnreadActivityTarget,
+    setScrollToActivityCommentId,
+  ]);
 
   useWorkItemProperties(
     peekIssue?.projectId,

@@ -23,6 +23,9 @@ import { CreateUpdateEpicModal } from "@/plane-web/components/epics/epic-modal";
 // types
 // Plane-web
 import { WorkFlowGroupTree } from "@/plane-web/components/workflow";
+// BARSOUL A2: 列ヘッダ未読集計
+import { useGroupUnreadCount } from "@/components/notifications/issue-unread-badge";
+import { Tooltip } from "@plane/propel/tooltip";
 
 interface IHeaderGroupByCard {
   sub_group_by: TIssueGroupByOptions | undefined;
@@ -37,6 +40,8 @@ interface IHeaderGroupByCard {
   disableIssueCreation?: boolean;
   addIssuesToView?: (issueIds: string[]) => Promise<TIssue>;
   isEpic?: boolean;
+  // BARSOUL A2: この列に属する issue id 群（未読集計用）
+  groupIssueIds?: string[];
 }
 
 export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHeaderGroupByCard) {
@@ -53,7 +58,10 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
     disableIssueCreation,
     addIssuesToView,
     isEpic = false,
+    groupIssueIds,
   } = props;
+  // BARSOUL A2: 列の未読合計（accent。0 は非表示）
+  const groupUnread = useGroupUnreadCount(groupIssueIds || []);
   const verticalAlignPosition = sub_group_by ? false : collapsedGroups?.group_by.includes(column_id);
   // states
   const [isOpen, setIsOpen] = React.useState(false);
@@ -137,6 +145,25 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
           >
             {count || 0}
           </div>
+          {groupUnread > 0 && (
+            <Tooltip
+              tooltipContent={`この列に未読 ${groupUnread} 件 / 本列未读 ${groupUnread} 条`}
+              isMobile={false}
+            >
+              <span
+                aria-label={`${groupUnread} unread in column`}
+                className="flex-shrink-0 inline-flex items-center justify-center rounded-full px-1.5 text-10 font-bold leading-none"
+                style={{
+                  minWidth: 16,
+                  height: 16,
+                  background: "var(--bg-accent-primary)",
+                  color: "#fff",
+                }}
+              >
+                {groupUnread > 99 ? "99+" : groupUnread}
+              </span>
+            </Tooltip>
+          )}
         </div>
 
         <WorkFlowGroupTree groupBy={group_by} groupId={column_id} />

@@ -30,6 +30,10 @@ import type { CoreRootStore } from "@/store/root.store";
 type TNotificationLoader = ENotificationLoader | undefined;
 type TNotificationQueryParamType = ENotificationQueryParamType;
 
+// BARSOUL A1: カード未読インジケータの「種別」。優先度: mention > assigned
+// > comment > update（"対応必須" ほど強い表現にする）。none = 未読なし。
+export type TUnreadKind = "mention" | "assigned" | "comment" | "update" | "none";
+
 export interface IWorkspaceNotificationStore {
   // observables
   loader: TNotificationLoader;
@@ -45,7 +49,11 @@ export interface IWorkspaceNotificationStore {
   notificationLiteByNotificationId: (notificationId: string | undefined) => TNotificationLite;
   // BARSOUL: 卡片未读バッジ用
   unreadCountByIssueId: (issueId: string | undefined) => number;
+  unreadKindByIssueId: (issueId: string | undefined) => TUnreadKind;
+  unreadCountForIssueIds: (issueIds: string[]) => number;
   ensureBadgeNotifications: (workspaceSlug: string) => void;
+  markIssueNotificationsAsRead: (workspaceSlug: string, issueId: string | undefined) => Promise<void>;
+  firstUnreadActivityTarget: (issueId: string | undefined) => string | undefined;
   // helper actions
   mutateNotifications: (notifications: TNotification[]) => void;
   updateFilters: <T extends keyof TNotificationFilter>(key: T, value: TNotificationFilter[T]) => void;
@@ -111,6 +119,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       getUnreadNotificationsCount: action,
       getNotifications: action,
       markAllNotificationsAsRead: action,
+      markIssueNotificationsAsRead: action,
     });
   }
 
@@ -206,6 +215,59 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     return count;
   });
 
+  /**
+   * BARSOUL A1: 指定 issue の未読の「主種別」。複数あれば優先度最大を採用
+   * （mention > assigned > comment > update）。バッジの形/色強度を分ける。
+   */
+  unreadKindByIssueId = computedFn((issueId: string | undefined): TUnreadKind => {
+    void this.unreadNotificationsCount.total_unread_notifications_count;
+    if (!issueId || isEmpty(this.notifications)) return "none";
+    const rank: Record<Exclude<TUnreadKind, "none">, number> = {
+      mention: 4,
+      assigned: 3,
+      comment: 2,
+      update: 1,
+    };
+    let best = 0;
+    let bestKind: TUnreadKind = "none";
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      const nIssueId = n.data?.issue?.id || n.entity_identifier;
+      if (nIssueId !== issueId || n.read_at || n.archived_at || n.snoozed_till) continue;
+      const field = n.data?.issue_activity?.field;
+      const kind: Exclude<TUnreadKind, "none"> = n.is_mentioned_notification
+        ? "mention"
+        : field === "assignees"
+          ? "assigned"
+          : field === "comment"
+            ? "comment"
+            : "update";
+      if (rank[kind] > best) {
+        best = rank[kind];
+        bestKind = kind;
+      }
+    }
+    return bestKind;
+  });
+
+  /**
+   * BARSOUL A2: 複数 issue（看板の1カラム）の未読合計。列ヘッダ集計用。
+   */
+  unreadCountForIssueIds = computedFn((issueIds: string[]): number => {
+    void this.unreadNotificationsCount.total_unread_notifications_count;
+    if (!issueIds || issueIds.length === 0 || isEmpty(this.notifications)) return 0;
+    const idSet = new Set(issueIds);
+    let count = 0;
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      const nIssueId = n.data?.issue?.id || n.entity_identifier;
+      if (!nIssueId || !idSet.has(nIssueId)) continue;
+      if (n.read_at || n.archived_at || n.snoozed_till) continue;
+      count++;
+    }
+    return count;
+  });
+
 
   /**
    * BARSOUL: カードバッジ用に通知を一度だけ先読み（ワークスペース単位）。
@@ -222,6 +284,55 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     } catch (e) {
       this._badgeWS.delete(ws);
     }
+  };
+
+  /**
+   * BARSOUL: 指定 issue を開いたら、その issue の未読通知を全て既読化する。
+   * これが無いと「カードを開いて戻ってもカードの未読印が消えない」（Plane
+   * 既定は通知中心で個別クリックした時しか read にならない）。
+   * 各モデルの markNotificationAsRead が setUnreadNotificationsCount を
+   * 呼ぶので、バッジ/カード装飾は自動で消える（reactivity 既存依存）。
+   * ロードされていない通知は対象外＝カード表示と整合（カードもロード済み
+   * 通知のみ数える）。失敗は握りつぶし UI を止めない。
+   */
+  /**
+   * BARSOUL: 指定 issue の「最も古い未読通知」が指す活動アンカー
+   * (issue_comment 優先、無ければ activity id) を返す。カード(peek)を
+   * 開いた時、未読が始まる位置へ自動スクロール＆ハイライトするのに使う
+   * （= 通知中心クリック時と同じ scrollToActivityCommentId 機構を再利用）。
+   * 既読化の前に呼ぶこと（read 後も data は変わらないが意図を明確に）。
+   */
+  firstUnreadActivityTarget = (issueId: string | undefined): string | undefined => {
+    if (!issueId || isEmpty(this.notifications)) return undefined;
+    let best: { ts: number; target: string } | undefined;
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      const nIssueId = n.data?.issue?.id || n.entity_identifier;
+      if (nIssueId !== issueId || n.read_at || n.archived_at || n.snoozed_till) continue;
+      const act = n.data?.issue_activity;
+      const target = act?.issue_comment || act?.id || undefined;
+      if (!target) continue;
+      const ts = n.created_at ? new Date(n.created_at).getTime() : 0;
+      if (!best || ts < best.ts) best = { ts, target };
+    }
+    return best?.target;
+  };
+
+  markIssueNotificationsAsRead = async (workspaceSlug: string, issueId: string | undefined): Promise<void> => {
+    const ws = workspaceSlug || this.store.router.workspaceSlug?.toString() || "";
+    if (!ws || !issueId || isEmpty(this.notifications)) return;
+    const targets = Object.values(this.notifications || {}).filter((n) => {
+      if (!n) return false;
+      const nIssueId = n.data?.issue?.id || n.entity_identifier;
+      return nIssueId === issueId && !n.read_at && !n.archived_at && !n.snoozed_till;
+    });
+    await Promise.all(
+      targets.map((n) =>
+        n.markNotificationAsRead(ws).catch((e) => {
+          console.error("markIssueNotificationsAsRead -> error", e);
+        })
+      )
+    );
   };
 
   // helper functions

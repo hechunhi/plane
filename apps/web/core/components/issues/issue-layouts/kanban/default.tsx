@@ -174,6 +174,7 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
                     icon={subList.icon}
                     title={subList.name}
                     count={getGroupIssueCount(subList.id, undefined, false) ?? 0}
+                    groupIssueIds={issueIds as string[]}
                     issuePayload={subList.payload}
                     disableIssueCreation={
                       disableIssueCreation ||

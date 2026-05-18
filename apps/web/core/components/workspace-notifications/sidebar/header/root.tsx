@@ -27,20 +27,20 @@ export const NotificationSidebarHeader = observer(function NotificationSidebarHe
 ) {
   const { workspaceSlug } = props;
   const { t } = useTranslation();
-  // router — BARSOUL: 通知页是全路由页，原本无任何返回/首页入口，进去出不来。
-  // 加一个返回按钮（与 设置页 sidebar header 同款），回到工作区首页。
+  // router — BARSOUL: 通知页是全路由页。返回は「来た所へ戻る」(履歴 back)。
+  // 直リンク等で履歴が無い場合のみワークスペース首页へフォールバック。
   const router = useAppRouter();
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) router.back();
+    else router.push(`/${workspaceSlug}/`);
+  };
 
   if (!workspaceSlug) return <></>;
   return (
     <Header className="my-auto bg-surface-1">
       <Header.LeftItem>
-        <IconButton
-          variant="ghost"
-          size="base"
-          icon={ArrowLeft}
-          onClick={() => router.push(`/${workspaceSlug}/`)}
-        />
+        <IconButton variant="ghost" size="base" icon={ArrowLeft} onClick={handleBack} />
         <Breadcrumbs>
           <Breadcrumbs.Item
             component={
