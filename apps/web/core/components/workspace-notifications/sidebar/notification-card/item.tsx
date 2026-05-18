@@ -29,7 +29,7 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   // hooks
   const { currentSelectedNotificationId, setCurrentSelectedNotificationId } = useWorkspaceNotifications();
   const { asJson: notification, markNotificationAsRead } = useNotification(notificationId);
-  const { getIsIssuePeeked, setPeekIssue } = useIssueDetail();
+  const { getIsIssuePeeked, setPeekIssue, setScrollToActivityCommentId } = useIssueDetail();
   const { getWorkspaceBySlug } = useWorkspace();
   // states
   const [isSnoozeStateModalOpen, setIsSnoozeStateModalOpen] = useState(false);
@@ -61,6 +61,11 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
         if (!getIsIssuePeeked(issueId)) {
           setPeekIssue({ workspaceSlug, projectId, issueId });
         }
+        // BARSOUL: 滚动定位到该通知对应的评论/活动（评论 id 优先，
+        // 否则活动 id）。活动feed异步加载完后由 activity-comment-root 滚动。
+        const _act = notification?.data?.issue_activity;
+        const _target = _act?.issue_comment || _act?.id || undefined;
+        if (_target) setScrollToActivityCommentId(_target);
       }
     }
   };

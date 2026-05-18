@@ -43,6 +43,9 @@ export interface IWorkspaceNotificationStore {
   // computed functions
   notificationIdsByWorkspaceId: (workspaceId: string) => string[] | undefined;
   notificationLiteByNotificationId: (notificationId: string | undefined) => TNotificationLite;
+  // BARSOUL: 卡片未读バッジ用
+  unreadCountByIssueId: (issueId: string | undefined) => number;
+  ensureBadgeNotifications: (workspaceSlug: string) => void;
   // helper actions
   mutateNotifications: (notifications: TNotification[]) => void;
   updateFilters: <T extends keyof TNotificationFilter>(key: T, value: TNotificationFilter[T]) => void;
@@ -83,6 +86,8 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     archived: false,
     read: false,
   };
+  // BARSOUL: カードバッジ先読み済みワークスペース（非リアクティブな単純ガード）
+  private _badgeWS: Set<string> = new Set();
 
   constructor(protected store: CoreRootStore) {
     makeObservable(this, {
@@ -171,6 +176,46 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       is_inbox_issue: notification.is_inbox_issue || false,
     };
   });
+
+  /**
+   * BARSOUL: 指定 issue の未読通知数（卡片红点/数字バッジ用）。
+   * 通知中心と同一ロジック: 未読(read_at空) かつ 未アーカイブ かつ 未スヌーズ。
+   * data.issue.id / entity_identifier 両方で照合（tab には依存しない＝
+   * カードは全未読を見せたいので意図的）。
+   */
+  unreadCountByIssueId = computedFn((issueId: string | undefined): number => {
+    if (!issueId || isEmpty(this.notifications)) return 0;
+    let count = 0;
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      const nIssueId = n.data?.issue?.id || n.entity_identifier;
+      if (nIssueId !== issueId) continue;
+      if (n.read_at) continue;
+      if (n.archived_at) continue;
+      if (n.snoozed_till) continue;
+      count++;
+    }
+    return count;
+  });
+
+  /**
+   * BARSOUL: カードバッジ用に通知を一度だけ先読み（ワークスペース単位）。
+   * 通知中心と同じ getNotifications を使うので追加 API なし。多数のバッジ
+   * が同時 mount しても _badgeWS ガードで 1 回だけ発火。
+   */
+  ensureBadgeNotifications = (workspaceSlug: string) => {
+    if (!workspaceSlug || this._badgeWS.has(workspaceSlug)) return;
+    this._badgeWS.add(workspaceSlug);
+    try {
+      this.getNotifications(
+        workspaceSlug,
+        ENotificationLoader.MUTATION_LOADER,
+        ENotificationQueryParamType.INIT
+      );
+    } catch (e) {
+      this._badgeWS.delete(workspaceSlug);
+    }
+  };
 
   // helper functions
   /**

@@ -91,6 +91,8 @@ export interface IIssueDetail
   isRelationModalOpen: TIssueRelationModal | null;
   isSubIssuesModalOpen: string | null;
   attachmentDeleteModalId: string | null;
+  // BARSOUL: 通知中心点击 → 自动滚动定位的目标(评论/活动 id)
+  scrollToActivityCommentId: string | undefined;
   // computed
   isAnyModalOpen: boolean;
   isPeekOpen: boolean;
@@ -98,6 +100,7 @@ export interface IIssueDetail
   getIsIssuePeeked: (issueId: string) => boolean;
   // actions
   setPeekIssue: (peekIssue: TPeekIssue | undefined) => void;
+  setScrollToActivityCommentId: (id: string | undefined) => void;
   setIssueLinkData: (issueLinkData: TIssueLink | null) => void;
   toggleCreateIssueModal: (value: boolean) => void;
   toggleIssueLinkModal: (value: boolean) => void;
@@ -129,6 +132,7 @@ export interface IIssueDetail
 export abstract class IssueDetail implements IIssueDetail {
   // observables
   peekIssue: TPeekIssue | undefined = undefined;
+  scrollToActivityCommentId: string | undefined = undefined; // BARSOUL
   relationKey: TIssueRelationTypes | null = null;
   issueLinkData: TIssueLink | null = null;
   issueCrudOperationState: TIssueCrudOperationState = {
@@ -172,6 +176,7 @@ export abstract class IssueDetail implements IIssueDetail {
     makeObservable(this, {
       // observables
       peekIssue: observable,
+      scrollToActivityCommentId: observable.ref, // BARSOUL
       relationKey: observable,
       issueLinkData: observable,
       issueCrudOperationState: observable,
@@ -190,6 +195,7 @@ export abstract class IssueDetail implements IIssueDetail {
       isPeekOpen: computed,
       // action
       setPeekIssue: action,
+      setScrollToActivityCommentId: action, // BARSOUL
       setIssueLinkData: action,
       toggleCreateIssueModal: action,
       toggleIssueLinkModal: action,
@@ -246,6 +252,8 @@ export abstract class IssueDetail implements IIssueDetail {
   setRelationKey = (relationKey: TIssueRelationTypes | null) => (this.relationKey = relationKey);
   setIssueCrudOperationState = (state: TIssueCrudOperationState) => (this.issueCrudOperationState = state);
   setPeekIssue = (peekIssue: TPeekIssue | undefined) => (this.peekIssue = peekIssue);
+  // BARSOUL: 通知点击 → 滚动定位目标
+  setScrollToActivityCommentId = (id: string | undefined) => (this.scrollToActivityCommentId = id);
   toggleCreateIssueModal = (value: boolean) => (this.isCreateIssueModalOpen = value);
   toggleIssueLinkModal = (value: boolean) => (this.isIssueLinkModalOpen = value);
   toggleParentIssueModal = (issueId: string | null) => (this.isParentIssueModalOpen = issueId);

@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useEffect } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import type { E_SORT_ORDER, TActivityFilters, EActivityFilterType } from "@plane/constants";
@@ -48,7 +49,42 @@ export const IssueActivityCommentRoot = observer(function IssueActivityCommentRo
   const {
     activity: { getActivityAndCommentsByIssueId },
     comment: { getCommentById },
+    scrollToActivityCommentId,
+    setScrollToActivityCommentId,
   } = useIssueDetail();
+
+  // BARSOUL: 通知中心点击某条 → 这里自动滚到对应评论/活动并短暂高亮。
+  // 活动feed异步加载，故有界轮询等元素入 DOM 再滚（最长~6s），完成清除
+  // store 目标避免重复触发。Hooks 规则: effect 必须在任何 early return 之前。
+  useEffect(() => {
+    if (!scrollToActivityCommentId) return;
+    const target = scrollToActivityCommentId;
+    let tries = 0;
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = () => {
+      if (cancelled) return;
+      const el = document.getElementById(`ac-${target}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.style.transition = "background-color .35s ease";
+        el.style.backgroundColor = "rgba(239,68,68,0.12)";
+        window.setTimeout(() => {
+          el.style.backgroundColor = "";
+        }, 2200);
+        setScrollToActivityCommentId(undefined);
+        return;
+      }
+      if (tries++ < 24) timer = window.setTimeout(tick, 250);
+      else setScrollToActivityCommentId(undefined);
+    };
+    timer = window.setTimeout(tick, 150);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [scrollToActivityCommentId, setScrollToActivityCommentId]);
+
   // derived values
   const activityAndComments = getActivityAndCommentsByIssueId(issueId, sortOrder);
 
@@ -62,43 +98,40 @@ export const IssueActivityCommentRoot = observer(function IssueActivityCommentRo
     <div>
       {filteredActivityAndComments.map((activityComment, index) => {
         const comment = getCommentById(activityComment.id);
-        return activityComment.activity_type === "COMMENT" ? (
-          <CommentCard
-            key={activityComment.id}
-            workspaceSlug={workspaceSlug}
-            entityId={issueId}
-            comment={comment}
-            activityOperations={activityOperations}
-            ends={index === 0 ? "top" : index === filteredActivityAndComments.length - 1 ? "bottom" : undefined}
-            showAccessSpecifier={!!showAccessSpecifier}
-            showCopyLinkOption={!isIntakeIssue}
-            disabled={disabled}
-            projectId={projectId}
-            enableReplies
-          />
-        ) : BASE_ACTIVITY_FILTER_TYPES.includes(activityComment.activity_type as EActivityFilterType) ? (
-          <IssueActivityItem
-            key={activityComment.id}
-            activityId={activityComment.id}
-            ends={index === 0 ? "top" : index === filteredActivityAndComments.length - 1 ? "bottom" : undefined}
-          />
-        ) : activityComment.activity_type === "ISSUE_ADDITIONAL_PROPERTIES_ACTIVITY" ? (
-          <IssueAdditionalPropertiesActivity
-            key={activityComment.id}
-            activityId={activityComment.id}
-            ends={index === 0 ? "top" : index === filteredActivityAndComments.length - 1 ? "bottom" : undefined}
-          />
-        ) : activityComment.activity_type === "WORKLOG" ? (
-          <IssueActivityWorklog
-            key={activityComment.id}
-            workspaceSlug={workspaceSlug}
-            projectId={projectId}
-            issueId={issueId}
-            activityComment={activityComment}
-            ends={index === 0 ? "top" : index === filteredActivityAndComments.length - 1 ? "bottom" : undefined}
-          />
-        ) : (
-          <></>
+        const ends = index === 0 ? "top" : index === filteredActivityAndComments.length - 1 ? "bottom" : undefined;
+        const node =
+          activityComment.activity_type === "COMMENT" ? (
+            <CommentCard
+              workspaceSlug={workspaceSlug}
+              entityId={issueId}
+              comment={comment}
+              activityOperations={activityOperations}
+              ends={ends}
+              showAccessSpecifier={!!showAccessSpecifier}
+              showCopyLinkOption={!isIntakeIssue}
+              disabled={disabled}
+              projectId={projectId}
+              enableReplies
+            />
+          ) : BASE_ACTIVITY_FILTER_TYPES.includes(activityComment.activity_type as EActivityFilterType) ? (
+            <IssueActivityItem activityId={activityComment.id} ends={ends} />
+          ) : activityComment.activity_type === "ISSUE_ADDITIONAL_PROPERTIES_ACTIVITY" ? (
+            <IssueAdditionalPropertiesActivity activityId={activityComment.id} ends={ends} />
+          ) : activityComment.activity_type === "WORKLOG" ? (
+            <IssueActivityWorklog
+              workspaceSlug={workspaceSlug}
+              projectId={projectId}
+              issueId={issueId}
+              activityComment={activityComment}
+              ends={ends}
+            />
+          ) : null;
+        // BARSOUL: 稳定锚点，供通知点击后滚动定位（scroll-mt 让其不被
+        // 顶部 sticky 区遮挡）。
+        return (
+          <div key={activityComment.id} id={`ac-${activityComment.id}`} className="scroll-mt-20 rounded-sm">
+            {node}
+          </div>
         );
       })}
     </div>

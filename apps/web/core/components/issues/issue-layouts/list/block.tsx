@@ -31,6 +31,8 @@ import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
+// BARSOUL: 卡片未読バッジ
+import { IssueUnreadBadge } from "@/components/notifications/issue-unread-badge";
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 // types
 import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
@@ -239,7 +241,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                 </Tooltip>
               )}
               {displayProperties && (displayProperties.key || displayProperties.issue_type) && (
-                <div className="flex-shrink-0" style={{ minWidth: `${keyMinWidth}px` }}>
+                <div className="flex-shrink-0 flex items-center" style={{ minWidth: `${keyMinWidth}px` }}>
                   {issue.project_id && (
                     <IssueIdentifier
                       issueId={issueId}
@@ -249,6 +251,8 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                       displayProperties={displayProperties}
                     />
                   )}
+                  {/* BARSOUL: 未読更新の赤バッジ */}
+                  <IssueUnreadBadge issueId={issueId} />
                 </div>
               )}
 
