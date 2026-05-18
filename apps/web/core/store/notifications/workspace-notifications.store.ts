@@ -184,6 +184,14 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
    * カードは全未読を見せたいので意図的）。
    */
   unreadCountByIssueId = computedFn((issueId: string | undefined): number => {
+    // BARSOUL 重要: notifications は plain observable で、mutateNotifications が
+    // lodash set で新キーを足すため Object.values 監視では「新着通知の追加」に
+    // 再評価が走らない（通知中心は loader/paginationInfo の変化で巻き込まれて
+    // 再描画されるだけ）。バッジは独立なので、毎フェッチ/既読で必ず変わる
+    // unreadNotificationsCount を読んでリアクティブ依存を確立する（副作用で
+    // 「既読にしたら自動で消える」も成立: 既読時 setUnreadNotificationsCount
+    // が走るため）。
+    void this.unreadNotificationsCount.total_unread_notifications_count;
     if (!issueId || isEmpty(this.notifications)) return 0;
     let count = 0;
     for (const n of Object.values(this.notifications || {})) {
@@ -204,16 +212,14 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
    * が同時 mount しても _badgeWS ガードで 1 回だけ発火。
    */
   ensureBadgeNotifications = (workspaceSlug: string) => {
-    if (!workspaceSlug || this._badgeWS.has(workspaceSlug)) return;
-    this._badgeWS.add(workspaceSlug);
+    // 兜底: コンポーネントの useParams が取れない描画文脈でも store.router から
+    const ws = workspaceSlug || this.store.router.workspaceSlug?.toString() || "";
+    if (!ws || this._badgeWS.has(ws)) return;
+    this._badgeWS.add(ws);
     try {
-      this.getNotifications(
-        workspaceSlug,
-        ENotificationLoader.MUTATION_LOADER,
-        ENotificationQueryParamType.INIT
-      );
+      this.getNotifications(ws, ENotificationLoader.MUTATION_LOADER, ENotificationQueryParamType.INIT);
     } catch (e) {
-      this._badgeWS.delete(workspaceSlug);
+      this._badgeWS.delete(ws);
     }
   };
 
