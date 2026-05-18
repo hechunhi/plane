@@ -206,6 +206,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     return count;
   });
 
+
   /**
    * BARSOUL: カードバッジ用に通知を一度だけ先読み（ワークスペース単位）。
    * 通知中心と同じ getNotifications を使うので追加 API なし。多数のバッジ
