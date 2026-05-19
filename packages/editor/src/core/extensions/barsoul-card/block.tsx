@@ -338,7 +338,10 @@ function validateForm(state: any, rules: any[]): { path: string; msg: string }[]
   for (const r of rules || []) {
     const as = r.assert, msg = r.msg || "";
     if (r.each) {
-      (resolveP(state, r.each) || []).forEach((el: any, idx: number) => {
+      // r.each = 数组路径。getP で配列本体を取り、その「要素」を巡回する
+      // （resolveP は [配列] と1段包むため要素反復にならない — 本 bug 修正）。
+      const arr = getP(state, r.each);
+      (Array.isArray(arr) ? arr : []).forEach((el: any, idx: number) => {
         for (const f of r.fields || []) {
           const vs = resolveP(el, f);
           if (!vs.length || vs.some(isEmpty))
