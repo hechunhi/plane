@@ -269,6 +269,21 @@ export function BarsoulCardBlock(props: NodeViewProps) {
  * 节点只持本地编辑态，签名 POST，成功后以服务端新 spec 为准（薄缝纪律）。
  * ────────────────────────────────────────────────────────────────────── */
 const _norm = (p: string) => p.replace(/^state\.?/, "");
+// P2: ドラッグ中の項目（単一ウィンドウ前提で十分。dataTransfer の
+// React 跨レンダー不安定を回避）。{from=池/箱の bind, id}
+let _dragItem: { from: string; id: any } | null = null;
+// 構造化クローン後のインプレース変異用：path のライブ参照を返す
+function gpLive(o: any, path: string): any {
+  const segs = _norm(path).split(".").filter(Boolean);
+  let c = o;
+  for (const s of segs) {
+    const m = s.match(/^(.*?)\[(\d+)\]$/);
+    if (m) c = c?.[m[1]]?.[+m[2]];
+    else c = c?.[s];
+    if (c == null) return c;
+  }
+  return c;
+}
 function getP(o: any, path: string): any {
   const segs = _norm(path).split(".").filter(Boolean);
   let c = o;
@@ -362,6 +377,22 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
   const [flash, setFlash] = useState<{ msg: string; bad: boolean } | null>(null);
   const errs = useMemo(() => validateForm(st, spec?.rules || []), [st, spec]);
   const set = (path: string, v: any) => setSt((s: any) => setP(s, path, v));
+  // P2: 池↔箱の項目移動（数量保存）。複数 path を 1 回で原子変異。
+  const moveItem = (fromPath: string, toPath: string, id: any) =>
+    setSt((s: any) => {
+      const c = JSON.parse(JSON.stringify(s));
+      const fa = gpLive(c, fromPath);
+      if (!Array.isArray(fa)) return s;
+      const i = fa.findIndex((x: any) => x?.id === id);
+      if (i < 0) return s;
+      const [it] = fa.splice(i, 1);
+      const ta = gpLive(c, toPath);
+      if (!Array.isArray(ta)) return s;
+      const ex = ta.find((x: any) => x?.id === id);
+      if (ex) ex.qty = (toNum(ex.qty) ?? 0) + (toNum(it.qty) ?? 0);
+      else ta.push(it);
+      return c;
+    });
 
   const submit = async (decision: "approve" | "reject") => {
     setConfirm(null);
@@ -450,7 +481,8 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
       }
       case "repeater": {
         const arr: any[] = Array.isArray(val) ? val : [];
-        const addItem = () => set(bind, [...arr, {}]);
+        const addItem = () => set(bind, [...arr,
+          a.itemDefault ? JSON.parse(JSON.stringify(a.itemDefault)) : {}]);
         const del = (idx: number) => set(bind, arr.filter((_, x) => x !== idx));
         return (
           <div key={k}>
@@ -497,6 +529,78 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                   <td key={c.key} style={{ padding: "4px 8px",
                     borderBottom: `1px solid ${t.border}` }}>{String(rw?.[c.key] ?? "")}</td>))}</tr>))}</tbody>
             </table>
+          </div>);
+      }
+      case "pool": {
+        const arr: any[] = Array.isArray(val) ? val : [];
+        const into = a.into; // 例 "state.packages"（触屏兜底の移動先箱）
+        const boxes: any[] = into ? (getP(st, into) || []) : [];
+        const rowS: React.CSSProperties = {
+          display: "flex", alignItems: "center", gap: 8, padding: "5px 8px",
+          margin: "4px 0", border: `1px solid ${t.border}`, borderRadius: 6,
+          background: t.chipBg, fontSize: 13,
+        };
+        return (
+          <div key={k}>
+            {a.label && <div style={lbl}>{a.label}（未分配 {arr.length}）</div>}
+            {arr.map((it: any, ix: number) => (
+              <div key={it.id ?? ix} draggable={!ro}
+                onDragStart={() => { if (!ro) _dragItem = { from: bind, id: it.id }; }}
+                style={{ ...rowS, cursor: ro ? "default" : "grab" }}>
+                <span style={{ flex: 1 }}>
+                  {!ro && <span style={{ color: t.muted, marginRight: 6 }}>⠿</span>}
+                  {it.name}{it.qty != null ? ` ×${it.qty}` : ""}
+                </span>
+                {!ro && boxes.length > 0 && (
+                  <select value="" style={{ ...inp, width: 110 }}
+                    onChange={(e) => {
+                      const bi = parseInt(e.target.value, 10);
+                      if (!isNaN(bi)) moveItem(bind, `${into}[${bi}].items`, it.id);
+                    }}>
+                    <option value="">→ 箱へ</option>
+                    {boxes.map((_: any, bi: number) => (
+                      <option key={bi} value={bi}>箱{bi + 1}</option>))}
+                  </select>)}
+              </div>))}
+            {arr.length === 0 && <div style={S.note}>（すべて分配済み）</div>}
+          </div>);
+      }
+      case "dropzone": {
+        const arr: any[] = Array.isArray(val) ? val : [];
+        const from = a.from || "state.pool";
+        const rowS: React.CSSProperties = {
+          display: "flex", alignItems: "center", gap: 6, padding: "4px 6px",
+          margin: "3px 0", fontSize: 13,
+        };
+        return (
+          <div key={k}
+            onDragOver={(e) => { if (!ro) e.preventDefault(); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (ro || !_dragItem) return;
+              moveItem(_dragItem.from || from, bind, _dragItem.id);
+              _dragItem = null;
+            }}
+            style={{
+              border: `1.5px dashed ${t.border}`, borderRadius: 8,
+              padding: "8px 10px", margin: "4px 0", minHeight: 36,
+              background: t.bg,
+            }}>
+            {arr.length === 0 && (
+              <div style={S.note}>{ro ? "（空）" : "ここに商品をドラッグ／池で「→ 箱へ」"}</div>)}
+            {arr.map((it: any, ix: number) => (
+              <div key={it.id ?? ix} style={rowS}>
+                <span style={{ flex: 1 }}>{it.name}</span>
+                {a.qty !== false && (
+                  <input type="number" style={{ ...inp, width: 70 }} disabled={ro}
+                    value={it.qty ?? ""} min={0}
+                    onChange={(e) => set(`${bind}[${ix}].qty`, toNum(e.target.value))} />)}
+                {!ro && (
+                  <button type="button" title="池へ戻す"
+                    onClick={() => moveItem(bind, from, it.id)}
+                    style={{ background: "none", border: 0, color: t.rejectFg,
+                      cursor: "pointer", fontSize: 13 }}>✕</button>)}
+              </div>))}
           </div>);
       }
       case "text":
