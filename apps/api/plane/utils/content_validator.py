@@ -75,6 +75,10 @@ CUSTOM_TAGS = {
     "label",
     "input",
     "image-component",
+    # BARSOUL: 评论内交互卡片「冻结薄缝」节点。仅放行该标签 + data-card
+    # 属性（见下 ATTRIBUTES）；卡片内容/动作全在 cards 微服务，存储 HTML
+    # 永远只是 <barsoul-card data-card="<id>.<sig>">，消毒安全。
+    "barsoul-card",
 }
 ALLOWED_TAGS = nh3.ALLOWED_TAGS | CUSTOM_TAGS
 
@@ -110,6 +114,7 @@ ATTRIBUTES = {
         "data-emoji-url",
         "data-logo-in-use",
         "data-block-type",
+        "data-card",  # BARSOUL: barsoul-card 节点引用 <id>.<sig>
     },
     "a": {"href", "target"},
     # editor node/tag attributes
@@ -134,6 +139,7 @@ ATTRIBUTES = {
         "title",
     },
     "mention-component": {"id", "entity_identifier", "entity_name"},
+    "barsoul-card": {"data-card"},  # BARSOUL: 冻结薄缝节点
     "th": {
         "colspan",
         "rowspan",

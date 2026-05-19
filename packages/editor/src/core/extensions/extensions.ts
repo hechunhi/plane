@@ -38,6 +38,9 @@ import { CoreEditorAdditionalExtensions } from "@/plane-editor/extensions";
 // types
 import type { IEditorProps } from "@/types";
 // local imports
+// BARSOUL: 评论内交互卡片「冻结薄缝」节点（@plane/editor fork 唯一新增节点；
+// 升级 re-apply 仅此 import + 下方数组 1 行 + barsoul-card/ 目录）
+import { BarsoulCardExtension } from "./barsoul-card/extension";
 import { CustomImageExtension } from "./custom-image/extension";
 import { EmojiExtension } from "./emoji/extension";
 import { CustomPlaceholderExtension } from "./placeholder";
@@ -121,6 +124,7 @@ export const CoreEditorExtensions = (args: TArguments): Extensions => {
     CustomColorExtension,
     CustomTextAlignExtension,
     CustomCalloutExtension,
+    BarsoulCardExtension, // BARSOUL: 评论内交互卡片节点
     UtilityExtension({
       disabledExtensions,
       flaggedExtensions,
