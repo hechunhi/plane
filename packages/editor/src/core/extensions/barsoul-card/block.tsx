@@ -184,6 +184,110 @@ export function BarsoulCardBlock(props: NodeViewProps) {
                 {openDetail && <div style={S.detailBox}>{txt}</div>}
               </div>);
           }
+          // R4: LLM 工具箱组合的新原子块（presentation-only，主题驱动）
+          if (ty === "section") return (
+            <div key={i} style={{ fontSize: 12, fontWeight: 700, color: t.fg,
+              margin: "12px 0 2px" }}>{b.title}</div>);
+          if (ty === "kvgrid") return (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1fr",
+              gap: "2px 12px", fontSize: 12, margin: "6px 0 0" }}>
+              {(b.rows || []).flatMap((r: Blk, j: number) => [
+                <div key={`k${j}`} style={{ color: t.muted }}>{r.k}</div>,
+                <div key={`v${j}`}>{r.v}</div>])}
+            </div>);
+          if (ty === "table") return (
+            <table key={i} style={{ width: "100%", borderCollapse: "collapse",
+              fontSize: 12, margin: "6px 0 0" }}>
+              <thead><tr>{(b.cols || []).map((c: any, j: number) => (
+                <th key={j} style={{ textAlign: "left", padding: "4px 8px",
+                  borderBottom: `1px solid ${t.border}`, color: t.muted,
+                  fontWeight: 600 }}>{String(c)}</th>))}</tr></thead>
+              <tbody>{(b.rows || []).map((row: any[], j: number) => (
+                <tr key={j}>{(row || []).map((cell, k: number) => (
+                  <td key={k} style={{ padding: "4px 8px",
+                    borderBottom: `1px solid ${t.border}` }}>{String(cell)}</td>))}</tr>))}
+              </tbody></table>);
+          if (ty === "amount") return (
+            <div key={i} style={{ margin: "8px 0 0", display: "flex",
+              alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 12, color: t.muted }}>{b.label}</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: t.fg }}>{b.value}</span>
+            </div>);
+          if (ty === "callout") {
+            const warn = b.tone === "warn";
+            return (
+              <div key={i} style={{ fontSize: 12, borderRadius: 8,
+                padding: "7px 10px", margin: "8px 0 0",
+                background: warn ? "#FEF3F2" : t.chipBg,
+                border: `1px solid ${warn ? t.rejectBorder : t.border}` }}>
+                {warn ? "⚠ " : "ℹ "}{b.text}</div>);
+          }
+          if (ty === "list") return (
+            <ul key={i} style={{ margin: "6px 0 0", paddingLeft: 18,
+              fontSize: 12.5 }}>
+              {(b.items || []).map((it: any, j: number) => {
+                if (it && typeof it === "object")
+                  return <li key={j}>{it.done ? "✓ " : "○ "}{it.text}</li>;
+                return <li key={j}>{String(it)}</li>;
+              })}
+            </ul>);
+          if (ty === "badge") {
+            const tn = b.tone;
+            const c = tn === "warn" ? { color: t.rejectFg, bg: "#FEF3F2", bd: t.rejectBorder }
+              : tn === "ok" ? { color: t.approveBg, bg: "#F0FDF4", bd: t.approveBg }
+              : tn === "info" ? { color: t.accent, bg: t.chipBg, bd: t.accent }
+              : { color: t.muted, bg: t.chipBg, bd: t.border };
+            return (
+              <span key={i} style={{ display: "inline-block", fontSize: 11,
+                fontWeight: 700, padding: "2px 9px", borderRadius: 999,
+                margin: "8px 6px 0 0", color: c.color, background: c.bg,
+                border: `1px solid ${c.bd}` }}>{b.label}</span>);
+          }
+          if (ty === "ref" || ty === "link") {
+            if (!b.href) return null;
+            return (
+              <div key={i} style={{ fontSize: 12.5, margin: "6px 0 0" }}>
+                🔗 <a href={b.href} target="_blank" rel="noopener"
+                  style={{ color: t.accent }}>{b.label || b.href}</a></div>);
+          }
+          if (ty === "compare") {
+            const rows = b.rows || [];
+            if (!rows.length) return null;
+            return (
+              <div key={i} style={{ margin: "8px 0 0" }}>
+                {b.title && <div style={{ fontSize: 12, fontWeight: 600,
+                  margin: "0 0 2px", color: t.muted }}>{b.title}</div>}
+                <table style={{ width: "100%", borderCollapse: "collapse",
+                  fontSize: 12 }}>
+                  <thead><tr>
+                    <th style={{ textAlign: "left", padding: "3px 6px",
+                      color: t.muted, borderBottom: `1px solid ${t.border}` }} />
+                    <th style={{ textAlign: "left", padding: "3px 6px",
+                      color: t.muted, borderBottom: `1px solid ${t.border}` }}>変更前</th>
+                    <th style={{ textAlign: "left", padding: "3px 6px",
+                      color: t.accent, borderBottom: `1px solid ${t.border}` }}>変更後</th>
+                  </tr></thead>
+                  <tbody>{rows.map((r: any, j: number) => (
+                    <tr key={j}>
+                      <td style={{ padding: "3px 6px", color: t.muted }}>{r.k}</td>
+                      <td style={{ padding: "3px 6px", textDecoration:
+                        "line-through", color: t.muted }}>{r.before}</td>
+                      <td style={{ padding: "3px 6px", fontWeight: 600 }}>{r.after}</td>
+                    </tr>))}</tbody>
+                </table>
+              </div>);
+          }
+          if (ty === "image") {
+            if (!b.src) return null;
+            return (
+              <figure key={i} style={{ margin: "8px 0 0" }}>
+                <img src={b.src} alt={b.alt || "参照画像"} loading="lazy"
+                  style={{ maxWidth: "100%", maxHeight: 280, borderRadius: 6,
+                    border: `1px solid ${t.border}` }} />
+                {b.caption && <figcaption style={{ fontSize: 11,
+                  color: t.muted, marginTop: 3 }}>{b.caption}</figcaption>}
+              </figure>);
+          }
           if (ty === "modebadge") return (
             <div key={i}>
               <span style={S.badge(b.mode === "ALL")}>{b.label}</span>
@@ -628,13 +732,15 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                 onClick={() => setConfirm("approve")}
                 style={{ ...S.btn(true), marginLeft: 0,
                   opacity: errs.length > 0 ? 0.4 : 1,
-                  cursor: errs.length > 0 ? "not-allowed" : "pointer" }}>✅ 承認</button>
+                  cursor: errs.length > 0 ? "not-allowed" : "pointer" }}>
+                {spec.approveLabel || "✅ 承認"}</button>
               <button type="button" onClick={() => setConfirm("reject")}
-                style={S.btn(false)}>❌ 却下</button>
+                style={S.btn(false)}>{spec.rejectLabel || "❌ 却下"}</button>
             </div>)}
           {confirm && (
             <div style={S.confirmBar}>
-              <span style={{ flex: 1 }}>「<b>{confirm === "approve" ? "承認" : "却下"}</b>」
+              <span style={{ flex: 1 }}>「<b>{confirm === "approve"
+                ? (spec.approveText || "承認") : (spec.rejectText || "却下")}</b>」
                 で送信します。よろしいですか？</span>
               <button type="button" style={S.cBtn(confirm === "approve")}
                 onClick={() => submit(confirm)}>確定</button>
