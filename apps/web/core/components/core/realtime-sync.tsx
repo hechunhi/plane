@@ -38,6 +38,8 @@ export const RealtimeSync = () => {
   const { workspaceSlug } = useParams();
   const { getNotifications } = useWorkspaceNotifications();
   const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // SSE 健康度: 最後にイベント/openを受信した時刻. 3 分以上静默 → degraded.
+  const lastEventAt = useRef<number>(Date.now());
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
@@ -63,6 +65,7 @@ export const RealtimeSync = () => {
     let closed = false;
 
     const onInvalidate = (ev: MessageEvent) => {
+      lastEventAt.current = Date.now(); // SSE 生きてる証跡(健康判定用)
       let project = "";
       let ids: string[] | null = null;
       let hasIssueSignal = false;
@@ -173,34 +176,73 @@ export const RealtimeSync = () => {
           /* fail-safe */
         }
       };
-      // error 時はブラウザが自動再接続。閉じない(closed 時のみ後始末)。
-      // onerror 発火時に通知も refetch(切断中に来た mention を再接続後に補捉)
+      // error は EventSource 自動再接続に任せる. onerror で refresh を打つと
+      // 一時的なネット揺れ(プロキシ idle drop 等)で雪崩発射する → 抑える.
+      // 真に "切れた" 状態は safety interval(下記の degraded mode)で 30s に
+      // 切替わって補捉される.
       es.onerror = () => {
-        if (closed && es) {
-          es.close();
-        } else {
-          // SSE 復活時(自動再接続後)は通知も補捉
-          refreshNotifications();
-        }
+        if (closed && es) es.close();
+        // 自動再接続後の onopen で lastEventAt が更新 → healthy 復帰
+      };
+      es.onopen = () => {
+        lastEventAt.current = Date.now();
       };
     } catch {
       /* EventSource 生成失敗 → 退化(今日の挙動) */
     }
 
-    // ── BARSOUL 堅牢性多層: SSE 主路の他に visibility/focus/online/interval
-    //    全てが refreshNotifications を発火(全部 debounce 統合). どれか1本
-    //    が死んでも他の経路で 60s 内に通知 UI が同期する.
+    // ── BARSOUL 堅牢性 + 性能配慮: 自適応兜底 ──
+    // SSE 主路に加え、event-driven (visibility/focus/online) + adaptive
+    // safety interval (healthy: 5min / degraded: 30s) + visibility-gated.
+    // → 通常時は 5min/回(殆ど無負荷), SSE 切れ検知時のみ 30s に高頻度化,
+    //   tab 後台時は完全停止 (見えないものを刷っても無意味).
+    const SAFETY_HEALTHY_MS = 5 * 60 * 1000;
+    const SAFETY_DEGRADED_MS = 30 * 1000;
+    const SSE_STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3min 静默で stale 判定
+
+    const isSSEHealthy = (): boolean => {
+      if (!es || es.readyState !== 1 /* OPEN */) return false;
+      // tab visible でも長期静默なら proxy 黙殺の可能性 (degraded)
+      if (
+        document.visibilityState === "visible" &&
+        Date.now() - lastEventAt.current > SSE_STALE_THRESHOLD_MS
+      ) {
+        return false;
+      }
+      return true;
+    };
+
+    let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleSafety = () => {
+      if (safetyTimer) clearTimeout(safetyTimer);
+      const interval = isSSEHealthy() ? SAFETY_HEALTHY_MS : SAFETY_DEGRADED_MS;
+      safetyTimer = setTimeout(() => {
+        // tab 不可見 → 刷っても見えない. SWR revalidateOnFocus が tab 復帰時
+        //   に拾うので skip して負荷ゼロ. 復帰時の visibilitychange でも拾う.
+        if (document.visibilityState === "visible") {
+          refreshNotifications();
+        }
+        scheduleSafety(); // 自己再スケジュール → state 変化に追従
+      }, interval);
+    };
+
+    // event-driven 補強: tab 復帰 / focus / online で即時 refresh
+    //   (ユーザ体感を担保 — degraded 30s より速い)
     const onVisibility = () => {
-      if (document.visibilityState === "visible") refreshNotifications();
+      if (document.visibilityState === "visible") {
+        refreshNotifications();
+        scheduleSafety(); // visible 復帰時に interval も再計算
+      }
     };
     const onFocus = () => refreshNotifications();
-    const onOnline = () => refreshNotifications();
+    const onOnline = () => {
+      refreshNotifications();
+      scheduleSafety(); // 復網時に間隔再計算
+    };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
-    // 60s safety net: SSE が静かに死んでも(プロキシ閉/サーバ再起動の取りこぼし)
-    // 1 分以内にバッジが揃う. polling より頻度抑え(SSE 主路ありき).
-    const safetyInterval = setInterval(refreshNotifications, 60_000);
+    scheduleSafety();
 
     return () => {
       closed = true;
@@ -214,7 +256,7 @@ export const RealtimeSync = () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
-      clearInterval(safetyInterval);
+      if (safetyTimer) clearTimeout(safetyTimer);
       if (notifTimer.current) {
         clearTimeout(notifTimer.current);
         notifTimer.current = null;
