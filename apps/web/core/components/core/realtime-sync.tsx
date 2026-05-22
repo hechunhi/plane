@@ -174,12 +174,33 @@ export const RealtimeSync = () => {
         }
       };
       // error 時はブラウザが自動再接続。閉じない(closed 時のみ後始末)。
+      // onerror 発火時に通知も refetch(切断中に来た mention を再接続後に補捉)
       es.onerror = () => {
-        if (closed && es) es.close();
+        if (closed && es) {
+          es.close();
+        } else {
+          // SSE 復活時(自動再接続後)は通知も補捉
+          refreshNotifications();
+        }
       };
     } catch {
       /* EventSource 生成失敗 → 退化(今日の挙動) */
     }
+
+    // ── BARSOUL 堅牢性多層: SSE 主路の他に visibility/focus/online/interval
+    //    全てが refreshNotifications を発火(全部 debounce 統合). どれか1本
+    //    が死んでも他の経路で 60s 内に通知 UI が同期する.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshNotifications();
+    };
+    const onFocus = () => refreshNotifications();
+    const onOnline = () => refreshNotifications();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+    // 60s safety net: SSE が静かに死んでも(プロキシ閉/サーバ再起動の取りこぼし)
+    // 1 分以内にバッジが揃う. polling より頻度抑え(SSE 主路ありき).
+    const safetyInterval = setInterval(refreshNotifications, 60_000);
 
     return () => {
       closed = true;
@@ -190,6 +211,10 @@ export const RealtimeSync = () => {
       } catch {
         /* noop */
       }
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+      clearInterval(safetyInterval);
       if (notifTimer.current) {
         clearTimeout(notifTimer.current);
         notifTimer.current = null;
