@@ -32,6 +32,8 @@ import { IssueDetailWidgets } from "../issue-detail-widgets";
 import { NameDescriptionUpdateStatus } from "../issue-update-status";
 import { PeekOverviewProperties } from "../peek-overview/properties";
 import { IssueTitleInput } from "../title-input";
+// BARSOUL ADR-029: 凍結カード banner(役割別)
+import { FrozenBanner } from "./frozen-banner";
 import { IssueActivity } from "./issue-activity";
 import { KeiriOrderWidget } from "./keiri-order-widget";
 import { IssueParentDetail } from "./parent";
@@ -94,6 +96,8 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
   return (
     <>
       <div className="space-y-4 rounded-lg">
+        {/* ADR-029: 凍結カード状態 banner — 役割別文言と進捗 */}
+        <FrozenBanner issueId={issueId} />
         {issue.parent_id && (
           <IssueParentDetail
             workspaceSlug={workspaceSlug}
