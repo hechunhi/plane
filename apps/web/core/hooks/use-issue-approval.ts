@@ -1,20 +1,22 @@
 /**
- * BARSOUL ADR-029: 凍結カード UX(役割別)用 client hook.
+ * BARSOUL ADR-029 (改訂 2): 凍結カード判定 + 役割派生.
  *
- * 真相源 = ai-bot `/api/issue/approval/{id}` (Lark Base 待批レコード + action
- * log 由来). frozen ラベルは「派生キャッシュ」であり信頼してはならない
- * (ghost 残留が観測される). 本 hook は権威データに基づき myRole を派生:
- *   - pending_approver  : 自分が approver で未決(SEQ 時は current のみ)
- *   - queued_approver   : SEQ で自分が approver だが未到自己番
- *   - initiator         : 自分が発起人
- *   - bystander         : 自分は approver 既決 or 無関係見守る
- *   - none              : frozen 無し
+ * **設計修正(重要)**: 元版は ai-bot endpoint を frozen 判定の真相源にした
+ * が, 標籤こそが視覚層の生命周期信号(label がある間=ロック中, 消えれば
+ * =解除). ghost 残留もロック対象(ai-bot 清掃漏れは別 bug, UI は忠実に
+ * 標籤を尊重する). よって判定 = **label の有無**. endpoint は **役割
+ * 情報の付加** のみ(best-effort, 失敗 = bystander フォールバック).
  *
- * キャッシュ: SWR 30s dedup, focus/online で revalidate, SSE invalidate は
- *   realtime-sync 側で `mutate('ISSUE_APPROVAL:...')` を呼ぶ(連携拡張).
+ * 利点: API 呼出 0 で frozen 判定即時(性能◎); endpoint/ai-bot 不通時も
+ * ロックは効く(可用性◎); 標籤生命周期 = 視覚生命周期 = ユーザ直感◎.
  */
 import useSWR from "swr";
+import { useLabel } from "@/hooks/store/use-label";
+import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useUser } from "@/hooks/store/user/user-user";
+
+// 標籤名称(ai-bot approval.MANAGED_LABEL と同期; 変更時両処注意).
+const FROZEN_LABEL_NAMES = ["🔒審査託管中 / 流程托管中"];
 
 export type TApprover = {
   id: string;
@@ -45,9 +47,7 @@ export const issueApprovalSWRKey = (issueId: string) => `ISSUE_APPROVAL:${issueI
 
 const fetchIssueApproval = async (issueId: string): Promise<TIssueApprovalData> => {
   try {
-    const r = await fetch(`/__approval/by-issue/${issueId}`, {
-      credentials: "same-origin",
-    });
+    const r = await fetch(`/__approval/by-issue/${issueId}`, { credentials: "same-origin" });
     if (!r.ok) return { frozen: false };
     return (await r.json()) as TIssueApprovalData;
   } catch {
@@ -58,44 +58,59 @@ const fetchIssueApproval = async (issueId: string): Promise<TIssueApprovalData> 
 export const useIssueApproval = (issueId: string | undefined) => {
   const { data: userData } = useUser();
   const myId = userData?.id;
-  const { data, mutate } = useSWR<TIssueApprovalData>(
-    issueId ? issueApprovalSWRKey(issueId) : null,
+  const { getLabelById } = useLabel();
+  const {
+    issue: { getIssueById },
+  } = useIssueDetail();
+
+  // ===== ① label-based frozen 判定 (SoR, 即時, 0 API 呼出) =====
+  const issue = issueId ? getIssueById(issueId) : undefined;
+  const labelIds = issue?.label_ids || [];
+  const frozen = labelIds.some((lid) => {
+    const l = getLabelById(lid);
+    return l && FROZEN_LABEL_NAMES.includes(l.name);
+  });
+
+  // ===== ② role 付加情報 (best-effort, frozen 時のみ fetch) =====
+  const { data: roleInfo, mutate } = useSWR<TIssueApprovalData>(
+    frozen && issueId ? issueApprovalSWRKey(issueId) : null,
     issueId ? () => fetchIssueApproval(issueId) : null,
     {
       dedupingInterval: 30_000,
       revalidateOnFocus: true,
       revalidateOnReconnect: true,
-      // refresh は SSE invalidate 経由 (realtime-sync が mutate) で十分.
-      // safetynet として 5min 自動 revalidate (低頻度, UX 担保).
       refreshInterval: 5 * 60_000,
     }
   );
 
-  const frozen = data?.frozen ?? false;
+  // ===== ③ myRole 派生 — endpoint があれば精細, 無ければ bystander 安全側 =====
   let myRole: TFrozenRole = "none";
-  if (frozen && myId && data) {
-    const me = data.approvers?.find((a) => a.id === myId);
-    const isInitiator = data.initiator?.id === myId;
-    if (me) {
-      if (me.decided) {
-        myRole = "bystander"; // 已決 → 見守
-      } else if (data.mode === "SEQUENTIAL" && !me.is_current) {
-        myRole = "queued_approver"; // SEQ 待ち番
-      } else {
-        myRole = "pending_approver"; // あなたの番
+  if (frozen) {
+    myRole = "bystander"; // 既定: ロックは見えるが自分要対応か未知
+    if (myId && roleInfo && roleInfo.frozen) {
+      const me = roleInfo.approvers?.find((a) => a.id === myId);
+      const isInitiator = roleInfo.initiator?.id === myId;
+      if (me) {
+        if (me.decided) {
+          myRole = "bystander";
+        } else if (roleInfo.mode === "SEQUENTIAL" && !me.is_current) {
+          myRole = "queued_approver";
+        } else {
+          myRole = "pending_approver";
+        }
+      } else if (isInitiator) {
+        myRole = "initiator";
       }
-    } else if (isInitiator) {
-      myRole = "initiator";
-    } else {
-      myRole = "bystander";
     }
   }
 
   return {
-    approval: data,
+    /** 標籤の有無に基づく確定的判定. SoR. */
     frozen,
+    /** 役割(endpoint 由来; 未読込/失敗時は bystander). */
     myRole,
-    /** 既存 approver 仅 SEQ 場合 me.is_current */
+    /** 詳細情報(無しでも frozen 有効). banner/tooltip 用. */
+    approval: roleInfo,
     isMyTurn: myRole === "pending_approver",
     refresh: mutate,
   };
