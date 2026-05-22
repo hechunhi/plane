@@ -519,7 +519,11 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
         const m = (j.errors && j.errors[0]?.msg) || j.msg || `HTTP ${r.status}`;
         setFlash({ msg: m, bad: true }); setBusy(false); return;
       }
-      setFlash({ msg: j.msg || "受け付けました", bad: false });
+      setFlash({ msg: (j.msg || "受け付けました") + " — 状態を更新中…", bad: false });
+      // ADR-027 補正: Temporal は async 故 BaseUpdate に 1-3s かかる. その間
+      // reload しても chain block が古いまま → ユーザ "効いてない?" と再 submit
+      // → 重複 reassign signal. 1.5s 待ってから reload で大半救う + busy 維持.
+      await new Promise((res) => setTimeout(res, 1500));
       await reload();
     } catch (e) {
       setFlash({ msg: `送信に失敗しました（${String(e)}）`, bad: true });
@@ -708,6 +712,85 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                     style={{ background: "none", border: 0, color: t.rejectFg,
                       cursor: "pointer", fontSize: 13 }}>✕</button>)}
               </div>))}
+          </div>);
+      }
+      case "ordered_checklist": {
+        // ADR-027: 承認チェーンの順序可視 + 拖動入替 + 未選択候補から追加.
+        // val = checked ids の **順序を持つ array**; items = 全候補 [{id,label}].
+        // 表示順: 選択中(val 順) → 未選択(items 残り).
+        const arr: string[] = (Array.isArray(val) ? val : []).filter(
+          (x: any) => typeof x === "string");
+        const items: any[] = a.items || [];
+        const inArr = new Set(arr);
+        const orderedSelected = arr.map((id) => items.find((it) => it.id === id))
+          .filter(Boolean);
+        const unselected = items.filter((it) => !inArr.has(it.id));
+        const toggle = (id: string) => {
+          if (ro) return;
+          if (inArr.has(id)) set(bind, arr.filter((x) => x !== id));
+          else set(bind, [...arr, id]);
+        };
+        const reorder = (from: number, to: number) => {
+          if (ro || from === to || from < 0 || to < 0 || from >= arr.length) return;
+          const next = [...arr];
+          const [m] = next.splice(from, 1);
+          next.splice(Math.min(to, next.length), 0, m);
+          set(bind, next);
+        };
+        return (
+          <div key={k}>
+            {a.label && <div style={lbl}>{a.label}</div>}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 8,
+              padding: "4px 6px", margin: "4px 0", background: t.bg }}>
+              {orderedSelected.map((it: any, ix: number) => (
+                <div key={it.id} draggable={!ro}
+                  onDragStart={(e) => { if (!ro) e.dataTransfer.setData("text/plain", String(ix)); }}
+                  onDragOver={(e) => { if (!ro) e.preventDefault(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (ro) return;
+                    const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
+                    if (!isNaN(from)) reorder(from, ix);
+                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 8,
+                    padding: "6px 6px", margin: "2px 0", fontSize: 13,
+                    borderRadius: 6, background: t.chipBg,
+                    cursor: ro ? "default" : "grab" }}>
+                  {!ro && <span style={{ color: t.muted, fontSize: 12,
+                    width: 14 }} title="ドラッグで順序入替">⠿</span>}
+                  <span style={{ width: 18, color: t.approveBg, fontWeight: 700,
+                    fontSize: 12, textAlign: "center" }}>{ix + 1}</span>
+                  <span style={{ width: 16, height: 16, borderRadius: 4,
+                    border: `1.5px solid ${t.approveBg}`, background: t.approveBg,
+                    color: "#fff", display: "inline-flex", alignItems: "center",
+                    justifyContent: "center", fontSize: 11, fontWeight: 800,
+                    cursor: ro ? "default" : "pointer" }}
+                    onClick={() => toggle(it.id)}>✓</span>
+                  <span style={{ flex: 1 }}>{it.label}</span>
+                  {!ro && (
+                    <button type="button" title="外す"
+                      onClick={() => toggle(it.id)}
+                      style={{ background: "none", border: 0, color: t.rejectFg,
+                        cursor: "pointer", fontSize: 13, padding: "2px 6px" }}>✕</button>)}
+                </div>))}
+              {orderedSelected.length === 0 && (
+                <div style={{ ...S.note, padding: "6px 4px" }}>(未選択 — 下から追加してください)</div>)}
+            </div>
+            {unselected.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, color: t.muted, margin: "8px 0 4px" }}>
+                  ＋ 追加可能</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {unselected.map((it: any) => (
+                    <button key={it.id} type="button" disabled={ro}
+                      onClick={() => toggle(it.id)}
+                      style={{ padding: "4px 10px", fontSize: 12.5,
+                        border: `1px dashed ${t.border}`, borderRadius: 14,
+                        background: "transparent", color: t.fg,
+                        cursor: ro ? "default" : "pointer" }}>
+                      ＋ {it.label}</button>))}
+                </div>
+              </>)}
           </div>);
       }
       case "text":
