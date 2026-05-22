@@ -40,6 +40,8 @@ import {
   useIssueUnreadKind,
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
+// BARSOUL ADR-029: 凍結カード(審査中) UX
+import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { useProjectState } from "@/hooks/store/use-project-state";
 // local components
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
@@ -206,7 +208,10 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
 
   const canEditIssueProperties = canEditProperties(issue?.project_id ?? undefined);
 
-  const isDragAllowed = canDragIssuesInCurrentGrouping && !issue?.tempId && canEditIssueProperties;
+  // BARSOUL ADR-029: 凍結カード状態 (役割別 UX). frozen 時は拖拽禁止.
+  const { frozen: isFrozen, myRole: frozenRole } = useIssueApproval(issue?.id);
+  const isDragAllowed =
+    canDragIssuesInCurrentGrouping && !issue?.tempId && canEditIssueProperties && !isFrozen;
   const projectIdentifier = getProjectIdentifierById(issue?.project_id);
   // BARSOUL: 未読更新があればカードに左端アクセントバー＋薄い底色を付与
   // （通知中心の未読行と同じ accent-primary 視覚言語。一覧で一目判別）。
@@ -312,10 +317,45 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
               "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-accent-primary before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-accent-primary/[0.10] after:content-['']":
                 isMentionUnread,
             },
-            { "z-[100] bg-layer-1": isCurrentBlockDragging }
+            { "z-[100] bg-layer-1": isCurrentBlockDragging },
+            // BARSOUL ADR-029: 凍結カード(審査中) — 役割別視覚.
+            //   pending_approver (要対応): 赤左バー4px + 8% 赤底色 + 微脈動
+            //   initiator (発起人): 琥珀左バー3px + 5% 琥珀底色
+            //   queued_approver (SEQ 待ち番): 琥珀左バー3px + 4% 底色 (弱)
+            //   bystander (見守): 灰青左バー2px のみ (殆ど目立たない)
+            isFrozen && frozenRole === "pending_approver" && {
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-[#dc2626] before:content-[''] before:animate-pulse after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#dc2626]/[0.08] after:content-['']":
+                true,
+            },
+            isFrozen && frozenRole === "initiator" && {
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706] before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#d97706]/[0.05] after:content-['']":
+                true,
+            },
+            isFrozen && frozenRole === "queued_approver" && {
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706]/70 before:content-['']":
+                true,
+            },
+            isFrozen && frozenRole === "bystander" && {
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:rounded-l-lg before:bg-[#94a3b8] before:content-['']":
+                true,
+            },
+            // frozen 時に hover:cursor-pointer を抑制(クリックは peek 開けるが
+            // ドラッグ不可を視覚的に示す)
+            isFrozen && "hover:cursor-not-allowed"
           )}
           onClick={() => handleIssuePeekOverview(issue)}
           disabled={!!issue?.tempId}
+          title={
+            isFrozen
+              ? frozenRole === "pending_approver"
+                ? "🔔 あなたの審査待ち — クリックして決定/詳細"
+                : frozenRole === "queued_approver"
+                ? "⏳ 順次審査 — 前の人が承認後にあなたの番"
+                : frozenRole === "initiator"
+                ? "📋 あなたが発起した審査が進行中 — クリックで状況"
+                : "🔒 他人が審査中 — 操作不可"
+              : undefined
+          }
         >
           <RenderIfVisible
             classNames="space-y-2"

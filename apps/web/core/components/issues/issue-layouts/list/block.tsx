@@ -38,6 +38,8 @@ import {
   useIssueUnreadKind,
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
+// BARSOUL ADR-029: 凍結カード(審査中) UX
+import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 // types
@@ -125,7 +127,9 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
   const isMentionUnread = hasUnread && _lstKind === "mention";
   const subIssuesCount = issue?.sub_issues_count ?? 0;
   const canEditIssueProperties = canEditProperties(issue?.project_id ?? undefined);
-  const isDraggingAllowed = canDrag && canEditIssueProperties;
+  // BARSOUL ADR-029: 凍結カード — 拖拽 + 視覚を役割別に
+  const { frozen: isFrozen, myRole: frozenRole } = useIssueApproval(issueId);
+  const isDraggingAllowed = canDrag && canEditIssueProperties && !isFrozen;
 
   const { isMobile } = usePlatformOS();
 
@@ -215,17 +219,46 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             "bg-layer-1": isCurrentBlockDragging,
             "md:flex-row md:items-center": isSidebarCollapsed,
             "lg:flex-row lg:items-center": !isSidebarCollapsed,
+            // BARSOUL ADR-029: 凍結カード役割別視覚 (list 行版).
+            //   pending_approver: 赤左 4px + 8% 底色 + 微脈動
+            //   initiator: 琥珀左 3px + 5% 底色
+            //   queued_approver (SEQ 待ち番): 琥珀左 3px (弱)
+            //   bystander: 灰青左 2px のみ (殆ど目立たない)
+            "bg-[#dc2626]/[0.08] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-[#dc2626] before:content-[''] before:animate-pulse":
+              isFrozen && frozenRole === "pending_approver" && !isIssueSelected,
+            "bg-[#d97706]/[0.05] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[#d97706] before:content-['']":
+              isFrozen && frozenRole === "initiator" && !isIssueSelected,
+            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[#d97706]/70 before:content-['']":
+              isFrozen && frozenRole === "queued_approver" && !isIssueSelected,
+            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:bg-[#94a3b8] before:content-['']":
+              isFrozen && frozenRole === "bystander" && !isIssueSelected,
           }
         )}
         onDragStart={() => {
           if (!isDraggingAllowed) {
-            setToast({
-              type: TOAST_TYPE.WARNING,
-              title: "Cannot move work item",
-              message: !canEditIssueProperties
-                ? "You are not allowed to move this work item"
-                : "Drag and drop is disabled for the current grouping",
-            });
+            // ADR-029: 凍結カードは役割別文言で意図を明示.
+            if (isFrozen) {
+              setToast({
+                type: TOAST_TYPE.WARNING,
+                title: "🔒 審査託管中",
+                message:
+                  frozenRole === "pending_approver"
+                    ? "あなたの審査待ちです。決定/撤回してから移動できます。"
+                    : frozenRole === "initiator"
+                    ? "あなたが発起した審査が進行中。撤回するまで移動不可。"
+                    : frozenRole === "queued_approver"
+                    ? "順次審査中(あなたの番が来ます)。撤回まで移動不可。"
+                    : "他人が審査中です。承認/却下が確定するまで移動不可。",
+              });
+            } else {
+              setToast({
+                type: TOAST_TYPE.WARNING,
+                title: "Cannot move work item",
+                message: !canEditIssueProperties
+                  ? "You are not allowed to move this work item"
+                  : "Drag and drop is disabled for the current grouping",
+              });
+            }
           }
         }}
       >

@@ -140,6 +140,16 @@ export const RealtimeSync = () => {
       if (hasIssueSignal || commentIssueIds.length > 0) {
         try { refreshNotifications(); } catch { /* noop */ }
       }
+      // BARSOUL ADR-029: 凍結カード状態同期. 変動した issue 毎に
+      // ISSUE_APPROVAL SWR key を失効 → useIssueApproval re-fetch
+      // → カード視覚(役割別)が SSE 秒級で切替わる.
+      const affectedIssues = new Set<string>([
+        ...(ids || []),
+        ...commentIssueIds,
+      ]);
+      affectedIssues.forEach((iid) => {
+        try { void mutate(`ISSUE_APPROVAL:${iid}`); } catch { /* noop */ }
+      });
     };
 
     // BARSOUL peer-sync: 同一ブラウザ多タブ受信を有効化(BroadcastChannel)。
