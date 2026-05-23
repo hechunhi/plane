@@ -5,7 +5,42 @@
  */
 
 import { differenceInDays, format, formatDistanceToNow, isAfter, isEqual, isValid, parseISO } from "date-fns";
+import type { Locale } from "date-fns";
+import { ja, zhCN, zhTW } from "date-fns/locale";
 import { isNumber } from "lodash-es";
+
+// Global date-fns locale holder
+// NOTE: mapping lives here in @plane/utils (which already depends on date-fns) to
+// avoid a circular dependency — @plane/i18n depends on @plane/utils, so utils
+// MUST NOT import @plane/i18n.
+const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
+  ja,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
+
+let _dateFnsLocale: Locale | undefined = undefined;
+
+/**
+ * Resolves a Plane language code (e.g. "ja", "zh-CN", "zh-TW") to a date-fns Locale.
+ * Anything not in the map (incl. "en") resolves to undefined → date-fns English default.
+ */
+export const getDateFnsLocaleByLang = (lang: string | undefined): Locale | undefined =>
+  lang ? DATE_FNS_LOCALE_MAP[lang] : undefined;
+
+/**
+ * Sets the global date-fns locale used by the human-facing formatters in this file
+ * when no explicit `locale` argument is passed. Wired to the i18n current language
+ * from an app-level effect (see web app TranslationProvider child).
+ */
+export const setDateFnsLocaleByLang = (lang: string | undefined): void => {
+  _dateFnsLocale = getDateFnsLocaleByLang(lang);
+};
+
+/**
+ * Returns the currently active global date-fns locale (or undefined for English default).
+ */
+export const getDateFnsLocale = (): Locale | undefined => _dateFnsLocale;
 
 // Format Date Helpers
 /**
@@ -18,7 +53,8 @@ import { isNumber } from "lodash-es";
  */
 export const renderFormattedDate = (
   date: string | Date | undefined | null,
-  formatToken: string = "MMM dd, yyyy"
+  formatToken: string = "MMM dd, yyyy",
+  locale?: Locale
 ): string | undefined => {
   // Parse the date to check if it is valid
   const parsedDate = getDate(date);
@@ -26,13 +62,15 @@ export const renderFormattedDate = (
   if (!parsedDate) return;
   // Check if the parsed date is valid before formatting
   if (!isValid(parsedDate)) return; // Return null for invalid dates
+  // Explicit locale arg wins; otherwise fall back to the global holder.
+  const resolvedLocale = locale ?? _dateFnsLocale;
   let formattedDate;
   try {
     // Format the date in the format provided or default format (MMM dd, yyyy)
-    formattedDate = format(parsedDate, formatToken);
+    formattedDate = format(parsedDate, formatToken, { locale: resolvedLocale });
   } catch (_e) {
     // Format the date in format (MMM dd, yyyy) in case of any error
-    formattedDate = format(parsedDate, "MMM dd, yyyy");
+    formattedDate = format(parsedDate, "MMM dd, yyyy", { locale: resolvedLocale });
   }
   return formattedDate;
 };
@@ -43,15 +81,15 @@ export const renderFormattedDate = (
  * @param {string | Date} date
  * @example renderShortDateFormat("2024-01-01") // Jan 01
  */
-export const renderFormattedDateWithoutYear = (date: string | Date): string => {
+export const renderFormattedDateWithoutYear = (date: string | Date, locale?: Locale): string => {
   // Parse the date to check if it is valid
   const parsedDate = getDate(date);
   // return if undefined
   if (!parsedDate) return "";
   // Check if the parsed date is valid before formatting
   if (!isValid(parsedDate)) return ""; // Return empty string for invalid dates
-  // Format the date in short format (MMM dd)
-  const formattedDate = format(parsedDate, "MMM dd");
+  // Format the date in short format (MMM dd) — explicit locale wins, else holder.
+  const formattedDate = format(parsedDate, "MMM dd", { locale: locale ?? _dateFnsLocale });
   return formattedDate;
 };
 
@@ -82,20 +120,27 @@ export const renderFormattedPayloadDate = (date: Date | string | undefined | nul
  * @example renderFormattedTime("2024-01-01 13:00:00") // 13:00
  * @example renderFormattedTime("2024-01-01 13:00:00", "12-hour") // 01:00 PM
  */
-export const renderFormattedTime = (date: string | Date, timeFormat: "12-hour" | "24-hour" = "24-hour"): string => {
+export const renderFormattedTime = (
+  date: string | Date,
+  timeFormat: "12-hour" | "24-hour" = "24-hour",
+  locale?: Locale
+): string => {
   // Parse the date to check if it is valid
   const parsedDate = new Date(date);
   // return if undefined
   if (!parsedDate) return "";
   // Check if the parsed date is valid
   if (!isValid(parsedDate)) return ""; // Return empty string for invalid dates
+  // Explicit locale arg wins; otherwise fall back to the global holder.
+  // Only affects the AM/PM token in 12-hour mode; 24-hour HH:mm is pure numeric.
+  const resolvedLocale = locale ?? _dateFnsLocale;
   // Format the date in 12 hour format if in12HourFormat is true
   if (timeFormat === "12-hour") {
-    const formattedTime = format(parsedDate, "hh:mm a");
+    const formattedTime = format(parsedDate, "hh:mm a", { locale: resolvedLocale });
     return formattedTime;
   }
   // Format the date in 24 hour format
-  const formattedTime = format(parsedDate, "HH:mm");
+  const formattedTime = format(parsedDate, "HH:mm", { locale: resolvedLocale });
   return formattedTime;
 };
 
@@ -168,14 +213,15 @@ export const findHowManyDaysLeft = (
  * @param {string | Date} time
  * @example calculateTimeAgo("2023-01-01") // 1 year ago
  */
-export const calculateTimeAgo = (time: string | number | Date | null): string => {
+export const calculateTimeAgo = (time: string | number | Date | null, locale?: Locale): string => {
   if (!time) return "";
   // Parse the time to check if it is valid
   const parsedTime = typeof time === "string" || typeof time === "number" ? parseISO(String(time)) : time;
   // return if undefined
   if (!parsedTime) return ""; // Return empty string for invalid dates
-  // Format the time in the form of amount of time passed since the event happened
-  const distance = formatDistanceToNow(parsedTime, { addSuffix: true });
+  // Format the time in the form of amount of time passed since the event happened.
+  // Explicit locale arg wins; otherwise fall back to the global holder.
+  const distance = formatDistanceToNow(parsedTime, { addSuffix: true, locale: locale ?? _dateFnsLocale });
   return distance;
 };
 
@@ -491,8 +537,11 @@ export const checkDateCriteria = (dateToCheck: Date | null, filterDate: Date, ty
  */
 export const formatDateRange = (
   parsedStartDate: Date | null | undefined,
-  parsedEndDate: Date | null | undefined
+  parsedEndDate: Date | null | undefined,
+  locale?: Locale
 ): string => {
+  // Explicit locale arg wins; otherwise fall back to the global holder.
+  const fmtLocale = locale ?? _dateFnsLocale;
   // If no dates are provided
   if (!parsedStartDate && !parsedEndDate) {
     return "";
@@ -500,12 +549,12 @@ export const formatDateRange = (
 
   // If only start date is provided
   if (parsedStartDate && !parsedEndDate) {
-    return format(parsedStartDate, "MMM dd, yyyy");
+    return format(parsedStartDate, "MMM dd, yyyy", { locale: fmtLocale });
   }
 
   // If only end date is provided
   if (!parsedStartDate && parsedEndDate) {
-    return format(parsedEndDate, "MMM dd, yyyy");
+    return format(parsedEndDate, "MMM dd, yyyy", { locale: fmtLocale });
   }
 
   // If both dates are provided
@@ -517,21 +566,21 @@ export const formatDateRange = (
 
     // Same year, same month
     if (startYear === endYear && startMonth === endMonth) {
-      const startDay = format(parsedStartDate, "dd");
-      const endDay = format(parsedEndDate, "dd");
-      return `${format(parsedStartDate, "MMM")} ${startDay} - ${endDay}, ${startYear}`;
+      const startDay = format(parsedStartDate, "dd", { locale: fmtLocale });
+      const endDay = format(parsedEndDate, "dd", { locale: fmtLocale });
+      return `${format(parsedStartDate, "MMM", { locale: fmtLocale })} ${startDay} - ${endDay}, ${startYear}`;
     }
 
     // Same year, different month
     if (startYear === endYear) {
-      const startFormatted = format(parsedStartDate, "MMM dd");
-      const endFormatted = format(parsedEndDate, "MMM dd");
+      const startFormatted = format(parsedStartDate, "MMM dd", { locale: fmtLocale });
+      const endFormatted = format(parsedEndDate, "MMM dd", { locale: fmtLocale });
       return `${startFormatted} - ${endFormatted}, ${startYear}`;
     }
 
     // Different year
-    const startFormatted = format(parsedStartDate, "MMM dd, yyyy");
-    const endFormatted = format(parsedEndDate, "MMM dd, yyyy");
+    const startFormatted = format(parsedStartDate, "MMM dd, yyyy", { locale: fmtLocale });
+    const endFormatted = format(parsedEndDate, "MMM dd, yyyy", { locale: fmtLocale });
     return `${startFormatted} - ${endFormatted}`;
   }
 

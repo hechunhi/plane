@@ -43,7 +43,7 @@ from plane.app.serializers import (
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.bgtasks.issue_description_version_task import issue_description_version_task
 from plane.bgtasks.recent_visited_task import recent_visited_task
-from plane.bgtasks.webhook_task import model_activity
+from plane.bgtasks.webhook_task import model_activity, webhook_activity
 from plane.db.models import (
     CycleIssue,
     FileAsset,
@@ -724,6 +724,27 @@ class IssueViewSet(BaseViewSet):
             origin=base_host(request=request, is_app=True),
             subscriber=False,
         )
+        # BARSOUL realtime: Plane CE の destroy は webhook を発火しない
+        #   (create/update は model_activity 経由で発火するが delete は
+        #    issue_activity のみ) → 他窓口に削除が伝播しない。create/
+        #   update と同じ webhook 経路に乗せる。deleted は対象が消える
+        #   ので payload に project を載せ(独自 project_id 引数)、
+        #   ai-bot 入口級 publish → realtime-sse → client は当該 id を
+        #   retrieveIssues で取得不可 → 粗粒度再取得でカードが消える。
+        webhook_activity.delay(
+            event="issue",
+            verb="deleted",
+            field=None,
+            old_value=None,
+            new_value=None,
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(pk),
+            old_identifier=None,
+            new_identifier=None,
+            project_id=str(project_id),
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -767,7 +788,9 @@ class BulkDeleteIssuesEndpoint(BaseAPIView):
 
         issues = Issue.issue_objects.filter(workspace__slug=slug, project_id=project_id, pk__in=issue_ids)
 
-        total_issues = len(issues)
+        # BARSOUL realtime: 削除前に実在 id を確定(他窓口への伝播用)
+        existing_ids = [str(_id) for _id in issues.values_list("id", flat=True)]
+        total_issues = len(existing_ids)
 
         # First, delete all related cycle issues
         CycleIssue.objects.filter(issue_id__in=issue_ids).delete()
@@ -777,6 +800,24 @@ class BulkDeleteIssuesEndpoint(BaseAPIView):
 
         # Finally, delete the issues themselves
         issues.delete()
+
+        # BARSOUL realtime: 一括削除も destroy 同様 webhook を発火させ
+        #   他窓口に伝播(Plane CE は元来何も発火しない=最悪の無音削除)。
+        for _iid in existing_ids:
+            webhook_activity.delay(
+                event="issue",
+                verb="deleted",
+                field=None,
+                old_value=None,
+                new_value=None,
+                actor_id=str(request.user.id),
+                slug=slug,
+                current_site=base_host(request=request, is_app=True),
+                event_id=_iid,
+                old_identifier=None,
+                new_identifier=None,
+                project_id=str(project_id),
+            )
 
         return Response(
             {"message": f"{total_issues} issues were deleted"},

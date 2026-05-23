@@ -24,6 +24,7 @@ from plane.app.serializers import (
     IssueDetailSerializer,
 )
 from plane.bgtasks.issue_activities_task import issue_activity
+from plane.bgtasks.webhook_task import webhook_activity
 from plane.db.models import (
     Issue,
     FileAsset,
@@ -275,6 +276,25 @@ class IssueArchiveViewSet(BaseViewSet):
         issue.archived_at = timezone.now().date()
         issue.save()
 
+        # BARSOUL realtime: archive も webhook を発火(Plane CE は
+        #   issue_activity のみで webhook 無し → 他窓口で消えない)。
+        #   issue は存在し続けるので verb=updated → payload に project
+        #   含む → ai-bot → realtime-sse → client は retrieveIssues で
+        #   archived を取得不可(板から除外) → 粗粒度再取得で消える。
+        webhook_activity.delay(
+            event="issue",
+            verb="updated",
+            field="archived_at",
+            old_value=None,
+            new_value=str(issue.archived_at),
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(issue.id),
+            old_identifier=None,
+            new_identifier=None,
+        )
+
         return Response({"archived_at": str(issue.archived_at)}, status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
@@ -298,6 +318,22 @@ class IssueArchiveViewSet(BaseViewSet):
         )
         issue.archived_at = None
         issue.save()
+
+        # BARSOUL realtime: unarchive も webhook 発火 → 他窓口でカードが
+        #   復活する(client は粗粒度再取得で板に再出現)。
+        webhook_activity.delay(
+            event="issue",
+            verb="updated",
+            field="archived_at",
+            old_value=None,
+            new_value=None,
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(issue.id),
+            old_identifier=None,
+            new_identifier=None,
+        )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -339,5 +375,21 @@ class BulkArchiveIssuesEndpoint(BaseAPIView):
             issue.archived_at = timezone.now().date()
             bulk_archive_issues.append(issue)
         Issue.objects.bulk_update(bulk_archive_issues, ["archived_at"])
+
+        # BARSOUL realtime: 一括 archive も webhook 発火(他窓口伝播)。
+        for _ai in bulk_archive_issues:
+            webhook_activity.delay(
+                event="issue",
+                verb="updated",
+                field="archived_at",
+                old_value=None,
+                new_value=str(_ai.archived_at),
+                actor_id=str(request.user.id),
+                slug=slug,
+                current_site=base_host(request=request, is_app=True),
+                event_id=str(_ai.id),
+                old_identifier=None,
+                new_identifier=None,
+            )
 
         return Response({"archived_at": str(timezone.now().date())}, status=status.HTTP_200_OK)

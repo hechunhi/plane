@@ -13,6 +13,10 @@ import { TranslationProvider } from "@plane/i18n";
 import { Toast } from "@plane/propel/toast";
 // helpers
 import { resolveGeneralTheme } from "@plane/utils";
+// components
+import { DateLocaleSync } from "@/components/core/date-locale-sync";
+import { PeerSyncBridge } from "@/components/core/peer-sync-bridge";
+import { RealtimeSync } from "@/components/core/realtime-sync";
 // mobx store provider
 import { StoreProvider } from "@/lib/store-context";
 
@@ -43,11 +47,16 @@ export function AppProvider(props: IAppProvider) {
       <>
         <AppProgressBar />
         <TranslationProvider>
+          <DateLocaleSync />
           <Toast theme={resolveGeneralTheme(resolvedTheme)} />
           <StoreWrapper>
             <InstanceWrapper>
               <Suspense>
-                <SWRConfig value={WEB_SWR_CONFIG}>{children}</SWRConfig>
+                <SWRConfig value={WEB_SWR_CONFIG}>
+                  <RealtimeSync />
+                  <PeerSyncBridge />
+                  {children}
+                </SWRConfig>
               </Suspense>
             </InstanceWrapper>
           </StoreWrapper>

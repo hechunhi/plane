@@ -5,9 +5,11 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+import { applyRealtimeBoardUpdate, type RTViewStore } from "@/components/core/realtime-apply";
+import { useRealtimeVersion } from "@/components/core/realtime-bus";
 // plane imports
 import { EIssueGroupByToServerOptions, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
@@ -53,7 +55,7 @@ export const BaseCalendarRoot = observer(function BaseCalendarRoot(props: IBaseC
   } = props;
 
   // router
-  const { workspaceSlug } = useParams();
+  const { workspaceSlug, projectId } = useParams();
 
   // hooks
   const fallbackStoreType = useIssueStoreType() as CalendarStoreType;
@@ -103,6 +105,41 @@ export const BaseCalendarRoot = observer(function BaseCalendarRoot(props: IBaseC
       );
     }
   }, [fetchIssues, storeType, startDate, endDate, layout, viewId]);
+
+  // BARSOUL 看板実時失効(外科手術版): 変更 issue id のカードのみ
+  //   Plane 自身の単 issue store 更新経路で差し替え。id 無し/削除等のみ
+  //   従来の fetchIssues("mutation") 粗粒度退化(カレンダーは日付窓
+  //   付き)。初回マウントは必ずスキップ(init-loader 競合の根治)。
+  const rtVersion = useRealtimeVersion(projectId?.toString());
+  const rtFirst = useRef(true);
+  useEffect(() => {
+    if (rtFirst.current) {
+      rtFirst.current = false;
+      return;
+    }
+    void applyRealtimeBoardUpdate({
+      store: issues as unknown as RTViewStore,
+      workspaceSlug: workspaceSlug?.toString() ?? "",
+      projectId: projectId?.toString() ?? "",
+      isEpic,
+      coarseRefetch: () => {
+        if (startDate && endDate && layout) {
+          fetchIssues(
+            "mutation",
+            {
+              canGroup: true,
+              perPageCount: layout === "month" ? 4 : 30,
+              before: endDate,
+              after: startDate,
+              groupedBy: EIssueGroupByToServerOptions["target_date"],
+            },
+            viewId
+          );
+        }
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rtVersion]);
 
   const handleDragAndDrop = async (
     issueId: string | undefined,

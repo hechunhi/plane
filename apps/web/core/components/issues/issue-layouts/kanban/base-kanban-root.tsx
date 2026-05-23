@@ -11,6 +11,8 @@ import { dropTargetForElements } from "@atlaskit/pragmatic-drag-and-drop/element
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+import { applyRealtimeBoardUpdate, type RTViewStore } from "@/components/core/realtime-apply";
+import { useRealtimeVersion } from "@/components/core/realtime-bus";
 import { EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { EIssuesStoreType } from "@plane/types";
 import { EIssueServiceType, EIssueLayoutTypes } from "@plane/types";
@@ -98,6 +100,32 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
   useEffect(() => {
     fetchIssues("init-loader", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId);
   }, [fetchIssues, storeType, group_by, sub_group_by, viewId]);
+
+  // BARSOUL 看板実時失効(外科手術版): SSE invalidate 後 rtVersion 変化
+  //   【のみ】で発火 → realtimeBus.drain で変更 issue id を取り出し、
+  //   その id のカードだけ Plane 自身の単 issue store 更新経路で差し替え
+  //   (= 1枚動かして全カード再描画、を根治)。id 無し/削除等のみ従来の
+  //   fetchIssues("mutation") 粗粒度退化。
+  // ★マウント時は必ずスキップ: init-loader フェッチと競合させない
+  //   (= スケルトン固着の根治。rtVersion は generation を含むため
+  //    マウント時点で >0 になり得る → 値比較ではなく ref で初回除外)。
+  const rtVersion = useRealtimeVersion(projectId?.toString());
+  const rtFirst = useRef(true);
+  useEffect(() => {
+    if (rtFirst.current) {
+      rtFirst.current = false;
+      return;
+    }
+    void applyRealtimeBoardUpdate({
+      store: issues as unknown as RTViewStore,
+      workspaceSlug: workspaceSlug?.toString() ?? "",
+      projectId: projectId?.toString() ?? "",
+      isEpic,
+      coarseRefetch: () =>
+        fetchIssues("mutation", { canGroup: true, perPageCount: sub_group_by ? 10 : 30 }, viewId),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rtVersion]);
 
   const fetchMoreIssues = useCallback(
     (groupId?: string, subgroupId?: string) => {

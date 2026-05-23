@@ -9,6 +9,7 @@ import { set } from "lodash-es";
 import { action, computed, makeObservable, observable, runInAction } from "mobx";
 import type { IUserLite, TNotification, TNotificationData } from "@plane/types";
 // services
+import { peerSync } from "@/components/core/peer-sync";
 import workspaceNotificationService from "@/services/workspace-notification.service";
 // store
 import type { CoreRootStore } from "../root.store";
@@ -199,6 +200,9 @@ export class Notification implements INotification {
       };
       this.store.workspaceNotification.setUnreadNotificationsCount("decrement");
       runInAction(() => this.mutateNotification(payload));
+      // BARSOUL peer-sync: 楽観更新直後に peer へ。他窓口は同じ
+      //   mutateNotification を冪等適用(既読/未読/帰档/snooze 一律)。
+      peerSync.broadcast("notif.mutate", { nid: this.id, patch: payload });
       const notification = await workspaceNotificationService.markNotificationAsRead(workspaceSlug, this.id);
       if (notification) {
         runInAction(() => this.mutateNotification(notification));
@@ -224,6 +228,7 @@ export class Notification implements INotification {
       };
       this.store.workspaceNotification.setUnreadNotificationsCount("increment");
       runInAction(() => this.mutateNotification(payload));
+      peerSync.broadcast("notif.mutate", { nid: this.id, patch: payload });
       const notification = await workspaceNotificationService.markNotificationAsUnread(workspaceSlug, this.id);
       if (notification) {
         runInAction(() => this.mutateNotification(notification));
@@ -248,6 +253,7 @@ export class Notification implements INotification {
         archived_at: new Date().toISOString(),
       };
       runInAction(() => this.mutateNotification(payload));
+      peerSync.broadcast("notif.mutate", { nid: this.id, patch: payload });
       const notification = await workspaceNotificationService.markNotificationAsArchived(workspaceSlug, this.id);
       if (notification) {
         runInAction(() => this.mutateNotification(notification));
@@ -271,6 +277,7 @@ export class Notification implements INotification {
         archived_at: undefined,
       };
       runInAction(() => this.mutateNotification(payload));
+      peerSync.broadcast("notif.mutate", { nid: this.id, patch: payload });
       const notification = await workspaceNotificationService.markNotificationAsUnArchived(workspaceSlug, this.id);
       if (notification) {
         runInAction(() => this.mutateNotification(notification));
@@ -295,6 +302,7 @@ export class Notification implements INotification {
         snoozed_till: snoozeTill.toISOString(),
       };
       runInAction(() => this.mutateNotification(payload));
+      peerSync.broadcast("notif.mutate", { nid: this.id, patch: payload });
       const notification = await workspaceNotificationService.updateNotificationById(workspaceSlug, this.id, payload);
       return notification;
     } catch (error) {

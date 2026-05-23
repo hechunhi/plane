@@ -5,9 +5,11 @@
  */
 
 import type { FC } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+import { applyRealtimeBoardUpdate, type RTViewStore } from "@/components/core/realtime-apply";
+import { useRealtimeVersion } from "@/components/core/realtime-bus";
 // plane imports
 import { ALL_ISSUES, EIssueFilterType, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { EIssuesStoreType, IIssueDisplayFilterOptions } from "@plane/types";
@@ -42,7 +44,7 @@ interface IBaseSpreadsheetRoot {
 export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: IBaseSpreadsheetRoot) {
   const { QuickActions, canEditPropertiesBasedOnProject, isCompletedCycle = false, viewId, isEpic = false } = props;
   // router
-  const { projectId } = useParams();
+  const { workspaceSlug, projectId } = useParams();
   // store hooks
   const storeType = useIssueStoreType() as SpreadsheetStoreType;
   const { allowPermissions } = useUserPermissions();
@@ -69,6 +71,27 @@ export const BaseSpreadsheetRoot = observer(function BaseSpreadsheetRoot(props: 
   useEffect(() => {
     fetchIssues("init-loader", { canGroup: false, perPageCount: 100 }, viewId);
   }, [fetchIssues, storeType, viewId]);
+
+  // BARSOUL 看板実時失効(外科手術版): 変更 issue id のカードのみ
+  //   Plane 自身の単 issue store 更新経路で差し替え。id 無し/削除等のみ
+  //   従来の fetchIssues("mutation") 粗粒度退化。初回マウントは必ず
+  //   スキップ(init-loader と競合→スケルトン固着の根治)。
+  const rtVersion = useRealtimeVersion(projectId?.toString());
+  const rtFirst = useRef(true);
+  useEffect(() => {
+    if (rtFirst.current) {
+      rtFirst.current = false;
+      return;
+    }
+    void applyRealtimeBoardUpdate({
+      store: issues as unknown as RTViewStore,
+      workspaceSlug: workspaceSlug?.toString() ?? "",
+      projectId: projectId?.toString() ?? "",
+      isEpic,
+      coarseRefetch: () => fetchIssues("mutation", { canGroup: false, perPageCount: 100 }, viewId),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rtVersion]);
 
   const canEditProperties = useCallback(
     (projectId: string | undefined) => {

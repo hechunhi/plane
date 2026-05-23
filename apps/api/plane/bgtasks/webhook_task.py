@@ -387,6 +387,8 @@ def webhook_activity(
     event_id: str | uuid.UUID,
     old_identifier: Optional[str],
     new_identifier: Optional[str],
+    project_id: Optional[str] = None,
+    parent_issue_id: Optional[str] = None,
 ) -> None:
     """
     Process and send webhook notifications for various activities in the system.
@@ -437,7 +439,22 @@ def webhook_activity(
                 webhook_id=webhook.id,
                 slug=slug,
                 event=event,
-                event_data=({"id": event_id} if verb == "deleted" else get_model_data(event=event, event_id=event_id)),
+                event_data=(
+                    (
+                        {
+                            "id": event_id,
+                            **({"project": project_id} if project_id else {}),
+                            # BARSOUL: 削除 webhook に親 issue を載せる。
+                            #   issue_comment 削除時 ai-bot は data["issue"]
+                            #   で対象 issue を特定 → 開いてるパネルだけ
+                            #   再取得(対象オブジェクトは消えてるので
+                            #   親 id を明示的に渡すしかない)。
+                            **({"issue": parent_issue_id} if parent_issue_id else {}),
+                        }
+                    )
+                    if verb == "deleted"
+                    else get_model_data(event=event, event_id=event_id)
+                ),
                 action=verb,
                 current_site=current_site,
                 activity={

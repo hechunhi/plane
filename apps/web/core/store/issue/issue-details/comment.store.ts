@@ -22,6 +22,7 @@ export interface IIssueCommentStoreActions {
     issueId: string,
     loaderType?: TCommentLoader
   ) => Promise<TIssueComment[]>;
+  fetchCommentsReplace: (workspaceSlug: string, projectId: string, issueId: string) => Promise<TIssueComment[]>;
   createComment: (
     workspaceSlug: string,
     projectId: string,
@@ -67,6 +68,7 @@ export class IssueCommentStore implements IIssueCommentStore {
       commentMap: observable,
       // actions
       fetchComments: action,
+      fetchCommentsReplace: action,
       createComment: action,
       updateComment: action,
       removeComment: action,
@@ -119,6 +121,27 @@ export class IssueCommentStore implements IIssueCommentStore {
       this.loader = undefined;
     });
 
+    return comments;
+  };
+
+  // BARSOUL realtime: 全件再取得して issue のコメント ID リストを
+  //   【置換】(append しない)。`fetchComments` は created_at__gt の
+  //   増分 append 専用 → 他窓口での編集/削除が永久に反映されない
+  //   (この class の根因)。本メソッドは全件 GET → comments[issueId]
+  //   を丸ごと差し替え + commentMap upsert。レンダは comment id を
+  //   key にしているので React が差分照合: 変更行のみ再描画・削除行
+  //   のみ unmount・新規のみ mount = フラッシュ無し。loader は
+  //   触らない(静かな背景同期。スケルトンを出さない)。
+  fetchCommentsReplace = async (workspaceSlug: string, projectId: string, issueId: string) => {
+    const comments = await this.issueCommentService.getIssueComments(workspaceSlug, projectId, issueId, {});
+    const commentIds = comments.map((comment) => comment.id);
+    runInAction(() => {
+      set(this.comments, issueId, commentIds); // 増分 concat ではなく置換
+      comments.forEach((comment) => {
+        this.rootIssueDetail.commentReaction.applyCommentReactions(comment.id, comment?.comment_reactions || []);
+        set(this.commentMap, comment.id, comment);
+      });
+    });
     return comments;
   };
 
