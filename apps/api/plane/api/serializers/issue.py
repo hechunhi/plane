@@ -721,6 +721,19 @@ class IssueCommentSerializer(BaseSerializer):
     """
 
     is_member = serializers.BooleanField(read_only=True)
+    # BARSOUL: 评论翻译派生层 — {target_lang: {text, source_lang, by, at}}
+    translations = serializers.SerializerMethodField(read_only=True)
+
+    def get_translations(self, obj):
+        out = {}
+        for tr in obj.translations.all():
+            out[tr.target_lang] = {
+                "text": tr.text,
+                "source_lang": tr.source_lang,
+                "by": tr.translated_by,
+                "at": tr.updated_at.isoformat() if tr.updated_at else "",
+            }
+        return out
 
     class Meta:
         model = IssueComment

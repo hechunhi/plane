@@ -24,6 +24,171 @@ import { EmojiReactionButton, EmojiReactionPicker } from "@plane/propel/emoji-re
 import { Avatar, Tooltip } from "@plane/ui";
 import { useMember } from "@/hooks/store/use-member";
 
+// BARSOUL: 評論翻訳派生層 — X 式 UX (即点即译, 永遠ボタン表示)。
+// 設計:
+//  - 異言語コメントには常に下部小リンク「翻訳 / 翻译」を出す(X/Twitter 範式)
+//  - クリック → キャッシュ命中=即展開, 未命中=loading→LLM→展開
+//  - 原 comment_html は不可変(真相)。translations は API 派生キャッシュ。
+//  - AI 自身のコメントは対象外(自分翻訳ループ防止)
+// localStorage `aichan.autoTranslateOpen` で「自動で全て展開」プリファレンス。
+const TR_AUTO_KEY = "aichan.autoTranslateOpen";
+const AI_USER_ID = "0e50881c-df94-4233-ad7e-65f943f62550"; // 愛ちゃん
+
+// 文字種探知 → 起点言語推定
+const HK_RE = /[぀-ゟ゠-ヿ]/; // ひらがな/カタカナ
+const HAN_RE = /[一-鿿]/; // 漢字
+function detectSrc(text: string): "ja" | "zh" | null {
+  if (HK_RE.test(text)) return "ja";
+  if (HAN_RE.test(text)) return "zh";
+  return null;
+}
+// 起点→目標(本チームは日中双方向): ja→zh, zh→ja
+function targetFor(src: "ja" | "zh"): "ja" | "zh" {
+  return src === "ja" ? "zh" : "ja";
+}
+// 起点+目標 → ボタン文字(目標言語の話者が読む想定)
+function buttonLabel(src: "ja" | "zh", state: "idle" | "loading"): string {
+  const tgt = targetFor(src);
+  if (state === "loading") return tgt === "zh" ? "翻译中…" : "翻訳中…";
+  // 起点が日本語 → 目標中文の読者が「翻译」を見る
+  return tgt === "zh" ? "翻译" : "訳す";
+}
+
+function CommentTranslateButton(props: {
+  workspaceSlug: string;
+  projectId: string;
+  issueId: string;
+  comment: any;
+  commentText: string;
+  actorId: string | undefined;
+}) {
+  const { workspaceSlug, projectId, issueId, comment, commentText, actorId } = props;
+  // 起点言語推定 — 異言語が含まれない短文は対象外
+  const src = detectSrc(commentText);
+  // AI 自身のコメントはスキップ(自動翻訳ループ防止)
+  const isAi = actorId === AI_USER_ID;
+
+  // 初期: localStorage の自動展開フラグ + サーバ既存キャッシュ
+  const cachedFromServer = src
+    ? (comment?.translations as any)?.[targetFor(src)]
+    : null;
+  const [autoOpen, setAutoOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(TR_AUTO_KEY) === "1";
+  });
+  const [text, setText] = useState<string | null>(cachedFromServer?.text || null);
+  const [expanded, setExpanded] = useState<boolean>(!!(autoOpen && cachedFromServer?.text));
+  const [loading, setLoading] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // 自動展開モード切替時の追随
+  useEffect(() => {
+    if (autoOpen && text) setExpanded(true);
+  }, [autoOpen, text]);
+  // 別タブの設定変更追従
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === TR_AUTO_KEY) setAutoOpen(e.newValue === "1");
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  if (!src || isAi || !commentText.trim()) return null;
+
+  const tgt = targetFor(src);
+
+  const onToggle = async () => {
+    setErrorMsg(null);
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    if (text) {
+      setExpanded(true);
+      return;
+    }
+    // fetch
+    setLoading(true);
+    try {
+      const r = await fetch(
+        `/api/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issueId}/comments/${comment.id}/translate/`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+          body: JSON.stringify({ target_lang: tgt }),
+        }
+      );
+      const j = await r.json();
+      if (!r.ok) {
+        setErrorMsg(j?.error || `翻译失败 (${r.status})`);
+      } else {
+        setText(j.text || "");
+        setExpanded(true);
+      }
+    } catch (e: any) {
+      setErrorMsg("ネットワーク错误 / 网络错误");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleAuto = (e: React.MouseEvent | React.ChangeEvent) => {
+    e.stopPropagation();
+    const next = !autoOpen;
+    setAutoOpen(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(TR_AUTO_KEY, next ? "1" : "0");
+    }
+  };
+
+  return (
+    <div className="mt-1 select-none">
+      <div className="flex items-center gap-3 text-[11px] text-tertiary">
+        <button
+          type="button"
+          onClick={onToggle}
+          disabled={loading}
+          className="hover:text-secondary hover:underline transition-colors disabled:opacity-60 disabled:cursor-wait"
+          aria-expanded={expanded}
+        >
+          {loading ? (
+            <span className="inline-flex items-center gap-1">
+              <span className="inline-block size-3 border border-tertiary border-t-transparent rounded-full animate-spin" />
+              {buttonLabel(src, "loading")}
+            </span>
+          ) : expanded ? (
+            <span>{tgt === "zh" ? "收起翻译" : "折りたたむ"}</span>
+          ) : (
+            <span>{buttonLabel(src, "idle")}</span>
+          )}
+        </button>
+        {!expanded && !loading && (
+          <label className="opacity-50 hover:opacity-100 transition-opacity cursor-pointer flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={autoOpen}
+              onChange={toggleAuto}
+              className="size-2.5 cursor-pointer"
+            />
+            <span>自動展開 / 自动展开</span>
+          </label>
+        )}
+      </div>
+      {errorMsg && (
+        <div className="mt-1 text-[11px] text-red-500">{errorMsg}</div>
+      )}
+      {expanded && text && (
+        <div className="mt-1.5 text-caption-sm-regular text-secondary whitespace-pre-wrap leading-relaxed border-l-2 border-tertiary/20 pl-2">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export type TCommentCardDisplayProps = {
   activityOperations: TCommentsOperations;
   comment: TIssueComment;
@@ -173,6 +338,15 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
               fontSize: "small-font",
             }}
             parentClassName="border-none"
+          />
+          {/* BARSOUL: 評論翻訳 X 式 即点即译ボタン (異言語コメントのみ恒常表示) */}
+          <CommentTranslateButton
+            workspaceSlug={workspaceSlug}
+            projectId={String(projectId || "")}
+            issueId={String((comment as any).issue || "")}
+            comment={comment}
+            commentText={(comment as any).comment_stripped || ""}
+            actorId={comment?.actor}
           />
           {shouldRenderReactions &&
             (renderFooter ? (

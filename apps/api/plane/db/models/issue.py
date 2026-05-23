@@ -810,3 +810,32 @@ class IssueDescriptionVersion(ProjectBaseModel):
         except Exception as e:
             log_exception(e)
             return False
+
+
+# BARSOUL: 评论翻译派生层 (愛ちゃん 自动翻译 内嵌化, 替代原"独立评论"路径)
+# 真相=原 IssueComment, 派生=本表(可重译/可删, 不污染主轨)。每条评论 × 目标
+# 语言唯一。upsert by (comment, target_lang)。前端折叠渲染 + 用户开关自动展开。
+class CommentTranslation(ProjectBaseModel):
+    comment = models.ForeignKey(
+        IssueComment, on_delete=models.CASCADE,
+        related_name="translations")
+    target_lang = models.CharField(max_length=8)   # e.g. "ja","zh","en"
+    source_lang = models.CharField(max_length=8, blank=True, default="")
+    text = models.TextField(blank=True, default="")
+    translated_by = models.CharField(max_length=64, blank=True, default="aichan")
+
+    class Meta:
+        verbose_name = "Comment Translation"
+        verbose_name_plural = "Comment Translations"
+        db_table = "comment_translations"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "target_lang"],
+                name="uniq_comment_translation_per_lang"),
+        ]
+        indexes = [
+            models.Index(fields=["comment", "target_lang"]),
+        ]
+
+    def __str__(self):
+        return f"{self.comment_id}:{self.target_lang}"

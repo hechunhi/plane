@@ -19,10 +19,15 @@ from rest_framework import status
 from .. import BaseViewSet
 from plane.app.serializers import IssueCommentSerializer, CommentReactionSerializer
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueComment, ProjectMember, CommentReaction, Project, Issue
+from plane.db.models import IssueComment, ProjectMember, CommentReaction, Project, Issue, CommentTranslation
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
-from plane.bgtasks.webhook_task import model_activity
+from plane.bgtasks.webhook_task import model_activity, webhook_activity
+# BARSOUL: lazy translate (X-style 即点即译)
+import os
+import re
+import requests as _req
+from rest_framework.views import APIView
 
 
 class IssueCommentViewSet(BaseViewSet):
@@ -157,7 +162,158 @@ class IssueCommentViewSet(BaseViewSet):
             notification=True,
             origin=base_host(request=request, is_app=True),
         )
+        # BARSOUL realtime: Plane CE のコメント destroy は webhook 未発火
+        #   (create/partial_update は model_activity 発火) → 他窓口で
+        #   削除コメントが消えない。create/update と同じ issue_comment
+        #   webhook に乗せる。deleted は対象が消えるので親 issue を明示
+        #   付与 → ai-bot _ct_pub が data["issue"] で対象特定 → 開いてる
+        #   パネルのみ comment store を全再取得(削除/編集も反映)。
+        webhook_activity.delay(
+            event="issue_comment",
+            verb="deleted",
+            field=None,
+            old_value=None,
+            new_value=None,
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(pk),
+            old_identifier=None,
+            new_identifier=None,
+            project_id=str(project_id),
+            parent_issue_id=str(issue_id),
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# BARSOUL: X-style 即点即译 — cookie auth, project member, lazy LLM gateway.
+# 缓存命中 → 即刻返;缓存未命中 → 调 LLM 网关 → upsert 派生表 → 返。
+# ai-bot autotranslate 仍在后台预热缓存(写入時),大多数点击会命中。
+_HTML_STRIP = re.compile(r"<[^>]+>")
+_WS = re.compile(r"\s+")
+_HK_RE = re.compile(r"[぀-ゟ゠-ヿ]")  # ひらがな/カタカナ
+_HAN_RE = re.compile(r"[一-鿿]")
+
+
+def _strip(h):
+    return _WS.sub(" ", _HTML_STRIP.sub(" ", h or "")).strip()
+
+
+def _detect_src(text):
+    """Return source lang code or None."""
+    if _HK_RE.search(text):
+        return "ja"
+    if _HAN_RE.search(text):
+        return "zh"
+    return None
+
+
+def _call_llm(text, src, tgt):
+    """Call LLM gateway with simple translation prompt. Returns translated str."""
+    url = os.environ.get("LLM_GATEWAY_URL", "").strip()
+    if not url:
+        return ""
+    src_label = "日本語" if src == "ja" else ("中文" if src == "zh" else src)
+    tgt_label = "中文（簡体字）" if tgt == "zh" else ("日本語" if tgt == "ja" else tgt)
+    sys = (
+        f"あなたは越境EC企業 BARSOUL(大阪・日中チーム)の業務翻訳者。"
+        f"次の{src_label}コメントを{tgt_label}に訳してください。"
+        "出力は訳文のみ(前置き・引用符・原文併記なし)。"
+        "人名・メンション・固有名詞・数値・日付は保持。"
+    )
+    try:
+        r = _req.post(
+            url,
+            json={
+                "model": "default",
+                "messages": [
+                    {"role": "system", "content": sys},
+                    {"role": "user", "content": text[:1500]},
+                ],
+                "temperature": 0.2,
+                "max_tokens": 800,
+            },
+            timeout=60,
+        )
+        if r.status_code != 200:
+            return ""
+        j = r.json()
+        msg = ((j.get("choices") or [{}])[0] or {}).get("message", {}) or {}
+        out = (msg.get("content") or "").strip()
+        # strip common preambles
+        for p in ("【", "訳:", "翻訳:", "译文:", "中文:", "日本語:"):
+            if out.startswith(p) and "\n" in out:
+                out = out.split("\n", 1)[1].strip()
+        return out
+    except Exception:
+        return ""
+
+
+class CommentTranslateOnDemandEndpoint(APIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/comments/{cid}/translate/
+    Body: {target_lang: "zh"|"ja"}
+    Cookie auth (project member)。缓存命中即返,未命中 LLM + upsert。"""
+
+    permission_classes = []  # cookie auth via DEFAULT, project member checked manually
+
+    def post(self, request, slug, project_id, issue_id, comment_id):
+        if not request.user or not request.user.is_authenticated:
+            return Response({"error": "auth required"}, status=status.HTTP_401_UNAUTHORIZED)
+        if not ProjectMember.objects.filter(
+            workspace__slug=slug, project_id=project_id,
+            member_id=request.user.id, is_active=True,
+        ).exists():
+            return Response({"error": "not a project member"}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            comment = IssueComment.objects.get(
+                pk=comment_id, workspace__slug=slug,
+                project_id=project_id, issue_id=issue_id,
+            )
+        except IssueComment.DoesNotExist:
+            return Response({"error": "comment not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        target_lang = (request.data or {}).get("target_lang", "").strip().lower()[:8]
+        if not target_lang:
+            return Response({"error": "target_lang required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Cache hit (含 soft-deleted 复活)
+        cache = CommentTranslation.all_objects.filter(
+            comment=comment, target_lang=target_lang
+        ).first()
+        if cache and not cache.deleted_at and cache.text:
+            return Response({
+                "text": cache.text, "source_lang": cache.source_lang,
+                "by": cache.translated_by, "cached": True,
+            })
+
+        # Cache miss → LLM
+        src_text = _strip(comment.comment_html or "")
+        if not src_text:
+            return Response({"error": "empty source"}, status=status.HTTP_400_BAD_REQUEST)
+        src = _detect_src(src_text) or "auto"
+        translated = _call_llm(src_text, src, target_lang)
+        if not translated:
+            return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        if cache:  # revive soft-deleted
+            cache.text = translated
+            cache.source_lang = src if src != "auto" else cache.source_lang
+            cache.translated_by = "ondemand"
+            cache.deleted_at = None
+            cache.updated_by_id = request.user.id
+            cache.save()
+        else:
+            CommentTranslation.objects.create(
+                comment=comment, target_lang=target_lang,
+                project_id=project_id, workspace_id=comment.workspace_id,
+                text=translated, source_lang=src,
+                translated_by="ondemand",
+                created_by_id=request.user.id, updated_by_id=request.user.id,
+            )
+        return Response({
+            "text": translated, "source_lang": src,
+            "by": "ondemand", "cached": False,
+        })
 
 
 class CommentReactionViewSet(BaseViewSet):

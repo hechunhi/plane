@@ -73,6 +73,7 @@ from plane.db.models import (
     IssueActivity,
     FileAsset,
     IssueComment,
+    CommentTranslation,
     IssueLink,
     IssueRelation,
     Label,
@@ -86,7 +87,7 @@ from plane.bgtasks.storage_metadata_task import get_asset_object_metadata
 from .base import BaseAPIView
 from plane.utils.host import base_host
 from plane.utils.issue_relation_mapper import get_actual_relation
-from plane.bgtasks.webhook_task import model_activity
+from plane.bgtasks.webhook_task import model_activity, webhook_activity
 from plane.app.permissions import ROLE
 from plane.utils.openapi import (
     work_item_docs,
@@ -853,6 +854,24 @@ class IssueDetailAPIEndpoint(BaseAPIView):
             # BARSOUL: 上流の渡し忘れ修正（削除通知）。
             notification=True,
             origin=base_host(request=request, is_app=True),
+        )
+        # BARSOUL realtime: v1 公開 API の削除も webhook を発火
+        #   (app API の destroy と同様 Plane CE は未発火 → 他窓口/外部
+        #    連携に削除が伝播しない)。deleted は対象が消えるので payload
+        #   に project を載せ ai-bot → realtime-sse → 他窓口でカード消滅。
+        webhook_activity.delay(
+            event="issue",
+            verb="deleted",
+            field=None,
+            old_value=None,
+            new_value=None,
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(pk),
+            old_identifier=None,
+            new_identifier=None,
+            project_id=str(project_id),
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -1682,6 +1701,117 @@ class IssueCommentDetailAPIEndpoint(BaseAPIView):
             current_instance=current_instance,
             epoch=int(timezone.now().timestamp()),
         )
+        # BARSOUL realtime: v1 公開 API のコメント削除も webhook 発火
+        #   (app destroy と同 parity)。親 issue を明示付与。
+        webhook_activity.delay(
+            event="issue_comment",
+            verb="deleted",
+            field=None,
+            old_value=None,
+            new_value=None,
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(pk),
+            old_identifier=None,
+            new_identifier=None,
+            project_id=str(project_id),
+            parent_issue_id=str(issue_id),
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
+    """BARSOUL: 评论翻译派生层 写入端点 (愛ちゃん 内嵌翻译)。
+    POST /api/v1/workspaces/{slug}/projects/{pid}/issues/{iid}/comments/{cid}/translations/
+    Body: {target_lang, text, source_lang?}
+    Auth: ProjectLitePermission (X-Api-Key 走 ai-bot=愛ちゃん 项目成员 token)。
+    Upsert by (comment, target_lang)。原 comment_html 永不修改。"""
+
+    permission_classes = [ProjectLitePermission]
+
+    def post(self, request, slug, project_id, issue_id, comment_id):
+        try:
+            comment = IssueComment.objects.get(
+                pk=comment_id,
+                workspace__slug=slug,
+                project_id=project_id,
+                issue_id=issue_id,
+            )
+        except IssueComment.DoesNotExist:
+            return Response(
+                {"error": "Comment not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        body = request.data or {}
+        target_lang = (body.get("target_lang") or "").strip().lower()[:8]
+        text = body.get("text") or ""
+        if not target_lang or not text.strip():
+            return Response(
+                {"error": "target_lang and text required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        source_lang = (body.get("source_lang") or "").strip().lower()[:8]
+        translated_by = (body.get("translated_by") or "aichan")[:64]
+
+        # BARSOUL: SoftDeleteModel 派生 — 既存(削除済含む) を all_objects で逆引き。
+        # 削除済を見つけたら deleted_at をクリアして「復活+更新」。
+        # SoftDeletionManager(objects) で update_or_create すると削除済を見ず
+        # CREATE → UNIQUE(comment,target_lang) 衝突で 400 IntegrityError 化する罠。
+        obj = CommentTranslation.all_objects.filter(
+            comment=comment, target_lang=target_lang
+        ).first()
+        if obj:
+            obj.deleted_at = None
+            obj.text = text
+            obj.source_lang = source_lang
+            obj.translated_by = translated_by
+            obj.updated_by_id = request.user.id if request.user.is_authenticated else None
+            obj.save()
+            created = False
+        else:
+            obj = CommentTranslation.objects.create(
+                comment=comment,
+                target_lang=target_lang,
+                project_id=project_id,
+                workspace_id=comment.workspace_id,
+                text=text,
+                source_lang=source_lang,
+                translated_by=translated_by,
+                created_by_id=request.user.id if request.user.is_authenticated else None,
+                updated_by_id=request.user.id if request.user.is_authenticated else None,
+            )
+            created = True
+        return Response(
+            {
+                "id": str(obj.id),
+                "comment": str(comment.id),
+                "target_lang": obj.target_lang,
+                "source_lang": obj.source_lang,
+                "text": obj.text,
+                "translated_by": obj.translated_by,
+                "created": created,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    def delete(self, request, slug, project_id, issue_id, comment_id):
+        target_lang = request.query_params.get("target_lang", "").strip().lower()[:8]
+        if not target_lang:
+            CommentTranslation.objects.filter(
+                comment_id=comment_id,
+                comment__workspace__slug=slug,
+                comment__project_id=project_id,
+                comment__issue_id=issue_id,
+            ).delete()
+        else:
+            CommentTranslation.objects.filter(
+                comment_id=comment_id,
+                comment__workspace__slug=slug,
+                comment__project_id=project_id,
+                comment__issue_id=issue_id,
+                target_lang=target_lang,
+            ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

@@ -30,6 +30,7 @@ from .integration import (
 )
 from .issue import (
     CommentReaction,
+    CommentTranslation,
     Issue,
     IssueActivity,
     IssueAssignee,

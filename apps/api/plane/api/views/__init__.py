@@ -24,6 +24,7 @@ from .issue import (
     IssueLinkDetailAPIEndpoint,
     IssueCommentListCreateAPIEndpoint,
     IssueCommentDetailAPIEndpoint,
+    CommentTranslationUpsertAPIEndpoint,
     IssueActivityListAPIEndpoint,
     IssueActivityDetailAPIEndpoint,
     IssueAttachmentListCreateAPIEndpoint,

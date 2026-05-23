@@ -700,6 +700,21 @@ class IssueCommentSerializer(BaseSerializer):
     workspace_detail = WorkspaceLiteSerializer(read_only=True, source="workspace")
     comment_reactions = CommentReactionSerializer(read_only=True, many=True)
     is_member = serializers.BooleanField(read_only=True)
+    # BARSOUL: 评论翻译派生层(愛ちゃん 内嵌翻译, 替代独立"自動翻訳"评论)。
+    # {target_lang: {text, source_lang, by, at}}。前端折叠 + 用户开关自动展开。
+    # 原 comment_html 永不修改 — 真相不动, 派生可重生成。
+    translations = serializers.SerializerMethodField(read_only=True)
+
+    def get_translations(self, obj):
+        out = {}
+        for tr in obj.translations.all():
+            out[tr.target_lang] = {
+                "text": tr.text,
+                "source_lang": tr.source_lang,
+                "by": tr.translated_by,
+                "at": tr.updated_at.isoformat() if tr.updated_at else "",
+            }
+        return out
 
     class Meta:
         model = IssueComment

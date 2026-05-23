@@ -11,6 +11,7 @@ from plane.api.views import (
     IssueLinkDetailAPIEndpoint,
     IssueCommentListCreateAPIEndpoint,
     IssueCommentDetailAPIEndpoint,
+    CommentTranslationUpsertAPIEndpoint,
     IssueActivityListAPIEndpoint,
     IssueActivityDetailAPIEndpoint,
     IssueAttachmentListCreateAPIEndpoint,
@@ -61,6 +62,12 @@ old_url_patterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/comments/<uuid:pk>/",
         IssueCommentDetailAPIEndpoint.as_view(http_method_names=["get", "patch", "delete"]),
         name="comment",
+    ),
+    # BARSOUL: 评论翻译派生层 upsert/delete (愛ちゃん 内嵌翻译)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/comments/<uuid:comment_id>/translations/",
+        CommentTranslationUpsertAPIEndpoint.as_view(http_method_names=["post", "delete"]),
+        name="comment-translation",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/activities/",

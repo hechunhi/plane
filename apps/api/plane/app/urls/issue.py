@@ -11,6 +11,7 @@ from plane.app.views import (
     IssueLinkViewSet,
     IssueAttachmentEndpoint,
     CommentReactionViewSet,
+    CommentTranslateOnDemandEndpoint,
     IssueActivityEndpoint,
     IssueArchiveViewSet,
     IssueCommentViewSet,
@@ -169,6 +170,12 @@ urlpatterns = [
             }
         ),
         name="project-issue-comment",
+    ),
+    # BARSOUL: X-style 即点即译 endpoint(cookie auth, project member)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/comments/<uuid:comment_id>/translate/",
+        CommentTranslateOnDemandEndpoint.as_view(),
+        name="project-issue-comment-translate",
     ),
     ## End IssueComments
     # Issue Subscribers
