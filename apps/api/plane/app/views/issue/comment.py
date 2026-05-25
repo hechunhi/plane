@@ -26,8 +26,11 @@ from plane.bgtasks.webhook_task import model_activity, webhook_activity
 # BARSOUL: lazy translate (X-style 即点即译)
 import os
 import re
+import logging
 import requests as _req
 from .. import BaseAPIView
+
+logger = logging.getLogger(__name__)
 
 
 class IssueCommentViewSet(BaseViewSet):
@@ -208,34 +211,47 @@ def _detect_src(text):
     return None
 
 
-def _call_llm(text, src, tgt):
-    """Call LLM gateway with simple translation prompt. Returns translated str."""
-    url = os.environ.get("LLM_GATEWAY_URL", "").strip()
-    if not url:
-        return ""
-    src_label = "日本語" if src == "ja" else ("中文" if src == "zh" else src)
-    tgt_label = "中文（簡体字）" if tgt == "zh" else ("日本語" if tgt == "ja" else tgt)
-    # BARSOUL 2026-05-24:hy-mt2 (Hy-MT2-1.8B-mlx-q4) 在专有名词 + 数字 + 英文密度高的输入上
-    # 会直接 punt 复述原文(no-op 失败)。实测加强制指令 + 显式保持规则后稳定性 50% → 100%
-    # (P1 prompt 三轮 6/6 case 全通过)。
-    sys = (
-        f"あなたは越境EC企業 BARSOUL(大阪・日中チーム)の業務翻訳者。"
-        f"**必須**: 入力された{src_label}を{tgt_label}に翻訳して出力する。"
-        "原文をそのまま返してはならない。原文と異なる訳文を必ず出力する。\n"
-        "規則:\n"
-        f"- 出力は{tgt_label}の翻訳文のみ(前置き・引用符・原文併記なし)\n"
-        "- 人名 / 電話番号 / 住所固有名 / 英語ブランド名(例 Shaken Not Stirred) / 数値 / 日付 / 金額 は保持\n"
-        "- 内容が短くても必ず翻訳する。コピーは禁止。"
-    )
+def _looks_like_noop(text, out, tgt):
+    """检测模型是否在 punt(复述原文 或 没翻译到目标语)。
+
+    no-op 判定:
+      1. 空输出
+      2. 输出 normalize 后 == 输入 normalize 后(只 strip 空白/全半角)
+      3. tgt=ja 但输出无任何假名(全汉字 + 数字 + 英文 → 没真翻成日文)
+      4. tgt=zh 但输出含假名(没翻译干净,还残留日文)
+
+    回 True = no-op 失败,caller 应 fallback / 报错。"""
+    if not out:
+        return True
+    norm = lambda s: (s or "").replace(" ", "").replace("　", "") \
+        .replace("，", ",").replace("、", ",").replace("。", ".").strip()
+    if norm(out) == norm(text):
+        return True
+    import re as _re
+    has_kana = bool(_re.search(r"[぀-ゟ゠-ヿ]", out))
+    if tgt == "ja" and not has_kana:
+        return True
+    if tgt == "zh" and has_kana:
+        return True
+    return False
+
+
+# BARSOUL 2026-05-24:fallback chain — hy-mt2 偶尔在边界 case 上 no-op(已被 P1
+# prompt 大幅缓解,但留兜底)。链路:hy-mt2(快、505ms)→ default(qwen3.5-4b,
+# 准、~2s)→ gemma-4-26b(强、~5s)。任一通过 noop 检测即返回。全链失败回 ""
+# 让 endpoint 502。
+_TRANSLATE_FALLBACK_CHAIN = ["hy-mt2", "default", "gemma-4-26b"]
+
+
+def _try_one_model(url, model, sys_msg, text):
+    """单次模型调用 + preamble strip。失败/异常返 ""。"""
     try:
-        # BARSOUL: 翻译専用モデル hy-mt2 (Hy-MT2-1.8B-mlx-q4 via gateway:8200)
-        # ~505ms vs 通用モデル ~2s; 翻訳品質同等以上。
         r = _req.post(
             url,
             json={
-                "model": "hy-mt2",
+                "model": model,
                 "messages": [
-                    {"role": "system", "content": sys},
+                    {"role": "system", "content": sys_msg},
                     {"role": "user", "content": text[:1500]},
                 ],
                 "temperature": 0.2,
@@ -248,13 +264,43 @@ def _call_llm(text, src, tgt):
         j = r.json()
         msg = ((j.get("choices") or [{}])[0] or {}).get("message", {}) or {}
         out = (msg.get("content") or "").strip()
-        # strip common preambles
         for p in ("【", "訳:", "翻訳:", "译文:", "中文:", "日本語:"):
             if out.startswith(p) and "\n" in out:
                 out = out.split("\n", 1)[1].strip()
         return out
     except Exception:
         return ""
+
+
+def _call_llm(text, src, tgt):
+    """Call LLM gateway with translation prompt + no-op detection + fallback chain.
+    Returns translated str (translated_by 由 caller 通过 _last_model_used 拿)。"""
+    url = os.environ.get("LLM_GATEWAY_URL", "").strip()
+    if not url:
+        return ""
+    src_label = "日本語" if src == "ja" else ("中文" if src == "zh" else src)
+    tgt_label = "中文（簡体字）" if tgt == "zh" else ("日本語" if tgt == "ja" else tgt)
+    # BARSOUL 2026-05-24:hy-mt2 (Hy-MT2-1.8B-mlx-q4) 在专有名词 + 数字 + 英文密度高的输入上
+    # 会直接 punt 复述原文(no-op 失败)。实测加强制指令 + 显式保持规则后稳定性 50% → 100%
+    # (P1 prompt 三轮 6/6 case 全通过)。即便如此再加 fallback chain 兜底。
+    sys = (
+        f"あなたは越境EC企業 BARSOUL(大阪・日中チーム)の業務翻訳者。"
+        f"**必須**: 入力された{src_label}を{tgt_label}に翻訳して出力する。"
+        "原文をそのまま返してはならない。原文と異なる訳文を必ず出力する。\n"
+        "規則:\n"
+        f"- 出力は{tgt_label}の翻訳文のみ(前置き・引用符・原文併記なし)\n"
+        "- 人名 / 電話番号 / 住所固有名 / 英語ブランド名(例 Shaken Not Stirred) / 数値 / 日付 / 金額 は保持\n"
+        "- 内容が短くても必ず翻訳する。コピーは禁止。"
+    )
+    for model in _TRANSLATE_FALLBACK_CHAIN:
+        out = _try_one_model(url, model, sys, text)
+        if out and not _looks_like_noop(text, out, tgt):
+            # 把实际成功的 model 记到 module attr,view 后续读出来写 translated_by
+            globals()["_last_model_used"] = model
+            return out
+        logger.info(f"_call_llm: model={model} no-op or empty, trying next")
+    globals()["_last_model_used"] = ""
+    return ""
 
 
 class CommentTranslateOnDemandEndpoint(BaseAPIView):
@@ -296,11 +342,16 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
         translated = _call_llm(src_text, src, target_lang)
         if not translated:
             return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
+        # BARSOUL: 记录实际命中的模型(fallback chain 可能用 default / gemma-4-26b
+        # 而非 hy-mt2),格式 "ondemand:{model}",aichan-live 派生 watcher 可统计
+        # 模型 mix。无 model 信息(理论上不应发生)兜底为 "ondemand"。
+        _model = globals().get("_last_model_used") or ""
+        translated_by = f"ondemand:{_model}" if _model else "ondemand"
 
         if cache:  # revive soft-deleted
             cache.text = translated
             cache.source_lang = src if src != "auto" else cache.source_lang
-            cache.translated_by = "ondemand"
+            cache.translated_by = translated_by
             cache.deleted_at = None
             cache.updated_by_id = request.user.id
             cache.save()
@@ -309,12 +360,12 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
                 comment=comment, target_lang=target_lang,
                 project_id=project_id, workspace_id=comment.workspace_id,
                 text=translated, source_lang=src,
-                translated_by="ondemand",
+                translated_by=translated_by,
                 created_by_id=request.user.id, updated_by_id=request.user.id,
             )
         return Response({
             "text": translated, "source_lang": src,
-            "by": "ondemand", "cached": False,
+            "by": translated_by, "cached": False,
         })
 
 
