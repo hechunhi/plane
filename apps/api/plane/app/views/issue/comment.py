@@ -27,7 +27,7 @@ from plane.bgtasks.webhook_task import model_activity, webhook_activity
 import os
 import re
 import requests as _req
-from rest_framework.views import APIView
+from .. import BaseAPIView
 
 
 class IssueCommentViewSet(BaseViewSet):
@@ -215,23 +215,31 @@ def _call_llm(text, src, tgt):
         return ""
     src_label = "日本語" if src == "ja" else ("中文" if src == "zh" else src)
     tgt_label = "中文（簡体字）" if tgt == "zh" else ("日本語" if tgt == "ja" else tgt)
+    # BARSOUL 2026-05-24:hy-mt2 (Hy-MT2-1.8B-mlx-q4) 在专有名词 + 数字 + 英文密度高的输入上
+    # 会直接 punt 复述原文(no-op 失败)。实测加强制指令 + 显式保持规则后稳定性 50% → 100%
+    # (P1 prompt 三轮 6/6 case 全通过)。
     sys = (
         f"あなたは越境EC企業 BARSOUL(大阪・日中チーム)の業務翻訳者。"
-        f"次の{src_label}コメントを{tgt_label}に訳してください。"
-        "出力は訳文のみ(前置き・引用符・原文併記なし)。"
-        "人名・メンション・固有名詞・数値・日付は保持。"
+        f"**必須**: 入力された{src_label}を{tgt_label}に翻訳して出力する。"
+        "原文をそのまま返してはならない。原文と異なる訳文を必ず出力する。\n"
+        "規則:\n"
+        f"- 出力は{tgt_label}の翻訳文のみ(前置き・引用符・原文併記なし)\n"
+        "- 人名 / 電話番号 / 住所固有名 / 英語ブランド名(例 Shaken Not Stirred) / 数値 / 日付 / 金額 は保持\n"
+        "- 内容が短くても必ず翻訳する。コピーは禁止。"
     )
     try:
+        # BARSOUL: 翻译専用モデル hy-mt2 (Hy-MT2-1.8B-mlx-q4 via gateway:8200)
+        # ~505ms vs 通用モデル ~2s; 翻訳品質同等以上。
         r = _req.post(
             url,
             json={
-                "model": "default",
+                "model": "hy-mt2",
                 "messages": [
                     {"role": "system", "content": sys},
                     {"role": "user", "content": text[:1500]},
                 ],
                 "temperature": 0.2,
-                "max_tokens": 800,
+                "max_tokens": 1500,
             },
             timeout=60,
         )
@@ -249,21 +257,15 @@ def _call_llm(text, src, tgt):
         return ""
 
 
-class CommentTranslateOnDemandEndpoint(APIView):
+class CommentTranslateOnDemandEndpoint(BaseAPIView):
     """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/comments/{cid}/translate/
     Body: {target_lang: "zh"|"ja"}
-    Cookie auth (project member)。缓存命中即返,未命中 LLM + upsert。"""
+    Cookie auth (Plane session)。缓存命中即返,未命中 LLM + upsert。
+    继承 BaseAPIView → 自带 session auth + IsAuthenticated;
+    @allow_permission([ADMIN,MEMBER,GUEST]) = 项目成员都可触发翻译。"""
 
-    permission_classes = []  # cookie auth via DEFAULT, project member checked manually
-
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def post(self, request, slug, project_id, issue_id, comment_id):
-        if not request.user or not request.user.is_authenticated:
-            return Response({"error": "auth required"}, status=status.HTTP_401_UNAUTHORIZED)
-        if not ProjectMember.objects.filter(
-            workspace__slug=slug, project_id=project_id,
-            member_id=request.user.id, is_active=True,
-        ).exists():
-            return Response({"error": "not a project member"}, status=status.HTTP_403_FORBIDDEN)
         try:
             comment = IssueComment.objects.get(
                 pk=comment_id, workspace__slug=slug,
