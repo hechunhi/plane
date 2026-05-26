@@ -198,3 +198,97 @@
     0 0 4px --alpha(var(--background-color-accent-primary) / 40%) !important;
   will-change: transform, opacity;
 }
+
+/* ── BARSOUL: hide unwanted UI (sidebar footer bar + top promo link) ── */
+/* 1. sidebar 底部 h-12 栏 (border-t bg-surface-1 p-3) */
+#main-sidebar aside .flex.h-12.items-center.justify-between.border-t.border-subtle.bg-surface-1.p-3 {
+  display: none !important;
+}
+/* 2. main 顶部右侧 promo/upgrade 链接 (a.bg-layer-2) */
+main a.flex.flex-shrink-0.items-center.gap-1\.5.rounded-sm.bg-layer-2.px-3.py-1\.5 {
+  display: none !important;
+}
+
+/* 3. settings 侧边栏 billing 导航项 (community 版无用占位)；用 href 稳定定位 */
+a[href*="/settings/billing"] {
+  display: none !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+ * BARSOUL ADR-029 続: pending_approver カードタイトル 緩交互フェード.
+ * 「凍結カード変紅」だけでは「自分要対応」と読み取れない問題への補助.
+ * 10s 周期 = 原題 7.7s, 過渡 0.4s, 提醒 1.5s, 過渡 0.4s. 注意疲労の閾値
+ * (~5-6s)より遅く設定し「偶然見える」程度の控えめさ. prefers-reduced-motion
+ * で完全停止(既存赤左バー + frozen-banner で代替提示).
+ * ────────────────────────────────────────────────────────────────────── */
+@keyframes barsoul-approver-title-orig {
+  0%,
+  77% {
+    opacity: 1;
+  }
+  81%,
+  96% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes barsoul-approver-title-remind {
+  0%,
+  77% {
+    opacity: 0;
+  }
+  81%,
+  96% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.barsoul-approver-title__orig {
+  animation: barsoul-approver-title-orig 10s ease-in-out infinite;
+  will-change: opacity;
+}
+.barsoul-approver-title__remind {
+  animation: barsoul-approver-title-remind 10s ease-in-out infinite;
+  font-weight: 600;
+  will-change: opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .barsoul-approver-title__orig,
+  .barsoul-approver-title__remind {
+    animation: none;
+  }
+  .barsoul-approver-title__remind {
+    display: none;
+  }
+}
+
+/* BARSOUL 未読 v6.1: 呼吸する red dot (kanban tile 右上).
+   tailwind の animate-pulse は opacity だけ blink、視覚的に "心拍" 感が
+   弱い。scale + opacity を組み合わせて生き物の呼吸のように緩やかに. */
+@keyframes barsoul-unread-breath {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.6);
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(220, 38, 38, 0);
+  }
+}
+.barsoul-unread-breath {
+  animation: barsoul-unread-breath 1.8s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform, opacity, box-shadow;
+}
+@media (prefers-reduced-motion: reduce) {
+  .barsoul-unread-breath {
+    animation: none;
+  }
+}

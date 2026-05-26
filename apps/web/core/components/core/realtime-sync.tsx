@@ -19,7 +19,6 @@
 import { useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { mutate } from "swr";
-import { ENotificationLoader, ENotificationQueryParamType } from "@plane/constants";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { peerSync } from "./peer-sync";
 import { realtimeBus } from "./realtime-bus";
@@ -36,7 +35,7 @@ const NOTIF_REFETCH_DEBOUNCE_MS = 500;
 
 export const RealtimeSync = () => {
   const { workspaceSlug } = useParams();
-  const { getNotifications } = useWorkspaceNotifications();
+  const { refreshBadgeNotifications } = useWorkspaceNotifications();
   const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // SSE 健康度: 最後にイベント/openを受信した時刻. 3 分以上静默 → degraded.
   const lastEventAt = useRef<number>(Date.now());
@@ -52,9 +51,13 @@ export const RealtimeSync = () => {
           // ① SWR cache 失効 → top-nav/sidebar の useSWR が fetcher 再呼出
           //    → getUnreadNotificationsCount → mobx update → observer 再描画
           void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
-          // ② notification list (badge 用) は store 直呼出(SWR で管理外)
-          void getNotifications(ws, ENotificationLoader.MUTATION_LOADER,
-                                ENotificationQueryParamType.INIT);
+          // ② notification list (badge 用) は store の refreshBadgeNotifications
+          //    を呼ぶ. **ALL + MENTIONS 二経路の並列 fetch**(Plane apiserver は
+          //    ALL タブで mention sender を EXCLUDE する仕様 → 旧コードの
+          //    getNotifications 単呼出だと @mention 通知が SSE 経由で来ても
+          //    store に入らず、@mention のみで unread のカードが永遠に既読
+          //    扱いになる bug の根因. 2026-05-26 修正).
+          void refreshBadgeNotifications(ws);
         } catch {
           /* notif refresh 失敗は SSE 主路を阻害しない */
         }
@@ -274,7 +277,7 @@ export const RealtimeSync = () => {
     };
     // workspaceSlug を deps に含めることで ws 切替時に notification refetch
     // を新 ws 向けに走らせる(EventSource 自体は同源同 path で張り直し不要).
-  }, [workspaceSlug, getNotifications]);
+  }, [workspaceSlug, refreshBadgeNotifications]);
 
   return null;
 };

@@ -14,6 +14,8 @@ import type { EUserWorkspaceRoles } from "@plane/types";
 import { cn } from "@plane/utils";
 // components
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
+// BARSOUL: 「項目」グループヘッダ赤点(配下のいずれかに未読あれば)
+import { useHasAnyUnread, UnreadDot } from "@/components/notifications/issue-unread-badge";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -54,6 +56,9 @@ export const SidebarWorkspaceMenuItem = observer(function SidebarWorkspaceMenuIt
   }
 
   const isActive = item.href === pathname;
+  // BARSOUL: 「項目」キーのみ、配下のいずれかに未読あれば赤点。
+  const _showProjectsUnread = item.key === "projects";
+  const _hasAnyUnread = useHasAnyUnread();
 
   return (
     <Link href={item.href} onClick={() => handleLinkClick()}>
@@ -65,6 +70,7 @@ export const SidebarWorkspaceMenuItem = observer(function SidebarWorkspaceMenuIt
             })}
           />
           <p className="text-13 leading-5 font-medium">{t(item.labelTranslationKey)}</p>
+          {_showProjectsUnread && _hasAnyUnread && <UnreadDot className="size-1.5" />}
         </div>
         <div className="flex-shrink-0">
           <UpgradeBadge />

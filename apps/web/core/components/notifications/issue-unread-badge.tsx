@@ -40,17 +40,40 @@ export const useGroupUnreadCount = (issueIds: string[]): number => {
   return unreadCountForIssueIds(issueIds);
 };
 
+/** BARSOUL(2026-05-25): 指定 project に未読があるか(サイドバー赤点用)。 */
+export const useHasUnreadInProject = (projectId: string | undefined): boolean => {
+  const { unreadProjectIdSet } = useWorkspaceNotifications();
+  return !!projectId && unreadProjectIdSet.has(projectId);
+};
+
+/** BARSOUL(2026-05-25): どこかに未読があるか(項目グループヘッダ用)。 */
+export const useHasAnyUnread = (): boolean => {
+  const { unreadProjectIdSet } = useWorkspaceNotifications();
+  return unreadProjectIdSet.size > 0;
+};
+
+/** 共通 — サイドバー用の小さな red dot 点。 */
+export const UnreadDot: React.FC<{ className?: string }> = ({ className }) => (
+  <span
+    aria-label="unread"
+    className={`inline-block shrink-0 rounded-full ${className || "size-1.5"}`}
+    style={{ background: "var(--bg-danger-primary)" }}
+  />
+);
+
 /**
  * BARSOUL A4: 静默(免打扰)状態の判定。已托管/已归档/取消 等＝対応不要なので
  * カードを赤くしない（ノイズ排除）。状態名キーワード or state group で判定。
  * 必要に応じキーワードを足すだけで運用調整できる。
  */
-export const isMutedState = (stateName?: string, stateGroup?: string): boolean => {
-  // 完了/取消 = もう対応不要 → 赤くしない（ノイズ排除）。
-  if (stateGroup === "cancelled" || stateGroup === "completed") return true;
+export const isMutedState = (stateName?: string, _stateGroup?: string): boolean => {
+  // BARSOUL v2(2026-05-25): 完了/取消 グループでの抑制を廃止。
+  // 理由: ユーザ反饋 — Done に入った課題でも 復盤/補足 で再活性化、
+  // 通知が来てる = 対応要、状態に関係なく見せる(BS-161 ケース)。
+  // スヌーズ/アーカイブ済は通知ストア側で既にフィルタ → ここに残る = 真信号。
+  // 残す muting: 名前に明示 归档/archived のもののみ(管理者意図的)。
   const n = stateName || "";
-  // 将来 "托管/帰档" 系の状態を足した場合も拾えるよう名前でも判定。
-  if (/托管|託管|归档|歸檔/.test(n)) return true;
+  if (/归档|歸檔|帰档|アーカイブ/.test(n)) return true;
   return /archiv/i.test(n);
 };
 
@@ -93,8 +116,10 @@ export const IssueUnreadBadge = observer(function IssueUnreadBadge(props: TIssue
     width: 10,
     borderRadius: 9999,
   };
-  // accent トークンを CSS 変数経由で（テーマ追従・確実に描画）
-  const ACCENT = "var(--bg-accent-primary)";
+  // BARSOUL(2026-05-25): danger/red トークンへ変更。
+  // 旧 accent(青) → 「新メッセージ/通知」の業界标准色である red dot に統一。
+  // Plane tailwind-config 既存トークン --bg-danger-primary (= --red-700)。
+  const ACCENT = "var(--bg-danger-primary)";
   const filled: React.CSSProperties = isOutline
     ? { ...dot, background: "transparent", boxShadow: `inset 0 0 0 1.5px ${ACCENT}` }
     : { ...dot, background: ACCENT, color: "#fff", boxShadow: `0 0 0 1px ${ACCENT}` };

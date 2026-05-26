@@ -31,15 +31,16 @@ import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
-// BARSOUL: 卡片未読バッジ
+// BARSOUL: 未読関連 helper のみ(IssueUnreadBadge は廃止 — 左バーに一本化)
 import {
-  IssueUnreadBadge,
   useIssueUnreadCount,
   useIssueUnreadKind,
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
+import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
+import { ApproverTitle } from "@/components/issues/approver-title";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 // types
@@ -100,6 +101,13 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
     setPeekIssue,
     subIssues: subIssuesStore,
   } = useIssueDetail(isEpic ? EIssueServiceType.EPICS : EIssueServiceType.ISSUES);
+  // BARSOUL 修復(2026-05-25): 通知データ prefetch trigger を本ブロックへ移管
+  // (旧 <IssueUnreadBadge> 廃止で trigger 喪失バグ修復)。_badgeWS Set ガード
+  // で workspace 単位 1 回しか fetch しない。
+  const { ensureBadgeNotifications } = useWorkspaceNotifications();
+  useEffect(() => {
+    if (workspaceSlug) ensureBadgeNotifications(workspaceSlug);
+  }, [workspaceSlug, ensureBadgeNotifications]);
 
   const handleIssuePeekOverview = (issue: TIssue) =>
     workspaceSlug &&
@@ -210,11 +218,13 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             "border-strong-1": isIssueActive,
             "last:border-b-transparent": !getIsIssuePeeked(issue.id) && !isIssueActive,
             "bg-accent-primary/5 hover:bg-accent-primary/10": isIssueSelected,
-            // BARSOUL 未読: 左端アクセントバー＋薄い底色（行は relative 既存）。
-            // A1: 通常 3px/6%、@メンション(要対応)は 4px/10%。
-            "bg-accent-primary/[0.06] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-accent-primary before:content-['']":
+            // BARSOUL 未読 v6(2026-05-25, Gmail/Linear 強度):
+            // 行モデル(list) は左端 bar + タイトル太字。Linear/Height/Asana 通用。
+            // 通常: 3px bar(可視性確保)、@mention: 4px + pulse。
+            // bg 染色は廃止 — 行の密度が高いと薄染色も鬱陶しい。
+            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-danger-primary before:content-['']":
               hasUnread && !isIssueSelected && !isMentionUnread,
-            "bg-accent-primary/[0.10] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-accent-primary before:content-['']":
+            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-danger-primary before:content-[''] before:animate-pulse":
               isMentionUnread && !isIssueSelected,
             "bg-layer-1": isCurrentBlockDragging,
             "md:flex-row md:items-center": isSidebarCollapsed,
@@ -224,7 +234,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             //   initiator: 琥珀左 3px + 5% 底色
             //   queued_approver (SEQ 待ち番): 琥珀左 3px (弱)
             //   bystander: 灰青左 2px のみ (殆ど目立たない)
-            "bg-[#dc2626]/[0.08] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-[#dc2626] before:content-[''] before:animate-pulse":
+            "bg-[#ea580c]/[0.08] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-[#ea580c] before:content-[''] before:animate-pulse":
               isFrozen && frozenRole === "pending_approver" && !isIssueSelected,
             "bg-[#d97706]/[0.05] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[#d97706] before:content-['']":
               isFrozen && frozenRole === "initiator" && !isIssueSelected,
@@ -304,8 +314,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                       displayProperties={displayProperties}
                     />
                   )}
-                  {/* BARSOUL: 未読更新の赤バッジ */}
-                  <IssueUnreadBadge issueId={issueId} muted={_lstMuted} />
+                  {/* BARSOUL: 旧 ID 横未読 dot 廃止 — 左バー(下記 row CSS)に一本化 */}
                 </div>
               )}
 
@@ -339,7 +348,17 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
               disabled={isCurrentBlockDragging}
               renderByDefault={false}
             >
-              <p className="cursor-pointer truncate text-body-xs-medium text-primary">{issue.name}</p>
+              {/* BARSOUL 未読 v6: タイトル太字(Gmail unread と同じ) */}
+              <p
+                className={cn("cursor-pointer truncate text-body-xs-medium text-primary", {
+                  "!font-bold": hasUnread,
+                })}
+              >
+                <ApproverTitle
+                  title={issue.name ?? ""}
+                  active={isFrozen && frozenRole === "pending_approver"}
+                />
+              </p>
             </Tooltip>
             {isEpic && displayProperties && (
               <WithDisplayPropertiesHOC

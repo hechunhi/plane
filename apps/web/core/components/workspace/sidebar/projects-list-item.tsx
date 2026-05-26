@@ -30,6 +30,7 @@ import { cn } from "@plane/utils";
 import { DEFAULT_TAB_KEY, getTabUrl } from "@/components/navigation/tab-navigation-utils";
 import { useTabPreferences } from "@/components/navigation/use-tab-preferences";
 import { LeaveProjectModal } from "@/components/project/leave-project-modal";
+import { useHasUnreadInProject, UnreadDot } from "@/components/notifications/issue-unread-badge";
 import { PublishProjectModal } from "@/components/project/publish-project/modal";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
@@ -95,6 +96,8 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const router = useRouter();
   // derived values
   const project = getPartialProjectById(projectId);
+  // BARSOUL(2026-05-25): プロジェクトに未読あれば赤点(项目→BARSOUL→工作項 chain)
+  const hasProjectUnread = useHasUnreadInProject(projectId);
 
   // Get available navigation items for this project
   const navigationItems = useNavigationItems({
@@ -341,6 +344,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                       <Logo logo={project.logo_props} size={16} />
                     </div>
                     <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
+                    {hasProjectUnread && <UnreadDot className="size-1.5" />}
                   </Disclosure.Button>
                 ) : (
                   <div className="flex w-full flex-grow items-center gap-1.5 text-left select-none">
@@ -348,6 +352,7 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
                       <Logo logo={project.logo_props} size={16} />
                     </div>
                     <p className="truncate text-13 font-medium text-secondary">{project.name}</p>
+                    {hasProjectUnread && <UnreadDot className="size-1.5" />}
                   </div>
                 )}
               </ControlLink>

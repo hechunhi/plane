@@ -60,8 +60,11 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
     isEpic = false,
     groupIssueIds,
   } = props;
-  // BARSOUL A2: 列の未読合計（accent。0 は非表示）
+  // BARSOUL A2: 列の未読合計（red。0 は非表示）。
+  // 注: 完了/取消 列の課題でも 復盤/補足 で再活性化することがあるため
+  // muted 抑制はしない(2026-05-25 ユーザ反饋で方針修正)。
   const groupUnread = useGroupUnreadCount(groupIssueIds || []);
+  const showGroupUnread = groupUnread > 0;
   const verticalAlignPosition = sub_group_by ? false : collapsedGroups?.group_by.includes(column_id);
   // states
   const [isOpen, setIsOpen] = React.useState(false);
@@ -145,18 +148,20 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
           >
             {count || 0}
           </div>
-          {groupUnread > 0 && (
+          {showGroupUnread && (
             <Tooltip
               tooltipContent={`この列に未読 ${groupUnread} 件 / 本列未读 ${groupUnread} 条`}
               isMobile={false}
             >
+              {/* self-center: 親が items-baseline のため、円形バッジが
+                  ベースライン基準で低く沈むのを補正(text 中心と揃える)。 */}
               <span
                 aria-label={`${groupUnread} unread in column`}
-                className="flex-shrink-0 inline-flex items-center justify-center rounded-full px-1.5 text-10 font-bold leading-none"
+                className="flex-shrink-0 self-center inline-flex items-center justify-center rounded-full px-1.5 text-10 font-bold leading-none"
                 style={{
                   minWidth: 16,
                   height: 16,
-                  background: "var(--bg-accent-primary)",
+                  background: "var(--bg-danger-primary)",
                   color: "#fff",
                 }}
               >

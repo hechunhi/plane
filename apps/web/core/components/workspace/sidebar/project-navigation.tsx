@@ -15,6 +15,8 @@ import type { EUserProjectRoles } from "@plane/types";
 // plane ui
 // components
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
+// BARSOUL: 项目→工作項 chain red dot
+import { useHasUnreadInProject, UnreadDot } from "@/components/notifications/issue-unread-badge";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -57,6 +59,8 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
     : undefined;
   const workItem = workItemId ? getIssueById(workItemId) : undefined;
   const project = getPartialProjectById(projectId);
+  // BARSOUL: 工作項 nav の赤点判定
+  const hasProjectUnread = useHasUnreadInProject(projectId);
   // handlers
   const handleProjectClick = () => {
     if (window.innerWidth < 768) {
@@ -192,6 +196,8 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
                     className={`size-4 flex-shrink-0 ${item.name === "Intake" ? "stroke-1" : "stroke-[1.5]"}`}
                   />
                   <span className="text-11 font-medium">{t(item.i18n_key)}</span>
+                  {/* BARSOUL: 工作項 nav に未読あれば赤点(項目→BARSOUL→工作項 chain) */}
+                  {item.key === "work_items" && hasProjectUnread && <UnreadDot className="size-1.5" />}
                 </div>
                 {shouldShowCount && <span className="text-11 font-medium text-tertiary">{project.intake_count}</span>}
               </div>

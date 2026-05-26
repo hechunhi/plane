@@ -33,15 +33,16 @@ import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-red
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
-// BARSOUL: 卡片未読バッジ
+// BARSOUL: 未読関連 helper (IssueUnreadBadge は廃止 — v6 では border+bold)
 import {
-  IssueUnreadBadge,
   useIssueUnreadCount,
   useIssueUnreadKind,
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
+import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
+import { ApproverTitle } from "@/components/issues/approver-title";
 import { useProjectState } from "@/hooks/store/use-project-state";
 // local components
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
@@ -76,18 +77,22 @@ interface IssueDetailsBlockProps {
   isEpic?: boolean;
 }
 
-const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props: IssueDetailsBlockProps) {
-  const { cardRef, issue, updateIssue, quickActions, isReadOnly, displayProperties, isEpic = false } = props;
+const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
+  props: IssueDetailsBlockProps & { hasUnread?: boolean; isMentionUnread?: boolean }
+) {
+  const {
+    cardRef, issue, updateIssue, quickActions, isReadOnly, displayProperties, isEpic = false,
+    hasUnread = false, isMentionUnread = false,
+  } = props;
   // refs
   const menuActionRef = useRef<HTMLDivElement | null>(null);
   // states
   const [isMenuActive, setIsMenuActive] = useState(false);
   // hooks
   const { isMobile } = usePlatformOS();
-  const { getStateById } = useProjectState();
-  // BARSOUL A4: 已托管/已归档 等の状態は未読印を出さない（静默）
-  const _st = getStateById(issue?.state_id);
-  const issueMuted = isMutedState(_st?.name, _st?.group);
+  // BARSOUL ADR-029 続: pending_approver はタイトル交互フェードで強提示.
+  const { frozen: _kbDetailFrozen, myRole: _kbDetailRole } = useIssueApproval(issue?.id);
+  const isPendingApprover = _kbDetailFrozen && _kbDetailRole === "pending_approver";
 
   const customActionButton = (
     <div
@@ -123,8 +128,6 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props:
             displayProperties={displayProperties}
           />
         )}
-        {/* BARSOUL: 未読更新の赤バッジ（ID 横に表示） */}
-        <IssueUnreadBadge issueId={issue.id} muted={issueMuted} />
         <div
           className={cn("absolute -top-1 right-0", {
             "hidden group-hover/kanban-block:block": !isMobile,
@@ -141,8 +144,14 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(props:
       </div>
 
       <Tooltip tooltipContent={issue.name} isMobile={isMobile} renderByDefault={false}>
-        <div className="line-clamp-1 w-full text-body-sm-medium text-primary">
-          <span>{issue.name}</span>
+        {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
+            タイポ言語)。赤縁取り(親 card border) と合わせて 3 信号同時提示. */}
+        <div
+          className={cn("line-clamp-1 w-full text-body-sm-medium text-primary", {
+            "!font-bold": hasUnread,
+          })}
+        >
+          <ApproverTitle title={issue.name ?? ""} active={isPendingApprover} />
         </div>
       </Tooltip>
 
@@ -195,6 +204,15 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
   const { getIsIssuePeeked } = useIssueDetail(isEpic ? EIssueServiceType.EPICS : EIssueServiceType.ISSUES);
   const { handleRedirection } = useIssuePeekOverviewRedirection(isEpic);
   const { isMobile } = usePlatformOS();
+  // BARSOUL 修復(2026-05-25): 通知データの prefetch trigger を
+  // <IssueUnreadBadge> から本ブロックへ移管。badge を v6 で廃止した結果、
+  // ensureBadgeNotifications が誰からも呼ばれず store 空 → 全カード "既読扱い"
+  // のバグを起こしていた。_badgeWS Set ガード付きで idempotent (50カード mount
+  // しても workspace 単位で 1 回しか fetch しない)。
+  const { ensureBadgeNotifications } = useWorkspaceNotifications();
+  useEffect(() => {
+    if (workspaceSlug) ensureBadgeNotifications(workspaceSlug);
+  }, [workspaceSlug, ensureBadgeNotifications]);
 
   // handlers
   const handleIssuePeekOverview = (issue: TIssue) => handleRedirection(workspaceSlug, issue, isMobile);
@@ -306,25 +324,26 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
             "relative block w-full rounded-lg border border-subtle bg-layer-2 p-3 text-13 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
             { "hover:cursor-pointer": isDragAllowed },
             { "border border-accent-strong hover:border-accent-strong": getIsIssuePeeked(issue.id) },
-            // BARSOUL 未読: 左端アクセントバー＋薄い accent 底色（overlay で
-            // bg-layer-2 と競合せず確実に出る）。通知中心と同一トークン。
-            // A1: 通常 3px/6%、@メンション(要対応)は 4px/10% で強調。
-            {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-accent-primary before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-accent-primary/[0.06] after:content-['']":
-                hasUnread && !isMentionUnread,
-            },
-            {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-accent-primary before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-accent-primary/[0.10] after:content-['']":
-                isMentionUnread,
-            },
+            // BARSOUL 未読 v6(2026-05-25, Gmail/Linear 流):
+            //   カード境界線を赤に → 周辺視野で1発で "新着あり" と読める。
+            //   ・通常未読: 1px 赤 solid border + 微弱 box-shadow ring
+            //   ・@mention: 1.5px 赤 + ring 強め + pulse(行動要求)
+            //   bg 染色は廃止 (子供っぽい)、bullet + 太字 title は子側で。
+            hasUnread && !isMentionUnread &&
+              "!border-[var(--bg-danger-primary)] hover:!border-[var(--bg-danger-primary)] shadow-[0_0_0_1px_var(--bg-danger-primary)]",
+            isMentionUnread &&
+              "!border-[var(--bg-danger-primary)] !border-[1.5px] hover:!border-[var(--bg-danger-primary)] shadow-[0_0_0_2px_var(--bg-danger-primary)]",
             { "z-[100] bg-layer-1": isCurrentBlockDragging },
             // BARSOUL ADR-029: 凍結カード(審査中) — 役割別視覚.
-            //   pending_approver (要対応): 赤左バー4px + 8% 赤底色 + 微脈動
+            //   pending_approver (要対応): 橙左バー4px + 8% 橙底色 + 微脈動
             //   initiator (発起人): 琥珀左バー3px + 5% 琥珀底色
             //   queued_approver (SEQ 待ち番): 琥珀左バー3px + 4% 底色 (弱)
             //   bystander (見守): 灰青左バー2px のみ (殆ど目立たない)
+            // BARSOUL 色語(2026-05-25): 赤=未読(情報到達)、橙/琥珀=待行動
+            // (審批 pending)、灰=傍観。pending_approver は赤から橙へ移行
+            // して "新消息" 信号(red dot)と "要対応" 信号(amber bar)を分離。
             isFrozen && frozenRole === "pending_approver" && {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-[#dc2626] before:content-[''] before:animate-pulse after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#dc2626]/[0.08] after:content-['']":
+              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-[#ea580c] before:content-[''] before:animate-pulse after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#ea580c]/[0.08] after:content-['']":
                 true,
             },
             isFrozen && frozenRole === "initiator" && {
@@ -357,6 +376,21 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
               : undefined
           }
         >
+          {/* BARSOUL 未読 v6.1: 呼吸 red dot を右上に再導入 — 但今度は
+              赤縁取り + 太字 + 呼吸アニメ三位一体で "生きてる" 通知感.
+              静的 dot だと "汚れ" だが、呼吸アニメ付きだと "意図的な信号" に
+              読み替えられる(LINE / Twitter の live indicator 同様). */}
+          {hasUnread && (
+            <span
+              aria-label={isMentionUnread ? "mention unread" : "unread"}
+              className="barsoul-unread-breath pointer-events-none absolute right-2 top-2 z-10 rounded-full"
+              style={{
+                width: isMentionUnread ? 10 : 8,
+                height: isMentionUnread ? 10 : 8,
+                background: "var(--bg-danger-primary)",
+              }}
+            />
+          )}
           <RenderIfVisible
             classNames="space-y-2"
             root={scrollableContainerRef}
@@ -373,6 +407,8 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
               quickActions={quickActions}
               isReadOnly={!canEditIssueProperties}
               isEpic={isEpic}
+              hasUnread={hasUnread}
+              isMentionUnread={isMentionUnread}
             />
           </RenderIfVisible>
         </ControlLink>

@@ -10,7 +10,7 @@ import { useIssueApproval, type TFrozenRole } from "@/hooks/use-issue-approval";
 type Props = { issueId: string };
 
 const roleStyles: Record<TFrozenRole, { bar: string; bg: string; icon: string }> = {
-  pending_approver: { bar: "border-l-[5px] border-[#dc2626]", bg: "bg-[#dc2626]/[0.10]", icon: "🔔" },
+  pending_approver: { bar: "border-l-[5px] border-[#ea580c]", bg: "bg-[#ea580c]/[0.10]", icon: "🔔" },
   queued_approver: { bar: "border-l-4 border-[#d97706]/70", bg: "bg-[#d97706]/[0.06]", icon: "⏳" },
   initiator: { bar: "border-l-4 border-[#d97706]", bg: "bg-[#d97706]/[0.06]", icon: "📋" },
   bystander: { bar: "border-l-2 border-[#94a3b8]", bg: "bg-[#94a3b8]/[0.06]", icon: "🔒" },
@@ -81,7 +81,7 @@ export const FrozenBanner = observer(function FrozenBanner({ issueId }: Props) {
           {/* 視覚説明 (always-visible 教育用): 4 役割の色分けを 1 行で覚え書き */}
           <div className="mt-2 pt-2 border-t border-strong-1/30 text-11 text-tertiary">
             <span className="font-medium">📖 視覚説明 / 视觉说明: </span>
-            <span className="mr-2"><span className="text-[#dc2626]">🔔 赤</span>=あなたの審査待ち</span>
+            <span className="mr-2"><span className="text-[#ea580c]">🔔 橙</span>=あなたの審査待ち</span>
             <span className="mr-2"><span className="text-[#d97706]">📋 琥珀</span>=発起人</span>
             <span className="mr-2"><span className="text-[#d97706]/70">⏳ 琥珀弱</span>=順次審査の待ち番</span>
             <span><span className="text-[#94a3b8]">🔒 灰</span>=他人審査中</span>

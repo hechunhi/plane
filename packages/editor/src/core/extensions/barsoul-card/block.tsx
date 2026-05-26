@@ -307,6 +307,9 @@ export function BarsoulCardBlock(props: NodeViewProps) {
                   </span>
                 </div>))}
             </div>);
+          // BARSOUL Tier2: 経過事件タイムライン(折り畳み default)。
+          // 起票/転審/催促/漂移/決定/終結 を内化、Plane comment 流から排除。
+          if (ty === "timeline") return <TimelineBlock key={i} b={b} t={t} S={S} />;
           if (ty === "actions_grouped") return (
             <div key={i}>
               <hr style={S.sep} />
@@ -474,6 +477,77 @@ function validateForm(state: any, rules: any[]): { path: string; msg: string }[]
   }
   return out;
 }
+
+// BARSOUL Tier2: 経過タイムライン(折り畳みリスト)。
+// items = [{actor, decision, reason, channel, at_ms}]。decision ∈
+// 发起/通过/驳回/催审/状态恢复/转审/撤回/终结/... → 図標 + 短文に正規化。
+function TimelineBlock(props: { b: any; t: Theme; S: any }) {
+  const { b, t, S } = props;
+  const items: any[] = b.items || [];
+  const [open, setOpen] = useState<boolean>(!b.collapsed);
+  if (items.length === 0) return null;
+  const fmtTs = (ms: number) => {
+    if (!ms) return "";
+    try {
+      const d = new Date(ms);
+      const now = new Date();
+      const sameDay = d.toDateString() === now.toDateString();
+      const hh = String(d.getHours()).padStart(2, "0");
+      const mm = String(d.getMinutes()).padStart(2, "0");
+      if (sameDay) return `${hh}:${mm}`;
+      const mo = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${mo}/${dd} ${hh}:${mm}`;
+    } catch { return ""; }
+  };
+  const icon = (dec: string) => {
+    if (dec === "通过") return "✓";
+    if (dec === "驳回") return "✕";
+    if (dec === "撤回") return "↩";
+    if (dec === "终结") return "🏁";
+    if (dec === "催审") return "⏰";
+    if (dec === "状态恢复") return "🔒";
+    if (dec === "转审" || dec === "転審") return "🔄";
+    if (dec === "发起" || dec === "起票") return "▸";
+    return "•";
+  };
+  return (
+    <div style={{ marginTop: 8 }}>
+      <hr style={S.sep} />
+      <button type="button" onClick={() => setOpen(!open)}
+        style={{
+          background: "none", border: 0, padding: "2px 0", cursor: "pointer",
+          color: t.muted, fontSize: 11.5, display: "flex", alignItems: "center",
+          gap: 6,
+        }}>
+        <span style={{ fontSize: 9 }}>{open ? "▼" : "▶"}</span>
+        <span>{b.label || "経過"} ({items.length})</span>
+      </button>
+      {open && (
+        <div style={{ paddingLeft: 12, marginTop: 4 }}>
+          {items.map((it: any, i: number) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "baseline", gap: 8,
+              fontSize: 12, padding: "3px 0", color: t.fg,
+            }}>
+              <span style={{ width: 14, textAlign: "center", color: t.muted,
+                fontSize: 12 }}>{icon(it.decision)}</span>
+              <span style={{ color: t.muted, fontSize: 11, minWidth: 60,
+                fontVariantNumeric: "tabular-nums" }}>{fmtTs(it.at_ms)}</span>
+              <span style={{ fontWeight: 500 }}>{it.actor}</span>
+              <span style={{ color: t.muted }}>{it.decision}</span>
+              {it.reason && (
+                <span style={{ color: t.muted, fontSize: 11.5, opacity: 0.85,
+                  flex: 1 }}>— {it.reason}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<void> }) {
   const { spec, t, S, reload } = props;
@@ -737,9 +811,14 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
           next.splice(Math.min(to, next.length), 0, m);
           set(bind, next);
         };
+        // BARSOUL: read-only 模式下隐藏所有编辑提示语和候选追加区。
+        // 标签中括号内的操作说明(例「審査者(⠿でドラッグ=...)」)在 ro 时
+        // 也截掉,呈现为纯静态信息卡片。
+        const _labelText = a.label ?
+          (ro ? String(a.label).split(/[（(]/)[0].trim() : a.label) : null;
         return (
           <div key={k}>
-            {a.label && <div style={lbl}>{a.label}</div>}
+            {_labelText && <div style={lbl}>{_labelText}</div>}
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 8,
               padding: "4px 6px", margin: "4px 0", background: t.bg }}>
               {orderedSelected.map((it: any, ix: number) => (
@@ -773,21 +852,24 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                       style={{ background: "none", border: 0, color: t.rejectFg,
                         cursor: "pointer", fontSize: 13, padding: "2px 6px" }}>✕</button>)}
                 </div>))}
-              {orderedSelected.length === 0 && (
+              {orderedSelected.length === 0 && !ro && (
                 <div style={{ ...S.note, padding: "6px 4px" }}>(未選択 — 下から追加してください)</div>)}
+              {orderedSelected.length === 0 && ro && (
+                <div style={{ ...S.note, padding: "6px 4px" }}>(未選択)</div>)}
             </div>
-            {unselected.length > 0 && (
+            {/* BARSOUL: read-only ユーザに「追加可能」候補を出さない(編集示唆を消す) */}
+            {!ro && unselected.length > 0 && (
               <>
                 <div style={{ fontSize: 11, color: t.muted, margin: "8px 0 4px" }}>
                   ＋ 追加可能</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {unselected.map((it: any) => (
-                    <button key={it.id} type="button" disabled={ro}
+                    <button key={it.id} type="button"
                       onClick={() => toggle(it.id)}
                       style={{ padding: "4px 10px", fontSize: 12.5,
                         border: `1px dashed ${t.border}`, borderRadius: 14,
                         background: "transparent", color: t.fg,
-                        cursor: ro ? "default" : "pointer" }}>
+                        cursor: "pointer" }}>
                       ＋ {it.label}</button>))}
                 </div>
               </>)}

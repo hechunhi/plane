@@ -51,7 +51,9 @@ export interface IWorkspaceNotificationStore {
   unreadCountByIssueId: (issueId: string | undefined) => number;
   unreadKindByIssueId: (issueId: string | undefined) => TUnreadKind;
   unreadCountForIssueIds: (issueIds: string[]) => number;
+  unreadProjectIdSet: Set<string>;
   ensureBadgeNotifications: (workspaceSlug: string) => void;
+  refreshBadgeNotifications: (workspaceSlug: string) => Promise<void>;
   markIssueNotificationsAsRead: (workspaceSlug: string, issueId: string | undefined) => Promise<void>;
   firstUnreadActivityTarget: (issueId: string | undefined) => string | undefined;
   // helper actions
@@ -95,6 +97,10 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     read: false,
   };
   // BARSOUL: カードバッジ先読み済みワークスペース（非リアクティブな単純ガード）
+  // 初回 mount で一度だけ ALL+MENTIONS の prefetch を走らせる用. それ以降の
+  // 更新は ADR-033 の SSE(/__rt/stream) + ADR-028 の自適応 safety interval
+  // (healthy 5min / degraded 30s / 不可視 0) が realtime-sync.tsx で完結
+  // — 本 store 側に追加 polling は持たない(ADR-028 性能配慮設計の遵守).
   private _badgeWS: Set<string> = new Set();
 
   constructor(protected store: CoreRootStore) {
@@ -268,21 +274,93 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     return count;
   });
 
+  /**
+   * BARSOUL(2026-05-25): サイドバー赤点用 — 未読が存在するプロジェクト ID 集合。
+   * 「項目→BARSOUL→工作項」のパンくず各レベルに red dot を出すための計算源。
+   * 通知 store の未読(read_at=未, archived/snoozed=未)を project ごとに集約。
+   */
+  get unreadProjectIdSet(): Set<string> {
+    void this.unreadNotificationsCount.total_unread_notifications_count;
+    const s = new Set<string>();
+    if (isEmpty(this.notifications)) return s;
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      if (n.read_at || n.archived_at || n.snoozed_till) continue;
+      const pid = (n as any).project;
+      if (pid) s.add(String(pid));
+    }
+    return s;
+  }
+
 
   /**
-   * BARSOUL: カードバッジ用に通知を一度だけ先読み（ワークスペース単位）。
-   * 通知中心と同じ getNotifications を使うので追加 API なし。多数のバッジ
-   * が同時 mount しても _badgeWS ガードで 1 回だけ発火。
+   * BARSOUL: カードバッジ用に通知を先読み（ワークスペース単位、idempotent）。
+   *
+   * Plane 後端 (apiserver notification/base.py L100-103) は ALL タブで
+   * sender__icontains="mentioned" を EXCLUDE する仕様。
+   * → ALL タブの fetch だけだと @mention 通知が一切 store に入らず、
+   *   @mention のみで unread になっている課題カード(例: BS-175) は
+   *   永遠に既読扱いになる。
+   *
+   * 解決: badge 用途では ALL + MENTIONS の二重 fetch を行い、両方を
+   * mutateNotifications で merge(set 操作は同 id を上書き、新規は追加)。
+   * 通知中心 UI の tab state(currentNotificationTab/filters/pagination) は
+   * 一切触らない — 直接 service を呼び、store の notifications 観測へ
+   * 注入する。多重 mount しても _badgeWS Set で 1 ワークスペース 1 回。
    */
   ensureBadgeNotifications = (workspaceSlug: string) => {
-    // 兜底: コンポーネントの useParams が取れない描画文脈でも store.router から
     const ws = workspaceSlug || this.store.router.workspaceSlug?.toString() || "";
     if (!ws || this._badgeWS.has(ws)) return;
     this._badgeWS.add(ws);
+    // 初回 mount での即時 prefetch だけ. 以降は ADR-033 SSE + ADR-028
+    // 自適応 safety interval (realtime-sync.tsx) が refreshBadgeNotifications
+    // を呼んで増分同期する.
+    this.refreshBadgeNotifications(ws);
+  };
+
+  /**
+   * BARSOUL: カードバッジ用 notification 一括 refresh.
+   *
+   * **必ず ALL + MENTIONS の二経路を並列 fetch して store にマージ**.
+   * Plane apiserver `notification/base.py` L100-103 が ALL タブで
+   * `sender__icontains="mentioned"` を EXCLUDE する仕様のため、ALL のみ
+   * 呼ぶと @mention 通知が一切 store に入らず、@mention のみで unread
+   * になっている課題カード(例: BS-175)が永遠に既読扱いになる
+   * (2026-05-26 当日勃発の bug の根因).
+   *
+   * 呼び出し元(全て同 method を経由):
+   *   1. ensureBadgeNotifications — 初回 mount prefetch
+   *   2. realtime-sync.tsx の refreshNotifications(SSE invalidate)
+   *   3. realtime-sync.tsx の visibility/focus/online 補強経路
+   *   4. realtime-sync.tsx の自適応 safety interval(healthy/degraded)
+   *
+   * tab state(currentNotificationTab/filters/paginationInfo)には触らない —
+   * 通知中心 UI は独自 tab を維持. mutateNotifications は id 上書き semantic
+   * なので何度呼んでも冪等. 失敗は静かに飲み(次回 refresh で復旧, §X.4).
+   */
+  refreshBadgeNotifications = async (workspaceSlug: string): Promise<void> => {
+    const ws = workspaceSlug || this.store.router.workspaceSlug?.toString() || "";
+    if (!ws) return;
     try {
-      this.getNotifications(ws, ENotificationLoader.MUTATION_LOADER, ENotificationQueryParamType.INIT);
-    } catch (e) {
-      this._badgeWS.delete(ws);
+      // unread count は SWR(WORKSPACE_UNREAD_NOTIFICATION_COUNT) が
+      // realtime-sync.tsx 側で mutate() 経由で別途 refresh しているので
+      // ここでは list 二経路のみに専念(double fetch 排除).
+      const base: TNotificationPaginatedInfoQueryParams = {
+        per_page: this.paginatedCount,
+        cursor: `${this.paginatedCount}:0:0`,
+        snoozed: false,
+        archived: false,
+      };
+      const [allResp, menResp] = await Promise.all([
+        workspaceNotificationService.fetchNotifications(ws, { ...base }),
+        workspaceNotificationService.fetchNotifications(ws, { ...base, mentioned: true }),
+      ]);
+      runInAction(() => {
+        if (allResp?.results) this.mutateNotifications(allResp.results);
+        if (menResp?.results) this.mutateNotifications(menResp.results);
+      });
+    } catch {
+      // 失敗は次の SSE / safety interval / visibility 復帰で復旧
     }
   };
 
