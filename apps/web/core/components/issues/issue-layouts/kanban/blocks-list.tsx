@@ -5,9 +5,12 @@
  */
 
 import type { MutableRefObject } from "react";
+import { useMemo } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import type { TIssue, IIssueDisplayProperties, IIssueMap } from "@plane/types";
+// BARSOUL IUTEYA-9: Pin → sort to top
+import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
 // local imports
 import type { TRenderQuickActions } from "../list/list-view-types";
 import { KanbanIssueBlock } from "./block";
@@ -43,11 +46,23 @@ export const KanbanIssueBlocksList = observer(function KanbanIssueBlocksList(pro
     isEpic = false,
   } = props;
 
+  // BARSOUL IUTEYA-9: Pin → 列内で pinned-first 並び替え (per-user, 安定 sort)
+  // pinnedSet 変化で再評価. ドラッグソート等の元順序は保ったまま、pin だけ上へ.
+  const { pinnedSet } = usePinnedIssues();
+  const sortedIssueIds = useMemo(() => {
+    if (!issueIds || issueIds.length === 0) return issueIds;
+    if (pinnedSet.size === 0) return issueIds;
+    const pinned: string[] = [];
+    const rest: string[] = [];
+    for (const id of issueIds) (pinnedSet.has(id) ? pinned : rest).push(id);
+    return pinned.length === 0 ? issueIds : [...pinned, ...rest];
+  }, [issueIds, pinnedSet]);
+
   return (
     <>
-      {issueIds && issueIds.length > 0 ? (
+      {sortedIssueIds && sortedIssueIds.length > 0 ? (
         <>
-          {issueIds.map((issueId, index) => {
+          {sortedIssueIds.map((issueId, index) => {
             if (!issueId) return null;
 
             let draggableId = issueId;

@@ -5,10 +5,14 @@
  */
 
 import type { MutableRefObject } from "react";
+import { useMemo } from "react";
+import { observer } from "mobx-react";
 // components
 import type { TIssue, IIssueDisplayProperties, TIssueMap, TGroupedIssues } from "@plane/types";
 // hooks
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
+// BARSOUL IUTEYA-9: Pin → sort to top
+import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
 // types
 import { IssueBlockRoot } from "./block-root";
 import type { TRenderQuickActions } from "./list-view-types";
@@ -28,7 +32,7 @@ interface Props {
   isEpic?: boolean;
 }
 
-export function IssueBlocksList(props: Props) {
+export const IssueBlocksList = observer(function IssueBlocksList(props: Props) {
   const {
     issueIds,
     issuesMap,
@@ -44,11 +48,22 @@ export function IssueBlocksList(props: Props) {
     isEpic = false,
   } = props;
 
+  // BARSOUL IUTEYA-9: Pin → pinned-first 並び替え (per-user, 安定 sort)
+  const { pinnedSet } = usePinnedIssues();
+  const sortedIssueIds = useMemo(() => {
+    if (!issueIds || (issueIds as string[]).length === 0) return issueIds;
+    if (pinnedSet.size === 0) return issueIds;
+    const pinned: string[] = [];
+    const rest: string[] = [];
+    for (const id of issueIds as string[]) (pinnedSet.has(id) ? pinned : rest).push(id);
+    return pinned.length === 0 ? issueIds : [...pinned, ...rest];
+  }, [issueIds, pinnedSet]);
+
   return (
     <div className="relative h-full w-full">
-      {issueIds &&
-        issueIds.length > 0 &&
-        issueIds.map((issueId: string, index: number) => (
+      {sortedIssueIds &&
+        sortedIssueIds.length > 0 &&
+        sortedIssueIds.map((issueId: string, index: number) => (
           <IssueBlockRoot
             key={issueId}
             issueId={issueId}
@@ -62,7 +77,7 @@ export function IssueBlocksList(props: Props) {
             containerRef={containerRef}
             selectionHelpers={selectionHelpers}
             groupId={groupId}
-            isLastChild={index === issueIds.length - 1}
+            isLastChild={index === sortedIssueIds.length - 1}
             isDragAllowed={isDragAllowed}
             canDropOverIssue={canDropOverIssue}
             isEpic={isEpic}
@@ -70,4 +85,4 @@ export function IssueBlocksList(props: Props) {
         ))}
     </div>
   );
-}
+});

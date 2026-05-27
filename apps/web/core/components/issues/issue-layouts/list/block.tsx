@@ -38,6 +38,9 @@ import {
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
+import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
+// BARSOUL IUTEYA-9: Pin/収藏 ボタン
+import { PinButton } from "@/components/issues/pin-button";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { ApproverTitle } from "@/components/issues/approver-title";
@@ -105,9 +108,14 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
   // (旧 <IssueUnreadBadge> 廃止で trigger 喪失バグ修復)。_badgeWS Set ガード
   // で workspace 単位 1 回しか fetch しない。
   const { ensureBadgeNotifications } = useWorkspaceNotifications();
+  // BARSOUL IUTEYA-9: Pin/収藏 store も同じ idempotent prefetch.
+  const { ensureFetched: ensurePinsFetched } = usePinnedIssues();
   useEffect(() => {
-    if (workspaceSlug) ensureBadgeNotifications(workspaceSlug);
-  }, [workspaceSlug, ensureBadgeNotifications]);
+    if (workspaceSlug) {
+      ensureBadgeNotifications(workspaceSlug);
+      ensurePinsFetched(workspaceSlug);
+    }
+  }, [workspaceSlug, ensureBadgeNotifications, ensurePinsFetched]);
 
   const handleIssuePeekOverview = (issue: TIssue) =>
     workspaceSlug &&
@@ -317,6 +325,9 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                   {/* BARSOUL: 旧 ID 横未読 dot 廃止 — 左バー(下記 row CSS)に一本化 */}
                 </div>
               )}
+              {/* BARSOUL IUTEYA-9: ★ pin button (list 行 inline) */}
+              <PinButton issueId={issueId} projectId={issue.project_id} variant="row" />
+
 
               {/* sub-issues chevron */}
               <div className="grid size-4 flex-shrink-0 place-items-center">

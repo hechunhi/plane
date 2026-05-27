@@ -40,9 +40,12 @@ import {
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
+import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { ApproverTitle } from "@/components/issues/approver-title";
+// BARSOUL IUTEYA-9: Pin/収藏 ボタン
+import { PinButton } from "@/components/issues/pin-button";
 import { useProjectState } from "@/hooks/store/use-project-state";
 // local components
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
@@ -118,7 +121,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
 
   return (
     <>
-      <div className="relative">
+      <div className="relative flex items-center gap-1">
         {issue.project_id && (
           <IssueIdentifier
             issueId={issue.id}
@@ -128,6 +131,8 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
             displayProperties={displayProperties}
           />
         )}
+        {/* BARSOUL IUTEYA-9: ★ pin button (pinned→常時表示金色,未→hover ☆) */}
+        <PinButton issueId={issue.id} projectId={issue.project_id} variant="card" />
         <div
           className={cn("absolute -top-1 right-0", {
             "hidden group-hover/kanban-block:block": !isMobile,
@@ -210,9 +215,14 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
   // のバグを起こしていた。_badgeWS Set ガード付きで idempotent (50カード mount
   // しても workspace 単位で 1 回しか fetch しない)。
   const { ensureBadgeNotifications } = useWorkspaceNotifications();
+  // BARSOUL IUTEYA-9: Pin/収藏 store も同じ idempotent prefetch.
+  const { ensureFetched: ensurePinsFetched } = usePinnedIssues();
   useEffect(() => {
-    if (workspaceSlug) ensureBadgeNotifications(workspaceSlug);
-  }, [workspaceSlug, ensureBadgeNotifications]);
+    if (workspaceSlug) {
+      ensureBadgeNotifications(workspaceSlug);
+      ensurePinsFetched(workspaceSlug);
+    }
+  }, [workspaceSlug, ensureBadgeNotifications, ensurePinsFetched]);
 
   // handlers
   const handleIssuePeekOverview = (issue: TIssue) => handleRedirection(workspaceSlug, issue, isMobile);
