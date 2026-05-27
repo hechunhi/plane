@@ -34,12 +34,22 @@ import { useMember } from "@/hooks/store/use-member";
 const TR_AUTO_KEY = "aichan.autoTranslateOpen";
 const AI_USER_ID = "0e50881c-df94-4233-ad7e-65f943f62550"; // 愛ちゃん
 
-// 文字種探知 → 起点言語推定
-const HK_RE = /[぀-ゟ゠-ヿ]/; // ひらがな/カタカナ
-const HAN_RE = /[一-鿿]/; // 漢字
+// 文字種探知 → 起点言語推定(2026-05-27 比率ベース修正)
+// 旧: 任意 1 文字でも假名なら ja 判定 → 中文 95% + 日文名 5% でも ja 誤判
+// → ja→zh 翻訳要求 → LLM 中文 rephrasing でゴミ翻訳出力. (実例 BS-127
+// 「李美京小姐的合同...そうさん的公司」)
+// 新: 假名 / 漢字 比率で判定. 假名 ≥ 20% → 純粋日文. 純粋中文には假名はゼロ
+// な前提を活用、混在テキストも多数派側に倒す.
+const HK_RE_G = /[぀-ゟ゠-ヿ]/g;
+const HAN_RE_G = /[一-鿿]/g;
 function detectSrc(text: string): "ja" | "zh" | null {
-  if (HK_RE.test(text)) return "ja";
-  if (HAN_RE.test(text)) return "zh";
+  const kana = (text.match(HK_RE_G) || []).length;
+  const han = (text.match(HAN_RE_G) || []).length;
+  const total = kana + han;
+  if (total === 0) return null;
+  // 假名比率 ≥ 20% → 日文(純粋日文は 30-50%、中文は 0%、閾値 20% で安全分離)
+  if (kana / total >= 0.2) return "ja";
+  if (han > 0) return "zh";
   return null;
 }
 // 起点→目標(本チームは日中双方向): ja→zh, zh→ja

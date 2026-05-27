@@ -194,7 +194,7 @@ class IssueCommentViewSet(BaseViewSet):
 # ai-bot autotranslate 仍在后台预热缓存(写入時),大多数点击会命中。
 _HTML_STRIP = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
-_HK_RE = re.compile(r"[぀-ゟ゠-ヿ]")  # ひらがな/カタカナ
+_HK_RE = re.compile(r"[぀-ゟ゠-ヿ]")  # ひらがな/カタカナ (findall 用)
 _HAN_RE = re.compile(r"[一-鿿]")
 
 
@@ -203,10 +203,23 @@ def _strip(h):
 
 
 def _detect_src(text):
-    """Return source lang code or None."""
-    if _HK_RE.search(text):
+    """Return source lang code or None (比率ベース、2026-05-27 修正).
+
+    旧: 任意 1 文字でも假名なら ja 判定 → 中文 95% + 日文人名 5% でも
+    ja 誤判 → ja→zh 翻訳要求 → LLM 中文 rephrasing でゴミ翻訳が出る
+    (実例 BS-127「李美京小姐...そうさん的公司」). frontend display.tsx
+    と同じ閾値 (kana / (kana+han) ≥ 0.2 → ja) で対称防御.
+    """
+    if not text:
+        return None
+    kana = len(_HK_RE.findall(text))
+    han = len(_HAN_RE.findall(text))
+    total = kana + han
+    if total == 0:
+        return None
+    if kana / total >= 0.2:
         return "ja"
-    if _HAN_RE.search(text):
+    if han > 0:
         return "zh"
     return None
 
@@ -339,6 +352,14 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
         if not src_text:
             return Response({"error": "empty source"}, status=status.HTTP_400_BAD_REQUEST)
         src = _detect_src(src_text) or "auto"
+        # BARSOUL 2026-05-27: src == tgt なら LLM 呼出禁止(ゴミ翻訳防御).
+        # frontend がここまで来ない筈だが多層防御. 200 で空 text + noop フラグ返却
+        # → frontend は表示せず button も「同言語」表示で UX 自然.
+        if src == target_lang:
+            return Response({
+                "text": "", "source_lang": src,
+                "by": "noop:same-lang", "cached": False, "skip": True,
+            })
         translated = _call_llm(src_text, src, target_lang)
         if not translated:
             return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
