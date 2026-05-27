@@ -60,9 +60,21 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
             workspace__slug=self.kwargs.get("slug"),
         )
 
+        # BARSOUL 2026-05-27: orphan 通知排除 — target issue が deleted/archived
+        # の場合, sidebar 赤点と kanban view の整合が崩れる(deleted issue は
+        # board に出ないが unread notification は残るから赤点だけ残存).
+        # 対象 issue が「生きてる」(non-deleted + non-archived) ものに限る.
+        # 削除/アーカイブ時の cascade clean (SQL) と一対の防御.
+        alive_issue = Issue.objects.filter(
+            pk=OuterRef("entity_identifier"),
+            deleted_at__isnull=True,
+            archived_at__isnull=True,
+        )
+
         notifications = (
             Notification.objects.filter(workspace__slug=slug, receiver_id=request.user.id)
             .filter(entity_name="issue")
+            .filter(Exists(alive_issue))
             .annotate(is_inbox_issue=Exists(intake_issue))
             .annotate(is_intake_issue=Exists(intake_issue))
             .annotate(
@@ -198,27 +210,30 @@ class UnreadNotificationEndpoint(BaseAPIView):
 
     @allow_permission(allowed_roles=[ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
     def get(self, request, slug):
-        # Watching Issues Count
-        unread_notifications_count = (
+        # BARSOUL 2026-05-27: orphan 排除 (list endpoint と同じ — sidebar 赤点
+        # と kanban view の整合担保. target issue が deleted/archived の通知は
+        # count に含めない).
+        alive_issue = Issue.objects.filter(
+            pk=OuterRef("entity_identifier"),
+            deleted_at__isnull=True,
+            archived_at__isnull=True,
+        )
+        base = (
             Notification.objects.filter(
                 workspace__slug=slug,
                 receiver_id=request.user.id,
                 read_at__isnull=True,
                 archived_at__isnull=True,
                 snoozed_till__isnull=True,
+                entity_name="issue",
             )
-            .exclude(sender__icontains="mentioned")
-            .count()
+            .filter(Exists(alive_issue))
         )
 
-        mention_notifications_count = Notification.objects.filter(
-            workspace__slug=slug,
-            receiver_id=request.user.id,
-            read_at__isnull=True,
-            archived_at__isnull=True,
-            snoozed_till__isnull=True,
-            sender__icontains="mentioned",
-        ).count()
+        # Watching Issues Count
+        unread_notifications_count = base.exclude(sender__icontains="mentioned").count()
+
+        mention_notifications_count = base.filter(sender__icontains="mentioned").count()
 
         return Response(
             {
