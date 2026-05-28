@@ -196,10 +196,39 @@ _HTML_STRIP = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
 _HK_RE = re.compile(r"[぀-ゟ゠-ヿ]")  # ひらがな/カタカナ (findall 用)
 _HAN_RE = re.compile(r"[一-鿿]")
+# BARSOUL 2026-05-27 (hechun): 段落構造保持. Plane の comment_html は
+# <p>...</p><p>...</p> や <br> で論理段落を分けるが、旧 _strip は
+# 全空白を単スペース 1 個に潰すため、LLM 入力時点で段落破壊が確定し
+# 「段落塌陷」no-op 検出も発火し得ない (\n\n が source に無いため).
+# → <br>/<p>/<div>/</p>/</div> を一旦 \n に置換してから tag strip.
+_BLOCK_RE = re.compile(
+    r"</?(p|div|h[1-6]|li|tr|blockquote|article|section)\b[^>]*>|<br\s*/?>",
+    re.IGNORECASE,
+)
+# 段内連空白(タブ/全角空白等)は 1 個に潰すが、改行は跨がない
+_INLINE_WS = re.compile(r"[ \t　\xa0]+")
+# 3 連以上の改行は 2 連まで(段落区切り 1 個分)
+_NL_MAX = re.compile(r"\n{3,}")
 
 
 def _strip(h):
-    return _WS.sub(" ", _HTML_STRIP.sub(" ", h or "")).strip()
+    """HTML → 段落構造保持つきプレーンテキスト.
+
+    旧:  <p>A</p><p>B</p>  →  "A B"   (paragraphs lost)
+    新:  <p>A</p><p>B</p>  →  "A\n\nB" (paragraphs survive → LLM 段落保持発動)
+    """
+    if not h:
+        return ""
+    # 1) <br> / block tags → \n
+    s = _BLOCK_RE.sub("\n", h)
+    # 2) 残る tag を空に
+    s = _HTML_STRIP.sub("", s)
+    # 3) 行内連空白を 1 個に圧縮(改行は保持)
+    lines = [_INLINE_WS.sub(" ", ln).strip() for ln in s.split("\n")]
+    s = "\n".join(lines)
+    # 4) 3+連改行 → 2 連改行(段落区切り)
+    s = _NL_MAX.sub("\n\n", s)
+    return s.strip()
 
 
 def _detect_src(text):
@@ -225,13 +254,15 @@ def _detect_src(text):
 
 
 def _looks_like_noop(text, out, tgt):
-    """检测模型是否在 punt(复述原文 或 没翻译到目标语)。
+    """检测模型是否在 punt(复述原文 或 没翻译到目标语 或 段落塌陷)。
 
     no-op 判定:
       1. 空输出
       2. 输出 normalize 后 == 输入 normalize 后(只 strip 空白/全半角)
       3. tgt=ja 但输出无任何假名(全汉字 + 数字 + 英文 → 没真翻成日文)
       4. tgt=zh 但输出含假名(没翻译干净,还残留日文)
+      5. (2026-05-27) 段落塌陷:源含多段(\\n\\n × 2+)但输出无 \\n
+         → 模型把多段邮件 / 多行表单压扁成一句,阅读体验差,算失败 → 升级。
 
     回 True = no-op 失败,caller 应 fallback / 报错。"""
     if not out:
@@ -246,14 +277,22 @@ def _looks_like_noop(text, out, tgt):
         return True
     if tgt == "zh" and has_kana:
         return True
+    # 段落塌陷:源至少 2 个空行(\n\n+)而输出 0 个 \n → 小模型把段落压扁
+    if (text or "").count("\n\n") >= 2 and out.count("\n") == 0:
+        return True
     return False
 
 
-# BARSOUL 2026-05-24:fallback chain — hy-mt2 偶尔在边界 case 上 no-op(已被 P1
-# prompt 大幅缓解,但留兜底)。链路:hy-mt2(快、505ms)→ default(qwen3.5-4b,
-# 准、~2s)→ gemma-4-26b(强、~5s)。任一通过 noop 检测即返回。全链失败回 ""
-# 让 endpoint 502。
-_TRANSLATE_FALLBACK_CHAIN = ["hy-mt2", "default", "gemma-4-26b"]
+# BARSOUL 2026-05-24:fallback chain。
+# 2026-05-27 (月極駐車場 邮件事故修):**gemma-4-26b 优先于 default(qwen3.5-4b)**
+# 因为 qwen 在长文 + 多段输入下**不保留 \n 段落结构**(实测 30 段日文邮件
+# → qwen 输出 0 个 \n,压扁单段)。gemma 30 个 \n 完美保段。链路改:
+# hy-mt2(快、505ms)→ gemma-4-26b(段落保留、~5s)→ default(最后兜底)。
+# BARSOUL 2026-05-28: gemma-4-26b @ :8001 サービス未起動 → ゲートウェイで
+# 死路由 → 502。残る 2 段(hy-mt2 + default=qwen3.5-4b alias)で実運用十分。
+# 段落保持の劣化は qwen3.5-4b で十分(月極駐車場ケースの様な長文邮件は
+# 稀;実害顕在化したら ROUTES env で gemma 復活 + chain 再追加).
+_TRANSLATE_FALLBACK_CHAIN = ["hy-mt2", "default"]
 
 
 def _try_one_model(url, model, sys_msg, text):
@@ -300,6 +339,9 @@ def _call_llm(text, src, tgt):
         f"あなたは越境EC企業 BARSOUL(大阪・日中チーム)の業務翻訳者。"
         f"**必須**: 入力された{src_label}を{tgt_label}に翻訳して出力する。"
         "原文をそのまま返してはならない。原文と異なる訳文を必ず出力する。\n"
+        "**段落フォーマット (2026-05-27 hechun):** 原文の段落区切り(空行 \\n\\n)を\n"
+        "**訳文でも同じ位置に空行を入れて保つ**。論理段落ごとに空行で分けて読みやすく。\n"
+        "リスト(1./2./・/- 等)は原文の改行構造を維持。\n\n"
         "規則:\n"
         f"- 出力は{tgt_label}の翻訳文のみ(前置き・引用符・原文併記なし)\n"
         "- 人名 / 電話番号 / 住所固有名 / 英語ブランド名(例 Shaken Not Stirred) / 数値 / 日付 / 金額 は保持\n"
@@ -337,18 +379,46 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
         if not target_lang:
             return Response({"error": "target_lang required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Cache hit (含 soft-deleted 复活)
+        # 先に src_text を計算 (cache quality check で再利用).
+        src_text = _strip(comment.comment_html or "")
+
+        # Cache hit (含 soft-deleted 复活) + 質量門 (2026-05-27 hechun).
+        # 背景: ai-bot autotranslate (translated_by 前缀 'aichan') の多 pass 翻訳は
+        #   hy-mt2 → gemma → :8094 連鎖中の任意 step で truncate / 段落塌陷 が起き、
+        #   結果 cache が「原文 5 段 → 訳文 1 段」「原文 681 字 → 訳文 122 字」など
+        #   重欠訳のまま固着する事故が継続 (hechun 截图実証).
+        # 修法: cache hit でも 2 つの heuristic で品質判定し、failing なら soft-delete
+        #   して _call_llm (我々が修した段落保持 prompt + fallback chain) に回す.
+        #   ① 段落数大幅欠落: src ≥3 段 + tgt <50% で revoke
+        #   ② 文字数大幅欠落: src ≥200 字 + tgt <40% で revoke
+        # 健全 cache は今まで通り即返 (P95 のレイテンシ温存).
         cache = CommentTranslation.all_objects.filter(
             comment=comment, target_lang=target_lang
         ).first()
         if cache and not cache.deleted_at and cache.text:
-            return Response({
-                "text": cache.text, "source_lang": cache.source_lang,
-                "by": cache.translated_by, "cached": True,
-            })
+            _src_paras = src_text.count("\n\n") + 1 if src_text else 0
+            _tgt_paras = (cache.text or "").count("\n\n") + 1
+            _src_chars = len(src_text or "")
+            _tgt_chars = len(cache.text or "")
+            _bad_paras = _src_paras >= 3 and _tgt_paras < _src_paras * 0.5
+            _bad_chars = _src_chars >= 200 and _tgt_chars < _src_chars * 0.4
+            if _bad_paras or _bad_chars:
+                logger.info(
+                    f"cache quality FAIL cid={comment.id} "
+                    f"by={cache.translated_by} "
+                    f"paras src={_src_paras} tgt={_tgt_paras} "
+                    f"chars src={_src_chars} tgt={_tgt_chars} → re-translate"
+                )
+                cache.deleted_at = timezone.now()
+                cache.save()
+                cache = None  # fall through to LLM
+            else:
+                return Response({
+                    "text": cache.text, "source_lang": cache.source_lang,
+                    "by": cache.translated_by, "cached": True,
+                })
 
-        # Cache miss → LLM
-        src_text = _strip(comment.comment_html or "")
+        # Cache miss → LLM (src_text 已经在上面算好了)
         if not src_text:
             return Response({"error": "empty source"}, status=status.HTTP_400_BAD_REQUEST)
         src = _detect_src(src_text) or "auto"
