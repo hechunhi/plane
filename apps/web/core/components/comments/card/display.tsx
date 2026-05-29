@@ -56,46 +56,53 @@ function detectSrc(text: string): "ja" | "zh" | null {
 function targetFor(src: "ja" | "zh"): "ja" | "zh" {
   return src === "ja" ? "zh" : "ja";
 }
-// 起点+目標 → ボタン文字(目標言語の話者が読む想定)
-function buttonLabel(src: "ja" | "zh", state: "idle" | "loading"): string {
+// 起点+目標 → 読者言語(=tgt)向けの文言セット(X 式: 翻訳自 X · 显示原文)
+function trLabels(src: "ja" | "zh") {
   const tgt = targetFor(src);
-  if (state === "loading") return tgt === "zh" ? "翻译中…" : "翻訳中…";
-  // 起点が日本語 → 目標中文の読者が「翻译」を見る
-  return tgt === "zh" ? "翻译" : "訳す";
+  return tgt === "zh"
+    ? { trigger: "翻译", loading: "翻译中…", from: "翻译自 日语", showOrig: "显示原文" }
+    : { trigger: "翻訳", loading: "翻訳中…", from: "中国語から翻訳", showOrig: "原文を表示" };
 }
 
-function CommentTranslateButton(props: {
+// 翻訳元アイコン(X の "⌀" 相当のミニ globe)。
+const TranslateGlyph = () => (
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-70">
+    <circle cx="12" cy="12" r="10" />
+    <path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
+  </svg>
+);
+
+// BARSOUL 評論翻訳 X 式 UX (2026-05-30 hechun): 既定は原文表示 + 下に控えめな
+// 「🌐 翻訳」リンク。クリック → 原文を訳文で置換 + 上部に「🌐 翻訳自 X · 显示原文」
+// ヘッダ。「显示原文」で原文に戻る。原文(children)は CSS で隠すだけ(unmount せず
+// editor ref を保持 → 編集モード遷移を壊さない)。
+function CommentTranslatable(props: {
   workspaceSlug: string;
   projectId: string;
   issueId: string;
   comment: any;
   commentText: string;
   actorId: string | undefined;
+  children: ReactNode; // 原文 (read-only LiteTextEditor)
 }) {
-  const { workspaceSlug, projectId, issueId, comment, commentText, actorId } = props;
-  // 起点言語推定 — 異言語が含まれない短文は対象外
+  const { workspaceSlug, projectId, issueId, comment, commentText, actorId, children } = props;
   const src = detectSrc(commentText);
-  // AI 自身のコメントはスキップ(自動翻訳ループ防止)
   const isAi = actorId === AI_USER_ID;
 
-  // 初期: localStorage の自動展開フラグ + サーバ既存キャッシュ
-  const cachedFromServer = src
-    ? (comment?.translations as any)?.[targetFor(src)]
-    : null;
+  const cachedFromServer = src ? (comment?.translations as any)?.[targetFor(src)] : null;
   const [autoOpen, setAutoOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(TR_AUTO_KEY) === "1";
   });
   const [text, setText] = useState<string | null>(cachedFromServer?.text || null);
-  const [expanded, setExpanded] = useState<boolean>(!!(autoOpen && cachedFromServer?.text));
+  const [showTr, setShowTr] = useState<boolean>(!!(autoOpen && cachedFromServer?.text));
   const [loading, setLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 自動展開モード切替時の追随
   useEffect(() => {
-    if (autoOpen && text) setExpanded(true);
+    if (autoOpen && text) setShowTr(true);
   }, [autoOpen, text]);
-  // 別タブの設定変更追従
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onStorage = (e: StorageEvent) => {
@@ -105,21 +112,14 @@ function CommentTranslateButton(props: {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  if (!src || isAi || !commentText.trim()) return null;
+  // 異言語でない / AI コメント / 空 → 翻訳 UI なしで原文のみ
+  if (!src || isAi || !commentText.trim()) return <>{children}</>;
 
   const tgt = targetFor(src);
+  const L = trLabels(src);
 
-  const onToggle = async () => {
+  const doFetch = async () => {
     setErrorMsg(null);
-    if (expanded) {
-      setExpanded(false);
-      return;
-    }
-    if (text) {
-      setExpanded(true);
-      return;
-    }
-    // fetch
     setLoading(true);
     try {
       const r = await fetch(
@@ -132,69 +132,82 @@ function CommentTranslateButton(props: {
         }
       );
       const j = await r.json();
-      if (!r.ok) {
-        setErrorMsg(j?.error || `翻译失败 (${r.status})`);
-      } else {
+      if (!r.ok) setErrorMsg(j?.error || `翻译失败 (${r.status})`);
+      else {
         setText(j.text || "");
-        setExpanded(true);
+        setShowTr(true);
       }
-    } catch (e: any) {
+    } catch {
       setErrorMsg("ネットワーク错误 / 网络错误");
     } finally {
       setLoading(false);
     }
   };
 
+  const showTranslation = () => (text ? setShowTr(true) : doFetch());
   const toggleAuto = (e: React.MouseEvent | React.ChangeEvent) => {
     e.stopPropagation();
     const next = !autoOpen;
     setAutoOpen(next);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(TR_AUTO_KEY, next ? "1" : "0");
-    }
+    if (typeof window !== "undefined") window.localStorage.setItem(TR_AUTO_KEY, next ? "1" : "0");
   };
 
+  const translating = showTr && !!text;
+
   return (
-    <div className="mt-1 select-none">
-      <div className="flex items-center gap-3 text-[11px] text-tertiary">
-        <button
-          type="button"
-          onClick={onToggle}
-          disabled={loading}
-          className="hover:text-secondary hover:underline transition-colors disabled:opacity-60 disabled:cursor-wait"
-          aria-expanded={expanded}
-        >
-          {loading ? (
-            <span className="inline-flex items-center gap-1">
-              <span className="inline-block size-3 border border-tertiary border-t-transparent rounded-full animate-spin" />
-              {buttonLabel(src, "loading")}
-            </span>
-          ) : expanded ? (
-            <span>{tgt === "zh" ? "收起翻译" : "折りたたむ"}</span>
-          ) : (
-            <span>{buttonLabel(src, "idle")}</span>
+    <div className="select-none">
+      {/* 原文: 訳文表示中は CSS で隠す(unmount しないので editor ref 保持) */}
+      <div className={translating ? "hidden" : "block"}>{children}</div>
+
+      {translating ? (
+        // ── X 式 訳文ビュー: ヘッダ(翻訳自 X · 显示原文) + 訳文 ──
+        <div className="mt-0.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-tertiary mb-1">
+            <TranslateGlyph />
+            <span>{L.from}</span>
+            <span className="opacity-50">·</span>
+            <button
+              type="button"
+              onClick={() => setShowTr(false)}
+              className="text-accent-primary hover:underline"
+            >
+              {L.showOrig}
+            </button>
+          </div>
+          <div className="text-caption-sm-regular text-primary whitespace-pre-wrap leading-relaxed">
+            {text}
+          </div>
+        </div>
+      ) : (
+        // ── 原文ビュー: 控えめな「🌐 翻訳」トリガ ──
+        <div className="mt-1 flex items-center gap-3 text-[11px] text-tertiary">
+          <button
+            type="button"
+            onClick={showTranslation}
+            disabled={loading}
+            className="inline-flex items-center gap-1 hover:text-secondary hover:underline transition-colors disabled:opacity-60 disabled:cursor-wait"
+          >
+            {loading ? (
+              <>
+                <span className="inline-block size-3 border border-tertiary border-t-transparent rounded-full animate-spin" />
+                {L.loading}
+              </>
+            ) : (
+              <>
+                <TranslateGlyph />
+                {L.trigger}
+              </>
+            )}
+          </button>
+          {!loading && (
+            <label className="opacity-50 hover:opacity-100 transition-opacity cursor-pointer flex items-center gap-1">
+              <input type="checkbox" checked={autoOpen} onChange={toggleAuto} className="size-2.5 cursor-pointer" />
+              <span>自動展開 / 自动展开</span>
+            </label>
           )}
-        </button>
-        {!expanded && !loading && (
-          <label className="opacity-50 hover:opacity-100 transition-opacity cursor-pointer flex items-center gap-1">
-            <input
-              type="checkbox"
-              checked={autoOpen}
-              onChange={toggleAuto}
-              className="size-2.5 cursor-pointer"
-            />
-            <span>自動展開 / 自动展开</span>
-          </label>
-        )}
-      </div>
-      {errorMsg && (
-        <div className="mt-1 text-[11px] text-red-500">{errorMsg}</div>
-      )}
-      {expanded && text && (
-        <div className="mt-1.5 text-caption-sm-regular text-secondary whitespace-pre-wrap leading-relaxed border-l-2 border-tertiary/20 pl-2">
-          {text}
         </div>
       )}
+      {errorMsg && <div className="mt-1 text-[11px] text-red-500">{errorMsg}</div>}
     </div>
   );
 }
@@ -335,29 +348,31 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
         />
       ) : (
         <>
-          <LiteTextEditor
-            editable={false}
-            ref={readOnlyEditorRef}
-            id={comment.id}
-            initialValue={comment.comment_html ?? ""}
-            workspaceId={workspaceId}
-            workspaceSlug={workspaceSlug}
-            containerClassName={cn("!py-1 transition-[border-color] duration-500", highlightClassName)}
-            projectId={projectId?.toString()}
-            displayConfig={{
-              fontSize: "small-font",
-            }}
-            parentClassName="border-none"
-          />
-          {/* BARSOUL: 評論翻訳 X 式 即点即译ボタン (異言語コメントのみ恒常表示) */}
-          <CommentTranslateButton
+          {/* BARSOUL: 評論翻訳 X 式 UX — 原文(editor)を wrap し、訳文表示時は
+              原文を CSS で隠して訳文に置換 + 「翻訳自 X · 显示原文」ヘッダ。 */}
+          <CommentTranslatable
             workspaceSlug={workspaceSlug}
             projectId={String(projectId || "")}
             issueId={String((comment as any).issue || "")}
             comment={comment}
             commentText={(comment as any).comment_stripped || ""}
             actorId={comment?.actor}
-          />
+          >
+            <LiteTextEditor
+              editable={false}
+              ref={readOnlyEditorRef}
+              id={comment.id}
+              initialValue={comment.comment_html ?? ""}
+              workspaceId={workspaceId}
+              workspaceSlug={workspaceSlug}
+              containerClassName={cn("!py-1 transition-[border-color] duration-500", highlightClassName)}
+              projectId={projectId?.toString()}
+              displayConfig={{
+                fontSize: "small-font",
+              }}
+              parentClassName="border-none"
+            />
+          </CommentTranslatable>
           {shouldRenderReactions &&
             (renderFooter ? (
               renderFooter(
