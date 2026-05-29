@@ -358,6 +358,36 @@ def _call_llm(text, src, tgt):
     return ""
 
 
+# ── BARSOUL 2026-05-29: クラウド Claude 翻訳(ai-bot 経由)を主路に ──────────
+# plane-api は Docker 内 → 宿主の claude CLI に直接届かない。宿主の ai-bot
+# (/translate) が cloud_translate を代行する。失敗(ai-bot 不通/token切れ)時のみ
+# 下の _call_llm 本地 chain へ退避。LLM_GATEWAY_URL と同型で host.docker.internal。
+_AIBOT_TRANSLATE_URL = os.environ.get(
+    "AIBOT_TRANSLATE_URL", "http://host.docker.internal:8098/translate"
+).strip()
+
+
+def _cloud_translate(text, src, tgt):
+    """ai-bot /translate(クラウド Claude)を呼ぶ。成功=訳文, 失敗="". """
+    if not _AIBOT_TRANSLATE_URL:
+        return ""
+    try:
+        r = _req.post(
+            _AIBOT_TRANSLATE_URL,
+            json={"text": text[:4000], "source": src, "target": tgt},
+            timeout=45,
+        )
+        if r.status_code != 200:
+            return ""
+        j = r.json()
+        if j.get("ok") and j.get("by", "").startswith("cloud"):
+            globals()["_last_model_used"] = j.get("by", "cloud:claude")
+            return (j.get("text") or "").strip()
+    except Exception as e:
+        logger.info(f"_cloud_translate failed: {type(e).__name__}: {e}")
+    return ""
+
+
 class CommentTranslateOnDemandEndpoint(BaseAPIView):
     """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/comments/{cid}/translate/
     Body: {target_lang: "zh"|"ja"}
@@ -430,7 +460,11 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
                 "text": "", "source_lang": src,
                 "by": "noop:same-lang", "cached": False, "skip": True,
             })
-        translated = _call_llm(src_text, src, target_lang)
+        # BARSOUL 2026-05-29: 主路 = クラウド Claude(ai-bot 経由, 高品質)。
+        # 失敗時のみ _call_llm 本地 chain(hy-mt2/4b) へ退避。
+        translated = _cloud_translate(src_text, src, target_lang)
+        if not translated:
+            translated = _call_llm(src_text, src, target_lang)
         if not translated:
             return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
         # BARSOUL: 记录实际命中的模型(fallback chain 可能用 default / gemma-4-26b
