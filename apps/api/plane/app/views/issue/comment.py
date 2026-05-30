@@ -295,28 +295,47 @@ def _looks_like_noop(text, out, tgt):
 _TRANSLATE_FALLBACK_CHAIN = ["hy-mt2", "default"]
 
 
-def _try_one_model(url, model, sys_msg, text):
-    """单次模型调用 + preamble strip。失败/异常返 ""。"""
+def _try_one_model(url, model, sys_msg, text, tgt="zh"):
+    """单次模型调用 + preamble strip。失败/异常返 ""。
+
+    BARSOUL 2026-05-30 (hechun + Hy-MT2 官方 doc): hy-mt2 是翻译专用模型,
+    官方明确「无 default system_prompt」+ 靠 user message 的 native template +
+    推荐采样(temp0.7/top_p0.6/top_k20/rep1.05)。实测原生用法把段落塌陷/截断/
+    no-op 一扫(761字8段 zh→ja 段落8/8 完美)。故 hy-mt2 走原生路, 其它模型
+    (default=qwen3.5-4b)仍用 system prompt + temp0.2(qwen 跟随 system)。"""
     try:
-        r = _req.post(
-            url,
-            json={
+        if model == "hy-mt2":
+            tgt_name = "中文（简体）" if tgt == "zh" else "日语"
+            # 官方 Hy-MT2-Translator skill 整合: basic mode(指示最小)が反流ゼロ +
+            # 段落自然保持(761字8段で para 8/8)。temp 0.1 + 余分な sampling 無し。
+            usr = (f"将以下文本翻译为{tgt_name}，"
+                   f"注意只需要输出翻译后的结果，不要额外解释：\n\n{text[:1800]}")
+            payload = {
+                "model": model,
+                "messages": [{"role": "user", "content": usr}],
+                "temperature": 0.1, "max_tokens": 4096,
+            }
+        else:
+            payload = {
                 "model": model,
                 "messages": [
                     {"role": "system", "content": sys_msg},
                     {"role": "user", "content": text[:1500]},
                 ],
-                "temperature": 0.2,
-                "max_tokens": 1500,
-            },
-            timeout=60,
-        )
+                "temperature": 0.2, "max_tokens": 1500,
+            }
+        r = _req.post(url, json=payload, timeout=60)
         if r.status_code != 200:
             return ""
         j = r.json()
         msg = ((j.get("choices") or [{}])[0] or {}).get("message", {}) or {}
         out = (msg.get("content") or "").strip()
-        for p in ("【", "訳:", "翻訳:", "译文:", "中文:", "日本語:"):
+        # 前置きラベル除去。hy-mt2 native は 【...】見出しを正当に訳出するので
+        # 【 strip は非 hy-mt2 のみ(误删正文标题防止)。
+        prefixes = ("訳:", "翻訳:", "译文:", "译文：", "中文:", "日本語:")
+        if model != "hy-mt2":
+            prefixes = ("【",) + prefixes
+        for p in prefixes:
             if out.startswith(p) and "\n" in out:
                 out = out.split("\n", 1)[1].strip()
         return out
@@ -348,7 +367,7 @@ def _call_llm(text, src, tgt):
         "- 内容が短くても必ず翻訳する。コピーは禁止。"
     )
     for model in _TRANSLATE_FALLBACK_CHAIN:
-        out = _try_one_model(url, model, sys, text)
+        out = _try_one_model(url, model, sys, text, tgt)
         if out and not _looks_like_noop(text, out, tgt):
             # 把实际成功的 model 记到 module attr,view 后续读出来写 translated_by
             globals()["_last_model_used"] = model

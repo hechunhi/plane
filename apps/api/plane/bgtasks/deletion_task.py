@@ -99,6 +99,27 @@ def soft_delete_related_objects(app_label, model_name, instance_pk, using=None):
                 print(f"Error handling relation {related_name}: {str(e)}")
                 continue
 
+    # BARSOUL 2026-05-28 (hechun): issue 削除時に紐づく通知も掃除する。
+    # Notification.entity_identifier は Issue への ForeignKey ではなく素の
+    # UUIDField なので、上の FK reverse-relation cascade では一切拾われず、
+    # 課題を消しても通知(@mention / subscribed 等)が未読のまま残る。
+    # 結果: サイドバー赤点 (unreadProjectIdSet は通知の project だけ見る) は
+    # 点くのに、該当カードは描画されない (issue 削除済 → unreadCountByIssueId が
+    # マッチ不能) という不整合が出る。canary が毎 6h で issue を起票→審査→削除
+    # するたび @mention+subscribed の孤児未読を量産していたのが主因。
+    # entity_identifier と data.issue.id の両系で照合し soft-delete する
+    # (read 化ではなく削除 = 通知中心からも消え、派生計算に二度と出ない)。
+    if model_name == "issue":
+        try:
+            from plane.db.models import Notification
+
+            Notification.objects.filter(
+                models.Q(entity_identifier=instance_pk) | models.Q(data__issue__id=str(instance_pk)),
+                entity_name="issue",
+            ).update(deleted_at=timezone.now())
+        except Exception as e:
+            print(f"Error cleaning issue notifications for {instance_pk}: {str(e)}")
+
     # Finally, soft delete the instance itself if it hasn't been deleted yet
     if hasattr(instance, "deleted_at") and not instance.deleted_at:
         instance.deleted_at = timezone.now()
