@@ -143,8 +143,14 @@ class IssueSearchEndpoint(BaseAPIView):
         ).exists():
             issues = issues.filter(created_by=self.request.user)
 
+        # BARSOUL: dedupe via .distinct() — Plane filters by
+        # `project__project_projectmember__member=user` which JOINs the
+        # ProjectMember table; if there are multiple member rows for the
+        # same (project, user) — e.g. orphaned soft-deleted rows where
+        # is_active=true and deleted_at is NOT NULL — every issue gets
+        # multiplied. Adding distinct() is a cheap guard against that.
         return Response(
-            issues.values(
+            issues.distinct().values(
                 "name",
                 "id",
                 "start_date",

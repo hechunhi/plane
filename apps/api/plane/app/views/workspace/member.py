@@ -35,10 +35,16 @@ class WorkSpaceMemberViewSet(BaseViewSet):
     use_read_replica = True
 
     def get_queryset(self):
+        # BARSOUL: only return active, non-deleted memberships.
+        # When users get soft-removed and re-added (or PLANE_AUTO_JOIN_PROJECTS
+        # races), the same (workspace, user) ends up with multiple rows. The
+        # SPA's memberMap is keyed by user_id, so the second forEach write
+        # overwrites the first — but observers can capture either value mid-
+        # update, producing "@suspended user" reads from stale entries.
         return self.filter_queryset(
             super()
             .get_queryset()
-            .filter(workspace__slug=self.kwargs.get("slug"))
+            .filter(workspace__slug=self.kwargs.get("slug"), is_active=True)
             .select_related("member", "member__avatar_asset")
         )
 
