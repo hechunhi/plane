@@ -292,7 +292,15 @@ function CommentTranslatable(props: {
         {showingTranslation && (
           <>
             <span className="opacity-50">·</span>
-            <span>{L.from}</span>
+            {/* BARSOUL 2026-06-05 (hechun): AI翻訳免責は独立行だと毎評論ノイズ →
+                既存「翻訳元」ラベルの tooltip に集約(hover で表示, 行を増やさない)。
+                ラベル自体が「翻訳/機械翻訳」と既に機械翻訳を示唆。 */}
+            <span
+              title="※ 爱酱AI翻译，可能有误，请以原文为准 ／ AI翻訳のため誤りの可能性あり、原文を優先"
+              className="cursor-help underline decoration-dotted underline-offset-2"
+            >
+              {L.from}
+            </span>
           </>
         )}
         <span className="flex-1" />
@@ -313,13 +321,6 @@ function CommentTranslatable(props: {
           displayConfig={{ fontSize: "small-font" }}
           parentClassName="border-none"
         />
-      )}
-      {/* BARSOUL 2026-06-05 (hechun): AI 翻訳の免責(中日双语一行)。機械翻訳は
-          誤りがあり得るため、原文優先をユーザに明示。訳文表示中のみ。 */}
-      {showingTranslation && trHtml && (
-        <div className="mt-0.5 text-[10px] italic text-tertiary opacity-70">
-          ※ 爱酱AI翻译，可能有误，请以原文为准 ／ AI翻訳のため誤りの可能性あり、原文を優先
-        </div>
       )}
       {/* 原文: 訳文表示中は CSS 隠し(unmount せず editor ref 保持)。 */}
       <div className={showingTranslation ? "hidden" : "block"}>{children}</div>
