@@ -12,6 +12,7 @@ from plane.app.views import (
     IssueAttachmentEndpoint,
     CommentReactionViewSet,
     CommentTranslateOnDemandEndpoint,
+    IssueAIStateBatchEndpoint,
     IssueActivityEndpoint,
     IssueArchiveViewSet,
     IssueCommentViewSet,
@@ -178,6 +179,12 @@ urlpatterns = [
         name="project-issue-comment-translate",
     ),
     ## End IssueComments
+    # BARSOUL: 派生卡片当前态 (DIS) 批量读取(看板卡顶状态行, cookie auth, project member)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/ai-states/",
+        IssueAIStateBatchEndpoint.as_view(),
+        name="project-issue-ai-states",
+    ),
     # Issue Subscribers
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/issue-subscribers/",

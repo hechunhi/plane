@@ -141,6 +141,8 @@ from .issue.attachment import (
 
 from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint
 
+from .issue.ai_state import IssueAIStateBatchEndpoint
+
 from .issue.label import LabelViewSet, BulkCreateIssueLabelsEndpoint
 
 from .issue.link import IssueLinkViewSet

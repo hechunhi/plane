@@ -845,3 +845,41 @@ class CommentTranslation(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.comment_id}:{self.target_lang}"
+
+
+# BARSOUL: 派生卡片当前态 (Derived Issue State, DIS)。真相=issue + comments +
+# activity,派生=本表(可重算/可删,**绝不污染主轨**)。每 issue 唯一一行
+# (OneToOne)。愛ちゃん/cloud Claude 从最近评论推断「球在谁手 / 下一步 / 是否
+# 停滞」,看板卡顶静默渲染状态行。upsert by issue。详 docs/architecture/
+# derived-issue-state-mvp.md。
+class IssueAIState(ProjectBaseModel):
+    issue = models.OneToOneField(
+        Issue, on_delete=models.CASCADE, related_name="ai_state")
+    # ACTIVE(推进中) | WAITING(等外部) | STALE(停滞) | UNKNOWN(信息不足)
+    state = models.CharField(max_length=8, default="UNKNOWN")
+    # SELF(球在我方) | OTHER(球在对方) | ""(未知)
+    ball = models.CharField(max_length=8, blank=True, default="")
+    current_actor = models.CharField(max_length=120, blank=True, default="")
+    owner = models.CharField(max_length=120, blank=True, default="")
+    # 动词开头, ≤12 中文字符 (校验在 ai-bot 侧, 此处放宽长度兜底)
+    next_action = models.CharField(max_length=120, blank=True, default="")
+    due_date = models.DateField(null=True, blank=True)
+    stale_days = models.IntegerField(default=0)
+    confidence = models.FloatField(default=0.0)  # 0~1
+    reasoning = models.TextField(blank=True, default="")
+    model_used = models.CharField(max_length=40, blank=True, default="")
+    # 输入指纹: 同 hash 跳过 LLM (去抖/省钱), self-invalidating
+    source_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    schema_version = models.PositiveSmallIntegerField(default=1)
+
+    class Meta:
+        verbose_name = "Issue AI State"
+        verbose_name_plural = "Issue AI States"
+        db_table = "issue_ai_states"
+        indexes = [
+            models.Index(fields=["project", "state"]),
+            models.Index(fields=["workspace", "ball", "owner"]),
+        ]
+
+    def __str__(self):
+        return f"{self.issue_id}:{self.state}"

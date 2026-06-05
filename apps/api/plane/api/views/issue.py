@@ -74,6 +74,7 @@ from plane.db.models import (
     FileAsset,
     IssueComment,
     CommentTranslation,
+    IssueAIState,
     IssueLink,
     IssueRelation,
     Label,
@@ -1813,6 +1814,110 @@ class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
                 target_lang=target_lang,
             ).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
+    """BARSOUL: 派生卡片当前态 (DIS) 写入端点 (愛ちゃん/cloud Claude)。
+    POST /api/v1/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/
+    Body: {state, ball?, current_actor?, owner?, next_action?, due_date?,
+           stale_days?, confidence?, reasoning?, model_used?, source_hash?}
+    Auth: ProjectLitePermission (X-Api-Key = ai-bot=愛ちゃん 项目成员 token)。
+    Upsert by issue (OneToOne)。原 issue 永不修改。"""
+
+    permission_classes = [ProjectLitePermission]
+
+    _STATES = {"ACTIVE", "WAITING", "STALE", "UNKNOWN"}
+    _BALLS = {"SELF", "OTHER", ""}
+
+    def post(self, request, slug, project_id, issue_id):
+        from datetime import date as _date
+
+        try:
+            issue = Issue.objects.get(
+                pk=issue_id, workspace__slug=slug, project_id=project_id
+            )
+        except Issue.DoesNotExist:
+            return Response(
+                {"error": "Issue not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        body = request.data or {}
+        state = (body.get("state") or "UNKNOWN").strip().upper()[:8]
+        if state not in self._STATES:
+            state = "UNKNOWN"
+        ball = (body.get("ball") or "").strip().upper()[:8]
+        if ball not in self._BALLS:
+            ball = ""
+
+        # due_date: ISO 文字列 or 空 → None。壊れた値は黙って None。
+        due = None
+        dd = (body.get("due_date") or "").strip()
+        if dd:
+            try:
+                due = _date.fromisoformat(dd[:10])
+            except Exception:
+                due = None
+
+        try:
+            conf = float(body.get("confidence") or 0.0)
+        except Exception:
+            conf = 0.0
+        conf = max(0.0, min(1.0, conf))
+        try:
+            stale = int(body.get("stale_days") or 0)
+        except Exception:
+            stale = 0
+
+        fields = dict(
+            state=state,
+            ball=ball,
+            current_actor=(body.get("current_actor") or "")[:120],
+            owner=(body.get("owner") or "")[:120],
+            next_action=(body.get("next_action") or "")[:120],
+            due_date=due,
+            stale_days=max(0, stale),
+            confidence=conf,
+            reasoning=(body.get("reasoning") or "")[:1000],
+            model_used=(body.get("model_used") or "")[:40],
+            source_hash=(body.get("source_hash") or "")[:64],
+            updated_by_id=request.user.id if request.user.is_authenticated else None,
+        )
+
+        # 派生表; soft-deleted 行が OneToOne unique を塞ぐ罠を避け all_objects で逆引き。
+        obj = IssueAIState.all_objects.filter(issue=issue).first()
+        if obj:
+            for k, v in fields.items():
+                setattr(obj, k, v)
+            obj.deleted_at = None
+            obj.save()
+            created = False
+        else:
+            obj = IssueAIState.objects.create(
+                issue=issue,
+                project_id=project_id,
+                workspace_id=issue.workspace_id,
+                created_by_id=request.user.id if request.user.is_authenticated else None,
+                **fields,
+            )
+            created = True
+
+        return Response(
+            {
+                "issue": str(issue.id),
+                "state": obj.state,
+                "ball": obj.ball,
+                "current_actor": obj.current_actor,
+                "owner": obj.owner,
+                "next_action": obj.next_action,
+                "due_date": obj.due_date.isoformat() if obj.due_date else None,
+                "stale_days": obj.stale_days,
+                "confidence": obj.confidence,
+                "model_used": obj.model_used,
+                "updated_at": obj.updated_at.isoformat() if obj.updated_at else None,
+                "created": created,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class IssueActivityListAPIEndpoint(BaseAPIView):

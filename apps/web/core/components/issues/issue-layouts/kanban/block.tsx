@@ -52,6 +52,8 @@ import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-st
 import type { TRenderQuickActions } from "../list/list-view-types";
 import { IssueProperties } from "../properties/all-properties";
 import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
+// BARSOUL DIS: 派生卡片当前态 状态行
+import { AIStateLine } from "./ai-state-line";
 
 interface IssueBlockProps {
   issueId: string;
@@ -147,6 +149,9 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
           })}
         </div>
       </div>
+
+      {/* BARSOUL DIS: 卡顶 AI 状态行(球在谁手/下一步/停滞)。无派生/低置信 → 不渲染 */}
+      {issue.project_id && <AIStateLine issueId={issue.id} projectId={issue.project_id} />}
 
       <Tooltip tooltipContent={issue.name} isMobile={isMobile} renderByDefault={false}>
         {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
