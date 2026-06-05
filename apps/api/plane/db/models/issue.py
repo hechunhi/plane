@@ -823,6 +823,12 @@ class CommentTranslation(ProjectBaseModel):
     source_lang = models.CharField(max_length=8, blank=True, default="")
     text = models.TextField(blank=True, default="")
     translated_by = models.CharField(max_length=64, blank=True, default="aichan")
+    # BARSOUL 2026-05-31 (hechun): 内容ハッシュキャッシュ。frontend は常に
+    # tokenized(⟦N⟧) masked text を送る→旧 override 経路は cache を読み書きせず
+    # ページ開く度に再翻訳していた(ユーザ指摘)。masked text の sha256 を保存し、
+    # 同 hash なら DB hit(~5ms)即返。comment 編集→hash 変化→自然 miss 再翻訳
+    # (self-invalidating, edit イベント hook 不要)。
+    source_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
 
     class Meta:
         verbose_name = "Comment Translation"

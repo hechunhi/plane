@@ -9,6 +9,22 @@ import Blockquote from "@tiptap/extension-blockquote";
 import { CORE_EXTENSIONS } from "@/constants/extension";
 
 export const CustomQuoteExtension = Blockquote.extend({
+  // BARSOUL(2026-05-23): 言語タグ data-lang を schema 属性として保持。
+  // Plane の bilingual description (handle_delegated_to_ai 由来) で
+  // JA/ZH 各 blockquote を視覚色分け(editor.css 側で配色)。
+  // 既定 Tiptap Blockquote はカスタム attr を持たないため、parseHTML/renderHTML
+  // 両方を実装しないと ProseMirror ラウンドトリップで剥落する。
+  addAttributes() {
+    return {
+      ...(this.parent?.() ?? {}),
+      "data-lang": {
+        default: null,
+        parseHTML: (el: HTMLElement) => el.getAttribute("data-lang"),
+        renderHTML: (attrs: Record<string, any>) =>
+          attrs["data-lang"] ? { "data-lang": attrs["data-lang"] } : {},
+      },
+    };
+  },
   addKeyboardShortcuts() {
     return {
       Enter: () => {

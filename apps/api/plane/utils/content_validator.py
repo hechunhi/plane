@@ -115,6 +115,7 @@ ATTRIBUTES = {
         "data-logo-in-use",
         "data-block-type",
         "data-card",  # BARSOUL: barsoul-card 节点引用 <id>.<sig>
+        "data-lang",  # BARSOUL: bilingual blockquote 言語タグ(ja/zh) → editor.css で配色
     },
     "a": {"href", "target"},
     # editor node/tag attributes

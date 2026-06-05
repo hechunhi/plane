@@ -51,6 +51,38 @@
   @apply border-l-[3px] border-strong;
 }
 
+/* BARSOUL: 言語タグ data-lang による視覚色分け(長文 bilingual で一目区別)。
+   handle_delegated_to_ai が JA/ZH 各 blockquote に data-lang を付ける。
+   既存(無タグ) は従来の border-strong (中性灰) を維持 → 後方互換。 */
+.ProseMirror blockquote[data-lang="ja"] {
+  border-left-color: #2563eb;    /* 日: blue-600 */
+  background: rgba(37, 99, 235, 0.04);
+}
+.ProseMirror blockquote[data-lang="ja"]::before {
+  content: "🇯🇵 JA";
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #2563eb;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+.ProseMirror blockquote[data-lang="zh"] {
+  border-left-color: #dc2626;    /* 中: red-600 */
+  background: rgba(220, 38, 38, 0.04);
+}
+.ProseMirror blockquote[data-lang="zh"]::before {
+  content: "🇨🇳 ZH";
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #dc2626;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+
 .ProseMirror blockquote p::before,
 .ProseMirror blockquote p::after {
   display: none;
