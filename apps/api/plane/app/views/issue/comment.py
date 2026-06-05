@@ -254,6 +254,44 @@ def _detect_src(text):
     return None
 
 
+# BARSOUL 2026-06-05 (hechun, BS-226): 混合言語コメント検出。
+# 実態: 中文母語者が「自分の中文コメント + 日本サイト(MonotaRO等)から貼った
+# 日文素材 + 中文の結論」を1コメントに混ぜる。_detect_src は kana 比率<0.2 で
+# 全体を zh 判定 → zh→ja 要求 or skip → 貼られた日文が訳されず、読み手(日本語
+# 不可の同僚/上司)が肝心の日文素材を理解できない。
+# 理想: 既に中文の部分はそのまま、日文片段だけ中文に補訳、ID/券番/品牌名/金額/
+# 日付は原文保持。これは「全訳 or 無訳」の hy-mt2(専用MT)には不可 → 理解力の
+# ある gemma-4-12b に「選択的補訳」を指示する必要がある。
+# 検出: 中文(漢字主体の行)と日文(kana 一定量)が両方 "実質的に" 存在する。
+def _is_mixed_cn_ja(text):
+    """同时含【成块中文】和【成块日文】→ True(走 gemma 智能补译)。
+
+    BS-226 教訓: kana 比率で判定すると、貼られた日文素材ブロックの假名密度が
+    高いと全体比率が 0.2 を超え(実測 0.21)、混合なのに ja 純判定に倒れる。
+    → 比率ではなく「中文の実体」と「日文の実体」が両方あるか、で判定する。
+
+    判定: ひらがな(日文の確実な指標。漢字は中日共通なので使わない)が >=6 個
+    あり、かつ「ひらがな・カタカナを含まない純中文文字(漢字+中文句読点)」も
+    一定量(>=8)ある = 中文の地の文と日文素材が共存 = 混合。
+    """
+    if not text:
+        return False
+    # 日文の実体: 假名(平+片)。ただし中日共用の ・(U+30FB) 長音 ー(U+30FC) は
+    # 除外(商品名 B-4・金 や箇条書で中文側にも出る)。実質的な假名 >=6 個。
+    kana = len(re.findall(r"[ぁ-ゟァ-ヺ]", text))
+    if kana < 6:
+        return False  # 日文素材が無い/零星人名のみ → 従来路(hy-mt2)でよい
+    # 中文の地の文の指標: 简体中文専属の全角句読点「，？！」。
+    # 日文は「、。」を使い「，？！」は ほぼ打たない → 中文の地の文がある強い証拠。
+    # (BS-226 教訓: 假名比率では混合を取りこぼす。中日"専属"記号の共存で判定。)
+    cn_punct = len(re.findall(r"[，？！]", text))
+    if cn_punct >= 1:
+        return True
+    # 句読点が無い短文の保険: 简体専属の頻出字が複数あれば中文の地の文とみなす。
+    cn_chars = len(re.findall(r"[这们没吧呢么个为么对话说让给们还](?:)", text))
+    return cn_chars >= 3
+
+
 def _looks_like_noop(text, out, tgt):
     """检测模型是否在 punt(复述原文 或 没翻译到目标语 或 段落塌陷)。
 
@@ -398,6 +436,63 @@ def _try_one_model(url, model, sys_msg, text, tgt="zh", context=""):
         return ""
 
 
+# BARSOUL 2026-06-05 (hechun, BS-226): 混合言語の「選択的補訳」を gemma-4-12b で。
+# 用途: 中文主体 + 貼付け日文素材のコメント(_is_mixed_cn_ja=True)。理解力のある
+# モデルに「中文はそのまま・日文だけ中文化・ID/品牌名/金額/日付は原文保持」を指示。
+# hy-mt2(専用MT, 全訳 or 無訳)には不可能なタスク。失敗時は呼出側が hy-mt2 へ退避。
+_AUGMENT_MODEL = os.environ.get("LLM_AUGMENT_MODEL", "gemma-4-12b").strip()
+
+
+def _augment_translate(text, tgt, context=""):
+    """混合言語コメントを gemma-4-12b で選択的補訳。tgt=zh のみ対応。
+    成功=補訳文字列 / 失敗(空・モデル不通)="". """
+    url = os.environ.get("LLM_GATEWAY_URL", "").strip()
+    if not url or tgt != "zh":
+        return ""
+    ctx_line = ""
+    if context and context.strip():
+        ctx_line = f"（这条评论属于工单「{context.strip()[:80]}」）\n"
+    sys = (
+        "你是越境电商企业 BARSOUL(大阪·中日团队)的业务助理。"
+        "用户的评论里【混着中文和日文】——通常是中文同事写的话，中间粘贴了"
+        "从日本网站/邮件复制来的日文素材。\n"
+        "你的任务:输出一份【纯中文、可直接读懂】的版本，规则如下:\n"
+        "1. 原本就是中文的句子 → 原样保留，一个字都不要改写。\n"
+        "2. 日文片段 → 翻译成自然的简体中文。\n"
+        "3. 【绝对保持原文、不要翻译/改动】:商品编号·券号·订单号等数字ID、"
+        "金额(¥10,998)、日期(6/5)、英文、品牌名/商品名(如 MonotaRO/モノタロウ→可写 MonotaRO)。\n"
+        "4. 保持原文的换行和段落结构(空行、列表)。\n"
+        "5. 只输出结果本身，不要任何前置说明、不要原文对照、不要解释。"
+    )
+    usr = ctx_line + "评论内容:\n" + text[:2000]
+    payload = {
+        "model": _AUGMENT_MODEL,
+        "messages": [
+            {"role": "system", "content": sys},
+            {"role": "user", "content": usr},
+        ],
+        "temperature": 0.2, "max_tokens": 2048,
+    }
+    try:
+        r = _req.post(url, json=payload, timeout=90)
+        if r.status_code != 200:
+            return ""
+        j = r.json()
+        out = (((j.get("choices") or [{}])[0] or {}).get("message", {}) or {}).get("content", "") or ""
+        out = out.strip()
+        # 截断护栏(混合补訳でも長文截断は失敗扱い)
+        if len(text.strip()) > 50 and len(out) < len(text.strip()) * 0.35:
+            return ""
+        # 完全コピー(何も補訳していない)も失敗扱い
+        norm = lambda s: (s or "").replace(" ", "").replace("　", "").strip()
+        if norm(out) == norm(text):
+            return ""
+        return out
+    except Exception as e:
+        logger.info(f"_augment_translate failed: {type(e).__name__}: {e}")
+        return ""
+
+
 def _call_llm(text, src, tgt, context=""):
     """Call LLM gateway with translation prompt + no-op detection + fallback chain.
     Returns translated str (translated_by 由 caller 通过 _last_model_used 拿)。
@@ -407,6 +502,15 @@ def _call_llm(text, src, tgt, context=""):
     url = os.environ.get("LLM_GATEWAY_URL", "").strip()
     if not url:
         return ""
+    # BARSOUL 2026-06-05 (hechun, BS-226): 混合言語(中文主体+日文素材)→ tgt=zh は
+    # gemma-4-12b で選択的補訳を最優先で試す。成功すれば即返(中文保持+日文だけ訳)。
+    # 失敗時は下の hy-mt2 chain へ自然退避(従来挙動を壊さない)。
+    if tgt == "zh" and _is_mixed_cn_ja(text):
+        aug = _augment_translate(text, tgt, context=context)
+        if aug:
+            globals()["_last_model_used"] = _AUGMENT_MODEL
+            return aug
+        logger.info("_call_llm: mixed-lang augment failed, fallback to hy-mt2 chain")
     src_label = "日本語" if src == "ja" else ("中文" if src == "zh" else src)
     tgt_label = "中文（簡体字）" if tgt == "zh" else ("日本語" if tgt == "ja" else tgt)
     # BARSOUL 2026-05-24:hy-mt2 (Hy-MT2-1.8B-mlx-q4) 在专有名词 + 数字 + 英文密度高的输入上
