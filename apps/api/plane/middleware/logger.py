@@ -146,7 +146,12 @@ class APITokenLogMiddleware:
                 "updated_by": user_id,
             }
 
-            process_logs.delay(log_data=log_data, mongo_log=mongo_log)
+            # BARSOUL: logger_task が CELERY_IMPORTS 未登録 → 全 API 請求が
+            # unregistered task 風暴を起こし worker を詰まらせる。API 監査
+            # ログは現状不要なので enqueue を停止（必要なら CELERY_IMPORTS に
+            # plane.bgtasks.logger_task を追加して復活）。
+            _ = mongo_log  # keep构造 side-effect-free
+            # process_logs.delay(log_data=log_data, mongo_log=mongo_log)
 
         except Exception as e:
             log_exception(e)

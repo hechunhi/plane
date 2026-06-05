@@ -27,11 +27,14 @@ app = Celery("plane")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 
 app.conf.beat_schedule = {
-    # Intra day recurring jobs
-    "check-every-five-minutes-to-send-email-notifications": {
-        "task": "plane.bgtasks.email_notification_task.stack_email_notification",
-        "schedule": crontab(minute="*/5"),  # Every 5 minutes
-    },
+    # BARSOUL: SMTP 未設定のため email notification beat を無効化。
+    # 5分毎の stack_email_notification → ConnectionRefused 連発で
+    # worker が詰まり in-app 通知(issue_activity)が処理されなくなる。
+    # in-app 収件箱通知には SMTP 不要。SMTP 設定後に復活させる。
+    # "check-every-five-minutes-to-send-email-notifications": {
+    #     "task": "plane.bgtasks.email_notification_task.stack_email_notification",
+    #     "schedule": crontab(minute="*/5"),
+    # },
     "run-every-6-hours-for-instance-trace": {
         "task": "plane.license.bgtasks.tracer.instance_traces",
         "schedule": crontab(hour="*/6", minute=0),  # Every 6 hours
