@@ -69,6 +69,8 @@ export const CommentCard = observer(function CommentCard(props: TCommentCard) {
             setEditMode={() => setIsEditing(true)}
             showAccessSpecifier={showAccessSpecifier}
             showCopyLinkOption={showCopyLinkOption}
+            workspaceSlug={workspaceSlug}
+            projectId={projectId}
           />
         )}
       />

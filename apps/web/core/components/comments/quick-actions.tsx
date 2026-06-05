@@ -8,7 +8,7 @@ import { useMemo } from "react";
 import { observer } from "mobx-react";
 import { MoreHorizontal } from "lucide-react";
 // plane imports
-import { EIssueCommentAccessSpecifier } from "@plane/constants";
+import { EIssueCommentAccessSpecifier, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import { IconButton } from "@plane/propel/icon-button";
 import { LinkIcon, GlobeIcon, LockIcon, EditIcon, TrashIcon } from "@plane/propel/icons";
@@ -17,7 +17,7 @@ import type { TContextMenuItem } from "@plane/ui";
 import { CustomMenu } from "@plane/ui";
 import { cn } from "@plane/utils";
 // hooks
-import { useUser } from "@/hooks/store/user";
+import { useUser, useUserPermissions } from "@/hooks/store/user";
 
 type TCommentCard = {
   activityOperations: TCommentsOperations;
@@ -25,16 +25,28 @@ type TCommentCard = {
   setEditMode: () => void;
   showAccessSpecifier: boolean;
   showCopyLinkOption: boolean;
+  workspaceSlug?: string;
+  projectId?: string;
 };
 
 export const CommentQuickActions = observer(function CommentQuickActions(props: TCommentCard) {
-  const { activityOperations, comment, setEditMode, showAccessSpecifier, showCopyLinkOption } = props;
+  const { activityOperations, comment, setEditMode, showAccessSpecifier, showCopyLinkOption, workspaceSlug, projectId } =
+    props;
   // store hooks
   const { data: currentUser } = useUser();
+  const { allowPermissions } = useUserPermissions();
   // derived values
   const isAuthor = currentUser?.id === comment.actor;
-  const canEdit = isAuthor;
-  const canDelete = isAuthor;
+  // BARSOUL 2026-06-05 (hechun): 项目管理员(ADMIN)可删任意评论(含爱酱 bot 的)。
+  // 旧逻辑 canDelete=isAuthor → 谁都删不了爱酱评论。admin 是管理职责, 应能清理。
+  const isProjectAdmin = allowPermissions(
+    [EUserPermissions.ADMIN],
+    EUserPermissionsLevel.PROJECT,
+    workspaceSlug,
+    projectId
+  );
+  const canEdit = isAuthor; // 编辑仍限作者本人(不改别人/爱酱内容)
+  const canDelete = isAuthor || isProjectAdmin;
   // translation
   const { t } = useTranslation();
 
