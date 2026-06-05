@@ -95,7 +95,11 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
   return (
     <div
       className={cn(
-        `vertical-scrollbar fixed z-5 scrollbar-md h-full w-full shrink-0 overflow-hidden overflow-y-auto border-l border-subtle bg-surface-1 shadow-raised-200 transition-all md:relative md:w-[300px]`,
+        // BARSOUL: `fixed` を `max-md:fixed` に — Vite/新デザインシステム移行後
+        // `md:relative` が基底 `fixed` を上書きできず(CSS層順序)、PC で fixed
+        // 浮層が main を覆い内容を遮蔽(computed position=fixed, left=259 実測)。
+        // 断点排他(<md だけ fixed、≥md は relative のみ)で衝突を根絶。
+        `vertical-scrollbar max-md:fixed z-5 scrollbar-md h-full w-full shrink-0 overflow-hidden overflow-y-auto border-l border-subtle bg-surface-1 shadow-raised-200 transition-all md:relative md:w-[300px]`,
         className
       )}
     >
@@ -133,12 +137,17 @@ export const ProfileSidebar = observer(function ProfileSidebar(props: TProfileSi
                 />
               </div>
             )}
-            <CoverImage
-              src={userData?.cover_image_url ?? undefined}
-              alt={userData?.display_name}
-              className="h-[110px] w-full"
-              showDefaultWhenEmpty
-            />
+            {/* BARSOUL: 封面なし時は壊れた既定画像(本番ビルドで読めず黒帯=遮蔽に見える)
+                を出さず、ブランド色グラデーションを描画。h-[110px] 固定で高さ崩れ防止。 */}
+            {userData?.cover_image_url ? (
+              <CoverImage
+                src={userData.cover_image_url}
+                alt={userData?.display_name}
+                className="h-[110px] w-full"
+              />
+            ) : (
+              <div className="h-[110px] w-full bg-gradient-to-br from-accent-primary to-accent-primary/40" />
+            )}
             <div className="absolute -bottom-[26px] left-5 h-[52px] w-[52px] rounded-sm">
               {userData?.avatar_url && userData?.avatar_url !== "" ? (
                 <img
