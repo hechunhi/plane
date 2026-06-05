@@ -17,17 +17,33 @@ from plane.db.models import IssueAIState
 
 
 def _serialize(row):
+    issue = row.issue
+    st = getattr(issue, "state", None)
     return {
         "issue_id": str(row.issue_id),
+        # issue meta(待我处理 digest 用; 卡面行忽略)
+        "name": issue.name if issue else "",
+        "sequence_id": issue.sequence_id if issue else None,
+        "project_identifier": row.project.identifier if row.project_id else "",
+        "state_group": st.group if st else None,
         "state": row.state,
-        "ball": row.ball or None,
-        "current_actor": row.current_actor or None,
+        "ball": row.ball or None,                       # SELF | OTHER | None
+        # 当前行动人
+        "actor_kind": row.actor_kind or None,           # person | external | None
+        "actor_name": row.current_actor or None,
+        "actor_user_id": str(row.actor_user_id) if row.actor_user_id else None,
         "owner": row.owner or None,
-        "next_action": row.next_action or "",
+        "unassigned": bool(row.unassigned),
+        # 等待对象(ball=OTHER), 双语(ja 缺则回退 zh, 保证日文阅览者不见空/中文)
+        "waiting_on": {"zh": row.waiting_on_zh or "", "ja": row.waiting_on_ja or row.waiting_on_zh or ""},
+        # 下一步, 双语(zh 兜底 ja)
+        "next_action": {"zh": row.next_action or "", "ja": row.next_action_ja or row.next_action or ""},
+        # 推断依据
+        "reasoning": {"zh": row.reasoning or "", "ja": row.reasoning_ja or row.reasoning or ""},
+        "source": {"author": row.source_author or "", "quote": row.source_quote or ""},
         "due_date": row.due_date.isoformat() if row.due_date else None,
         "stale_days": row.stale_days,
         "confidence": row.confidence,
-        "reasoning": row.reasoning or None,
         "model_used": row.model_used or None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
@@ -41,9 +57,11 @@ class IssueAIStateBatchEndpoint(BaseAPIView):
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def get(self, request, slug, project_id):
         raw = (request.query_params.get("issues") or "").strip()
+        # 仅活跃卡(Todo/Doing)返派生态 → Done/Cancelled 卡(残留旧行)不显示 AI 行
         qs = IssueAIState.objects.filter(
-            workspace__slug=slug, project_id=project_id
-        )
+            workspace__slug=slug, project_id=project_id,
+            issue__state__group__in=["unstarted", "started"],
+        ).select_related("issue", "issue__state", "project")
         if raw:
             ids = [x for x in (s.strip() for s in raw.split(",")) if x][:300]
             qs = qs.filter(issue_id__in=ids)

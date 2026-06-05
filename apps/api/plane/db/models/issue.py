@@ -859,14 +859,25 @@ class IssueAIState(ProjectBaseModel):
     state = models.CharField(max_length=8, default="UNKNOWN")
     # SELF(球在我方) | OTHER(球在对方) | ""(未知)
     ball = models.CharField(max_length=8, blank=True, default="")
-    current_actor = models.CharField(max_length=120, blank=True, default="")
+    current_actor = models.CharField(max_length=120, blank=True, default="")  # actor 显示名
+    actor_kind = models.CharField(max_length=8, blank=True, default="")  # person|external|""
+    actor_user_id = models.UUIDField(null=True, blank=True)  # person→Plane member(头像)
     owner = models.CharField(max_length=120, blank=True, default="")
-    # 动词开头, ≤12 中文字符 (校验在 ai-bot 侧, 此处放宽长度兜底)
-    next_action = models.CharField(max_length=120, blank=True, default="")
+    unassigned = models.BooleanField(default=False)  # ball=SELF 但无负责人
+    # 等待对象(ball=OTHER), 双语
+    waiting_on_zh = models.CharField(max_length=160, blank=True, default="")
+    waiting_on_ja = models.CharField(max_length=160, blank=True, default="")
+    # 下一步动作: 动词开头 ≤12 中文字, 双语(next_action=zh)
+    next_action = models.CharField(max_length=160, blank=True, default="")
+    next_action_ja = models.CharField(max_length=160, blank=True, default="")
     due_date = models.DateField(null=True, blank=True)
     stale_days = models.IntegerField(default=0)
     confidence = models.FloatField(default=0.0)  # 0~1
-    reasoning = models.TextField(blank=True, default="")
+    reasoning = models.TextField(blank=True, default="")      # zh
+    reasoning_ja = models.TextField(blank=True, default="")   # ja
+    # 推断依据: 源评论作者 + 原文引用
+    source_author = models.CharField(max_length=120, blank=True, default="")
+    source_quote = models.CharField(max_length=400, blank=True, default="")
     model_used = models.CharField(max_length=40, blank=True, default="")
     # 输入指纹: 同 hash 跳过 LLM (去抖/省钱), self-invalidating
     source_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)

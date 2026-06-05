@@ -1868,16 +1868,37 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
         except Exception:
             stale = 0
 
+        # actor_user_id: UUID or None
+        actor_uid = (body.get("actor_user_id") or "").strip() or None
+        if actor_uid:
+            try:
+                import uuid as _uuid
+                actor_uid = str(_uuid.UUID(actor_uid))
+            except Exception:
+                actor_uid = None
+        actor_kind = (body.get("actor_kind") or "").strip().lower()[:8]
+        if actor_kind not in ("person", "external", ""):
+            actor_kind = ""
+
         fields = dict(
             state=state,
             ball=ball,
             current_actor=(body.get("current_actor") or "")[:120],
+            actor_kind=actor_kind,
+            actor_user_id=actor_uid,
             owner=(body.get("owner") or "")[:120],
-            next_action=(body.get("next_action") or "")[:120],
+            unassigned=bool(body.get("unassigned")),
+            waiting_on_zh=(body.get("waiting_on_zh") or "")[:160],
+            waiting_on_ja=(body.get("waiting_on_ja") or "")[:160],
+            next_action=(body.get("next_action") or "")[:160],
+            next_action_ja=(body.get("next_action_ja") or "")[:160],
             due_date=due,
             stale_days=max(0, stale),
             confidence=conf,
             reasoning=(body.get("reasoning") or "")[:1000],
+            reasoning_ja=(body.get("reasoning_ja") or "")[:1000],
+            source_author=(body.get("source_author") or "")[:120],
+            source_quote=(body.get("source_quote") or "")[:400],
             model_used=(body.get("model_used") or "")[:40],
             source_hash=(body.get("source_hash") or "")[:64],
             updated_by_id=request.user.id if request.user.is_authenticated else None,

@@ -150,9 +150,6 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         </div>
       </div>
 
-      {/* BARSOUL DIS: 卡顶 AI 状态行(球在谁手/下一步/停滞)。无派生/低置信 → 不渲染 */}
-      {issue.project_id && <AIStateLine issueId={issue.id} projectId={issue.project_id} />}
-
       <Tooltip tooltipContent={issue.name} isMobile={isMobile} renderByDefault={false}>
         {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
             タイポ言語)。赤縁取り(親 card border) と合わせて 3 信号同時提示. */}
@@ -174,6 +171,9 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         isReadOnly={isReadOnly}
         isEpic={isEpic}
       />
+
+      {/* BARSOUL DIS: AI 当前态行(卡底 footer, 顶部分隔线, 仿设计稿)。无派生/低置信 → 不渲染 */}
+      {issue.project_id && <AIStateLine issueId={issue.id} projectId={issue.project_id} />}
 
       {isEpic && displayProperties && (
         <WithDisplayPropertiesHOC
