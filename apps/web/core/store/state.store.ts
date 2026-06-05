@@ -233,12 +233,23 @@ export class StateStore implements IStateStore {
    * @returns
    */
   fetchProjectIntakeState = async (workspaceSlug: string, projectId: string) => {
-    const intakeStateResponse = await this.stateService.getIntakeState(workspaceSlug, projectId);
-    runInAction(() => {
-      set(this.intakeStateMap, [intakeStateResponse.id], intakeStateResponse);
-      set(this.fetchedIntakeMap, projectId, true);
-    });
-    return intakeStateResponse;
+    // Intake は任意機能。triage state 無しの project は backend が正しく 404
+    // を返す（=「Intake 未設定」という正常状態）。throw させると未捕捉
+    // rejection → React #418/#423 に連鎖するため、404/失敗は「Intake 無し」
+    // として握り潰し fetched 済みに（再取得ループも防止）。
+    try {
+      const intakeStateResponse = await this.stateService.getIntakeState(workspaceSlug, projectId);
+      runInAction(() => {
+        if (intakeStateResponse?.id) set(this.intakeStateMap, [intakeStateResponse.id], intakeStateResponse);
+        set(this.fetchedIntakeMap, projectId, true);
+      });
+      return intakeStateResponse;
+    } catch {
+      runInAction(() => {
+        set(this.fetchedIntakeMap, projectId, true);
+      });
+      return undefined;
+    }
   };
 
   /**

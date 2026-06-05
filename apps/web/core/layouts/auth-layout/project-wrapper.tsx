@@ -108,9 +108,13 @@ export const ProjectAuthWrapper = observer(function ProjectAuthWrapper(props: IP
     revalidateOnFocus: false,
   });
   // fetching project intake state
+  // BARSOUL: community 版无 intake 功能，此 endpoint 对普通 project 返 404。
+  // 默认 SWR onErrorRetry 会无限重试 → 404 风暴打满 API/console。
+  // 关闭重试（拿不到就算了，不影响功能）。
   useSWR(PROJECT_INTAKE_STATE(projectId, currentProjectRole), () => fetchProjectIntakeState(workspaceSlug, projectId), {
     revalidateIfStale: false,
     revalidateOnFocus: false,
+    shouldRetryOnError: false,
   });
   // fetching project estimates
   useSWR(PROJECT_ESTIMATES(projectId, currentProjectRole), () => getProjectEstimates(workspaceSlug, projectId), {

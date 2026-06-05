@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Script from "next/script";
 import { Links, Meta, Outlet, Scripts } from "react-router";
 import type { LinksFunction } from "react-router";
@@ -60,6 +60,20 @@ export function Layout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* BARSOUL: Safari に requestIdleCallback が無いと fork の
+            gantt-layout-loader が無防備に呼んで全画面クラッシュする。
+            React ツリー内 (Layout の <head> 先頭) で描画することで
+            prerender と client の DOM が一致し、document 全体を
+            hydrate する React 18.3 でも #418/#423 を起こさない。
+            これにより patches/index.html のバインドマウント
+            (リビルド毎に asset hash 不一致で白画面) も不要になる。 */}
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html:
+              '!function(){if(!("requestIdleCallback"in window)){window.requestIdleCallback=function(c){var s=Date.now();return setTimeout(function(){c({didTimeout:!1,timeRemaining:function(){return Math.max(0,50-(Date.now()-s))}})},1)};window.cancelIdleCallback=function(i){clearTimeout(i)}}}();',
+          }}
+        />
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#fff" />
@@ -120,6 +134,21 @@ export const meta: Route.MetaFunction = () => [
   { name: "twitter:image:alt", content: "Plane - Modern project management" },
 ];
 
+// BARSOUL: SPA mode (react-router.config.ts → ssr: false). Plane prerenders
+// an empty shell at build time; the client's first render builds the full
+// component tree. Without a clientLoader, React Router would try to render
+// the full <Root /> tree during hydration, causing #418 mismatch against the
+// shell (the Suspense markers RR7 streams have no matching content).
+//
+// Adding a clientLoader that's hydrate-eligible makes React Router show
+// <HydrateFallback /> during hydration (which matches the empty shell — just
+// an empty <div /> on the server side), THEN swap to <Root /> after the
+// loader resolves on the client. No mismatch, no recovery needed.
+export async function clientLoader() {
+  return null;
+}
+clientLoader.hydrate = true as const;
+
 export default function Root() {
   return (
     <AppProvider>
@@ -134,9 +163,14 @@ export default function Root() {
 
 export function HydrateFallback() {
   const { resolvedTheme } = useTheme();
+  // Client first paint MUST match the server's prerendered output (empty div).
+  // `typeof window` flips between server/client at the same render call →
+  // mismatch. Use the standard hydration-safe pattern: render empty on first
+  // paint, swap to spinner via useEffect (post-hydration).
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
 
-  // if we are on the server or the theme is not resolved, return an empty div
-  if (typeof window === "undefined" || resolvedTheme === undefined) return <div />;
+  if (!hydrated || resolvedTheme === undefined) return <div />;
 
   return (
     <div className="relative flex h-screen w-full items-center justify-center bg-canvas">

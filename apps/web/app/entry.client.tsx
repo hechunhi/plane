@@ -8,6 +8,11 @@ import { startTransition, StrictMode } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { HydratedRouter } from "react-router/dom";
 
+// The hydration mismatch (#418/#423) is fixed by having root.tsx export a
+// `clientLoader.hydrate = true`, which makes React Router show
+// <HydrateFallback /> during the hydrate phase (matching the empty server
+// shell) and only render the real tree afterwards.
+
 startTransition(() => {
   hydrateRoot(
     document,

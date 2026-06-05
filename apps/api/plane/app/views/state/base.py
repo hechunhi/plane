@@ -138,9 +138,12 @@ class IntakeStateEndpoint(BaseAPIView):
     def get(self, request, slug, project_id):
         state = State.triage_objects.filter(workspace__slug=slug, project_id=project_id).first()
         if not state:
-            return Response(
-                {"error": "Triage state not found"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            # BARSOUL: Intake は任意機能。triage state 無し（CE/未設定）の
+            # project に対し上流は 404 を返す → 前端は握り潰すが、ブラウザは
+            # 404 を Console/Network に必ず記録（JS の catch と無関係）。
+            # 「無い API は補う」: 200 空ボディで返し DevTools 404 騒音を根絶。
+            # 前端 fetchProjectIntakeState は intakeStateResponse?.id 偽 で
+            # 正しく「Intake 無し」扱い（副作用なし）。
+            return Response({}, status=status.HTTP_200_OK)
 
         return Response(StateSerializer(state).data, status=status.HTTP_200_OK)
