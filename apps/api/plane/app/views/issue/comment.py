@@ -26,6 +26,7 @@ from plane.bgtasks.webhook_task import model_activity, webhook_activity
 # BARSOUL: lazy translate (X-style 即点即译)
 import os
 import re
+import hashlib as _hashlib
 import logging
 import requests as _req
 from .. import BaseAPIView
@@ -272,13 +273,34 @@ def _looks_like_noop(text, out, tgt):
     if norm(out) == norm(text):
         return True
     import re as _re
-    has_kana = bool(_re.search(r"[぀-ゟ゠-ヿ]", out))
+    # BARSOUL 2026-06-02 (hechun): 片假名中点「・」(U+30FB) は分隔符であって
+    # 「未翻訳の日本語」ではない(商品名【B-4・金】や箇条書「・10時〜」で正当に
+    # 保持される)。旧 regex [゠-ヿ] が ・ を kana 扱い → ja→zh の良訳を no-op 誤判
+    # → 502 "translation failed" を量産(・ を含む業務コメントが全滅)。U+30FB を除外。
+    has_kana = bool(_re.search(r"[぀-ゟ゠-ヺー-ヿ]", out))
     if tgt == "ja" and not has_kana:
         return True
+    # BARSOUL 2026-06-05 (hechun, BS-226): tgt=zh で「假名が1つでもあれば no-op」は
+    # 誤判が酷い。中訳でも商品名/ブランド名(モノタロウ, Shaken等のカナ表記)や
+    # 単位は原文保持が正当 → 少量のカナは正常。旧ロジックは「モノタロウー商品」を
+    # 含む完璧な中訳を全部 no-op 判定 → fallback 全滅 → 翻訳失敗/半截 cache 事故
+    # (BS-226 の真因)。カナ「比率」で判定: 訳文の 15% 超がカナ = 訳し残し、と緩和。
     if tgt == "zh" and has_kana:
-        return True
+        kana_n = len(_re.findall(r"[぀-ゟ゠-ヺー-ヿ]", out))
+        if kana_n > max(8, len(out.strip()) * 0.15):
+            return True
     # 段落塌陷:源至少 2 个空行(\n\n+)而输出 0 个 \n → 小模型把段落压扁
     if (text or "").count("\n\n") >= 2 and out.count("\n") == 0:
+        return True
+    # BARSOUL 2026-06-05 (hechun, BS-226): 截断検出。hy-mt2 が途中 EOS で半截
+    # (例: 120字原文→14字「综合各个issue来看,似乎」だけ訳して停止)を出すと、
+    # 旧 no-op 判定を全てすり抜けて DB cache に保存 → 以後ずっと半截を返す事故。
+    # 原文が十分長い(>50字)のに訳文が原文の 35% 未満 = 途中切れと判定し no-op 扱い
+    # → fallback/再試行へ。中日は多少縮むが 35% 下回るのは正常翻訳ではあり得ない
+    # (実測: 同入力の完全訳は原文比 ~85%)。短文(<50字)は対象外(短訳は正当)。
+    src_len = len((text or "").strip())
+    out_len = len((out or "").strip())
+    if src_len > 50 and out_len < src_len * 0.35:
         return True
     return False
 
@@ -292,23 +314,50 @@ def _looks_like_noop(text, out, tgt):
 # 死路由 → 502。残る 2 段(hy-mt2 + default=qwen3.5-4b alias)で実運用十分。
 # 段落保持の劣化は qwen3.5-4b で十分(月極駐車場ケースの様な長文邮件は
 # 稀;実害顕在化したら ROUTES env で gemma 復活 + chain 再追加).
-_TRANSLATE_FALLBACK_CHAIN = ["hy-mt2", "default"]
+# BARSOUL 2026-05-31 (hechun): default(=qwen3.5-4b alias) は汎用 4B で翻訳品質
+# 低い(主语颠倒/用語ブレ/system 不追従)→ 翻訳 chain から下線。翻訳専用
+# hy-mt2 のみ残す。cloud Claude → hy-mt2 → 502 のクリーン 2 段。
+_TRANSLATE_FALLBACK_CHAIN = ["hy-mt2"]
 
 
-def _try_one_model(url, model, sys_msg, text, tgt="zh"):
+def _try_one_model(url, model, sys_msg, text, tgt="zh", context=""):
     """单次模型调用 + preamble strip。失败/异常返 ""。
 
     BARSOUL 2026-05-30 (hechun + Hy-MT2 官方 doc): hy-mt2 是翻译专用模型,
     官方明确「无 default system_prompt」+ 靠 user message 的 native template +
     推荐采样(temp0.7/top_p0.6/top_k20/rep1.05)。实测原生用法把段落塌陷/截断/
     no-op 一扫(761字8段 zh→ja 段落8/8 完美)。故 hy-mt2 走原生路, 其它模型
-    (default=qwen3.5-4b)仍用 system prompt + temp0.2(qwen 跟随 system)。"""
+    (default=qwen3.5-4b)仍用 system prompt + temp0.2(qwen 跟随 system)。
+
+    context (BS-150 後の追加, 2026-05-30): issue 件名等の dialog 文脈を
+    natural-sentence prefix で注入 → 1.8B hy-mt2 が省略主语を「会話の第三者」
+    と推断できる(c1「日本人ですがモデルしてた方が…」← 主语颠倒問題 修)。
+    実測: 件名一行で c1 fix, no marker leak, 副作用ゼロ。
+    """
     try:
         if model == "hy-mt2":
             tgt_name = "中文（简体）" if tgt == "zh" else "日语"
+            # 自然文 prefix: hy-mt2 は marker(【...】, ---, <tag>) を翻訳出力に
+            # 漏らす事があるが、natural-sentence 形なら漏れず文脈だけ受け取る。
+            ctx_prefix = ""
+            if context and context.strip():
+                ctx_prefix = f"以下是「{context.strip()[:80]}」工单的对话片段。"
+            # BARSOUL 2026-05-31 (hechun, 7B 能力诊断後): 视点/态规则。Hy-MT2-7B
+            # の唯一の残課題は「主语省略+态変化」での施動者判定 (診断 26 case 中
+            # A1/A3/G1 のみ FAIL)。正例 only の規則 4 条で 3/3 修復・0 回帰・
+            # leak 無し・複数の副次改善を実測。规则は**日译中(源=日语)のみ** —
+            # 中译日は日语の省略歧义が無いので付けない(無駄+混乱回避)。
+            voice_rule = ""
+            if tgt == "zh":
+                voice_rule = (
+                    "翻译时注意日语的“谁对谁做”关系：\n"
+                    "・省略主语时按敬语和上下文判断施动者（常是对话中提到的第三者，不是说话人）；\n"
+                    "・「〜ように言われた／〜とのこと」是转述他人的指示，执行者是被指示的一方；\n"
+                    "・「Xに〜られる／言われる」是被动，主语是承受方，保留“被”的语气；\n"
+                    "・定语从句（〜してた方／〜した人）要完整译出，不要压缩合并。\n")
             # 官方 Hy-MT2-Translator skill 整合: basic mode(指示最小)が反流ゼロ +
             # 段落自然保持(761字8段で para 8/8)。temp 0.1 + 余分な sampling 無し。
-            usr = (f"将以下文本翻译为{tgt_name}，"
+            usr = (f"{voice_rule}{ctx_prefix}将以下文本翻译为{tgt_name}，"
                    f"注意只需要输出翻译后的结果，不要额外解释：\n\n{text[:1800]}")
             payload = {
                 "model": model,
@@ -316,11 +365,17 @@ def _try_one_model(url, model, sys_msg, text, tgt="zh"):
                 "temperature": 0.1, "max_tokens": 4096,
             }
         else:
+            # 非 hy-mt2: 自然文 prefix。marker 形(【参考】)は qwen が訳出に
+            # 漏らす実証あり → 自然な sentence にして漏れ防止。
+            user_msg = text[:1500]
+            if context and context.strip():
+                user_msg = (f"以下は「{context.strip()[:80]}」工单の対話片段。"
+                            f"訳文のみ出力:\n{user_msg}")
             payload = {
                 "model": model,
                 "messages": [
                     {"role": "system", "content": sys_msg},
-                    {"role": "user", "content": text[:1500]},
+                    {"role": "user", "content": user_msg},
                 ],
                 "temperature": 0.2, "max_tokens": 1500,
             }
@@ -343,9 +398,12 @@ def _try_one_model(url, model, sys_msg, text, tgt="zh"):
         return ""
 
 
-def _call_llm(text, src, tgt):
+def _call_llm(text, src, tgt, context=""):
     """Call LLM gateway with translation prompt + no-op detection + fallback chain.
-    Returns translated str (translated_by 由 caller 通过 _last_model_used 拿)。"""
+    Returns translated str (translated_by 由 caller 通过 _last_model_used 拿)。
+
+    context (2026-05-30): issue 件名等の dialog 文脈。hy-mt2 が省略主语を
+    第三者に推断するために必要(BS-150 c1 修)。"""
     url = os.environ.get("LLM_GATEWAY_URL", "").strip()
     if not url:
         return ""
@@ -367,7 +425,7 @@ def _call_llm(text, src, tgt):
         "- 内容が短くても必ず翻訳する。コピーは禁止。"
     )
     for model in _TRANSLATE_FALLBACK_CHAIN:
-        out = _try_one_model(url, model, sys, text, tgt)
+        out = _try_one_model(url, model, sys, text, tgt, context=context)
         if out and not _looks_like_noop(text, out, tgt):
             # 把实际成功的 model 记到 module attr,view 后续读出来写 translated_by
             globals()["_last_model_used"] = model
@@ -381,19 +439,31 @@ def _call_llm(text, src, tgt):
 # plane-api は Docker 内 → 宿主の claude CLI に直接届かない。宿主の ai-bot
 # (/translate) が cloud_translate を代行する。失敗(ai-bot 不通/token切れ)時のみ
 # 下の _call_llm 本地 chain へ退避。LLM_GATEWAY_URL と同型で host.docker.internal。
+#
+# ── BARSOUL 2026-05-31 (hechun): DEPRECATED ──────────────────────────────────
+# Claude CLI(subprocess) は OAuth/subscribe で 30s+ 静默 hang する不安定さあり,
+# 4b 退避も翻訳品質低くて両方下線 → 翻訳は hy-mt2 一本路に簡素化(専用 1.8B MT
+# で十分, +ctx で主语推断問題も解決済 BS-150)。
+# 以下の `_cloud_translate` / `_AIBOT_TRANSLATE_URL` は **呼び出し無し**, 将来
+# Anthropic API 直叩き等で復活する余地として残置(削除しない)。
 _AIBOT_TRANSLATE_URL = os.environ.get(
     "AIBOT_TRANSLATE_URL", "http://host.docker.internal:8098/translate"
 ).strip()
 
 
-def _cloud_translate(text, src, tgt):
-    """ai-bot /translate(クラウド Claude)を呼ぶ。成功=訳文, 失敗="". """
+def _cloud_translate(text, src, tgt, context=""):
+    """ai-bot /translate(クラウド Claude)を呼ぶ。成功=訳文, 失敗="".
+    context (2026-05-30): issue 件名等の dialog 文脈 → cloud_translate(ctx=)
+    へ透传 → Claude が用語統一/主語推断の参考にする。"""
     if not _AIBOT_TRANSLATE_URL:
         return ""
     try:
+        body = {"text": text[:4000], "source": src, "target": tgt}
+        if context and context.strip():
+            body["ctx"] = context.strip()[:300]
         r = _req.post(
             _AIBOT_TRANSLATE_URL,
-            json={"text": text[:4000], "source": src, "target": tgt},
+            json=body,
             timeout=45,
         )
         if r.status_code != 200:
@@ -427,6 +497,72 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
         target_lang = (request.data or {}).get("target_lang", "").strip().lower()[:8]
         if not target_lang:
             return Response({"error": "target_lang required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # BARSOUL 2026-05-30: rich 翻訳 — frontend が画像/@mention を ⟦N⟧ 占位符に
+        # 置換した tokenized text を `text` で渡す。comment_html を strip せず、
+        # masked text をそのまま翻訳。frontend が ⟦N⟧ を元 HTML に復元 + editor 描画。
+        #
+        # BARSOUL 2026-05-31 (hechun): **内容ハッシュキャッシュ**。旧実装はこの
+        # override 経路で cache を一切読み書きせず毎回 LLM → ページ開く度に再翻訳
+        # (ユーザ指摘)。masked text の sha256 で (comment, target_lang) 行を引き、
+        # hash 一致なら DB hit(~5ms)即返(LLM 無し)。comment 編集→hash 変化→自然 miss
+        # 再翻訳(self-invalidating, edit hook 不要)。tokenize は決定論的(同 HTML→
+        # 同 ⟦N⟧ 順)なので masked 訳文 cache + frontend 都度 detokenize で整合。
+        override_text = (request.data or {}).get("text", "")
+        if override_text and override_text.strip():
+            o_src = (request.data or {}).get("source", "").strip().lower()[:2]
+            o_src = o_src if o_src in ("zh", "ja") else (_detect_src(override_text) or "auto")
+            o_tgt = target_lang[:2]
+            if o_src == o_tgt:
+                return Response({"text": "", "by": "noop:same-lang", "skip": True})
+
+            src_hash = _hashlib.sha256(override_text.encode("utf-8")).hexdigest()
+
+            # ① cache hit: (comment, target_lang) で hash 一致 → 即返(LLM 無し)
+            crow = CommentTranslation.all_objects.filter(
+                comment=comment, target_lang=o_tgt).first()
+            if (crow and not crow.deleted_at and crow.text
+                    and crow.source_hash == src_hash):
+                return Response({
+                    "text": crow.text, "source_lang": crow.source_lang,
+                    "by": crow.translated_by, "cached": True})
+
+            # ② miss: 翻訳 → upsert(hash 同梱)。issue 件名 context で主语推断補強。
+            # 翻訳は hy-mt2 一本(専用 MT)。cloud Claude/4b は下線済(前者 launchd 非
+            # TTY で 30s hang, 後者通用 4B 品質低)。
+            _ctx = ""
+            try:
+                _iss = Issue.objects.filter(pk=issue_id).only("name").first()
+                if _iss and _iss.name:
+                    _ctx = _iss.name
+            except Exception:
+                pass
+            t = _call_llm(override_text, o_src, o_tgt, context=_ctx)
+            if not t:
+                return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
+            _m = globals().get("_last_model_used") or ""
+            _by = f"ondemand:{_m}" if (_m and not _m.startswith("ondemand")) else (_m or "ondemand")
+            try:
+                if crow:  # 既存行(別 hash / soft-deleted)を上書き復活
+                    crow.text = t
+                    crow.source_hash = src_hash
+                    crow.source_lang = o_src if o_src != "auto" else crow.source_lang
+                    crow.translated_by = _by
+                    crow.deleted_at = None
+                    crow.updated_by_id = request.user.id
+                    crow.save()
+                else:
+                    CommentTranslation.objects.create(
+                        comment=comment, target_lang=o_tgt,
+                        project_id=project_id, workspace_id=comment.workspace_id,
+                        text=t, source_lang=o_src, source_hash=src_hash,
+                        translated_by=_by,
+                        created_by_id=request.user.id,
+                        updated_by_id=request.user.id)
+            except Exception:
+                logger.exception("override translate cache upsert failed (非致命)")
+            return Response({"text": t, "source_lang": o_src,
+                             "by": _by, "cached": False})
 
         # 先に src_text を計算 (cache quality check で再利用).
         src_text = _strip(comment.comment_html or "")
@@ -479,11 +615,17 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
                 "text": "", "source_lang": src,
                 "by": "noop:same-lang", "cached": False, "skip": True,
             })
-        # BARSOUL 2026-05-29: 主路 = クラウド Claude(ai-bot 経由, 高品質)。
-        # 失敗時のみ _call_llm 本地 chain(hy-mt2/4b) へ退避。
-        translated = _cloud_translate(src_text, src, target_lang)
-        if not translated:
-            translated = _call_llm(src_text, src, target_lang)
+        # BARSOUL 2026-05-31 (hechun): 翻訳は hy-mt2 一本(専用 1.8B MT)。
+        # cloud Claude(CLI 30s+ hang)と汎用 4B(品質低)を両方下線 → クリーン
+        # 1 段路。issue 件名 context だけ温存(主语推断補強, BS-150 c1 fix)。
+        _ctx = ""
+        try:
+            _iss = Issue.objects.filter(pk=issue_id).only("name").first()
+            if _iss and _iss.name:
+                _ctx = _iss.name
+        except Exception:
+            pass
+        translated = _call_llm(src_text, src, target_lang, context=_ctx)
         if not translated:
             return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
         # BARSOUL: 记录实际命中的模型(fallback chain 可能用 default / gemma-4-26b
