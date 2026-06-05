@@ -111,6 +111,39 @@ gitlab_config_variables = [
     },
 ]
 
+authelia_config_variables = [
+    {
+        "key": "IS_AUTHELIA_ENABLED",
+        "value": os.environ.get("IS_AUTHELIA_ENABLED", "0"),
+        "category": "AUTHELIA",
+        "is_encrypted": False,
+    },
+    {
+        "key": "AUTHELIA_HOST",
+        "value": os.environ.get("AUTHELIA_HOST"),
+        "category": "AUTHELIA",
+        "is_encrypted": False,
+    },
+    {
+        "key": "AUTHELIA_INTERNAL_URL",
+        "value": os.environ.get("AUTHELIA_INTERNAL_URL"),
+        "category": "AUTHELIA",
+        "is_encrypted": False,
+    },
+    {
+        "key": "AUTHELIA_CLIENT_ID",
+        "value": os.environ.get("AUTHELIA_CLIENT_ID"),
+        "category": "AUTHELIA",
+        "is_encrypted": False,
+    },
+    {
+        "key": "AUTHELIA_CLIENT_SECRET",
+        "value": os.environ.get("AUTHELIA_CLIENT_SECRET"),
+        "category": "AUTHELIA",
+        "is_encrypted": True,
+    },
+]
+
 gitea_config_variables = [
     {
         "key": "IS_GITEA_ENABLED",
@@ -254,6 +287,7 @@ core_config_variables = [
     *github_config_variables,
     *gitlab_config_variables,
     *gitea_config_variables,
+    *authelia_config_variables,
     *smtp_config_variables,
     *llm_config_variables,
     *unsplash_config_variables,

@@ -67,11 +67,19 @@ class AutheliaOAuthProvider(OauthAdapter):
         AUTHELIA_HOST = AUTHELIA_HOST.rstrip("/")
         AUTHELIA_INTERNAL_URL = (AUTHELIA_INTERNAL_URL or AUTHELIA_HOST).rstrip("/")
 
+        # OIDC endpoint paths — configurable so the same generic adapter works
+        # with Authelia (default paths) or Authentik (/application/o/...).
+        # BARSOUL 2026-05-31: auth.barsoul.jp を Authelia → Authentik へ移行する
+        # 際、コード再ビルド無しに env だけで切替できるようにする。
+        authorize_path = os.environ.get("AUTHELIA_AUTHORIZE_PATH", "/api/oidc/authorization")
+        token_path = os.environ.get("AUTHELIA_TOKEN_PATH", "/api/oidc/token")
+        userinfo_path = os.environ.get("AUTHELIA_USERINFO_PATH", "/api/oidc/userinfo")
+
         # Browser-facing URL (sent in 302 to the user's browser).
         # Token / userinfo calls are server-side from this container,
         # so they go via AUTHELIA_INTERNAL_URL — defaults to AUTHELIA_HOST.
-        self.token_url = f"{AUTHELIA_INTERNAL_URL}/api/oidc/token"
-        self.userinfo_url = f"{AUTHELIA_INTERNAL_URL}/api/oidc/userinfo"
+        self.token_url = f"{AUTHELIA_INTERNAL_URL}{token_path}"
+        self.userinfo_url = f"{AUTHELIA_INTERNAL_URL}{userinfo_path}"
 
         client_id = AUTHELIA_CLIENT_ID
         client_secret = AUTHELIA_CLIENT_SECRET
@@ -87,7 +95,7 @@ class AutheliaOAuthProvider(OauthAdapter):
             "response_type": "code",
             "state": state,
         }
-        auth_url = f"{AUTHELIA_HOST}/api/oidc/authorization?{urlencode(url_params)}"
+        auth_url = f"{AUTHELIA_HOST}{authorize_path}?{urlencode(url_params)}"
 
         super().__init__(
             request,
