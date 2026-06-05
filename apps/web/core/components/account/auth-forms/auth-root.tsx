@@ -22,10 +22,15 @@ import {
 import { useOAuthConfig } from "@/hooks/oauth";
 import { useInstance } from "@/hooks/store/use-instance";
 // local imports
-import { TermsAndConditions } from "../terms-and-conditions";
 import { AuthBanner } from "./auth-banner";
 import { AuthHeader, AuthHeaderBase } from "./auth-header";
 import { AuthFormRoot } from "./form-root";
+
+// BARSOUL: 社内ツールはログイン経路を Google のみに統一(tinyauth/Plane native Google)。
+// メール+パスワード/マジックリンクのフォームと区切り線・利用規約リンクは画面から非表示。
+// ※バックエンドの email 認証 config は無効化していない — Google 障害時の緊急フォールバックを残す。
+// 元に戻すには下記を false にするだけ。
+const BARSOUL_GOOGLE_ONLY: boolean = true;
 
 type TAuthRoot = {
   authMode: EAuthModes;
@@ -129,10 +134,10 @@ export const AuthRoot = observer(function AuthRoot(props: TAuthRoot) {
         <OAuthOptions
           options={oAuthOptions}
           compact={authStep === EAuthSteps.PASSWORD}
-          showDivider={isEmailBasedAuthEnabled}
+          showDivider={!BARSOUL_GOOGLE_ONLY && isEmailBasedAuthEnabled}
         />
       )}
-      {isEmailBasedAuthEnabled && (
+      {!BARSOUL_GOOGLE_ONLY && isEmailBasedAuthEnabled && (
         <AuthFormRoot
           authStep={authStep}
           authMode={authMode}
@@ -144,15 +149,11 @@ export const AuthRoot = observer(function AuthRoot(props: TAuthRoot) {
           currentAuthMode={currentAuthMode}
         />
       )}
-      <TermsAndConditions authType={authMode} />
     </AuthContainer>
   );
 });
 
 function AuthContainer({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-10 flex w-full flex-grow flex-col items-center justify-center py-6">
-      <div className="relative flex w-full max-w-[22.5rem] flex-col gap-6">{children}</div>
-    </div>
-  );
+  // BARSOUL: 親(auth-base)が縦中央寄せを担うため、ここはカード本体のみ。
+  return <div className="relative flex w-full max-w-[22.5rem] flex-col gap-6">{children}</div>;
 }

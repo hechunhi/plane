@@ -24,34 +24,21 @@ type TAuthHeader = {
   currentAuthStep: EAuthSteps;
 };
 
+// BARSOUL: Plane のマーケコピー(「Work in all dimensions.」等)を、社内ツール向けの
+// 簡潔なコピーに差し替え。
+const SIGN_IN_TITLE = { header: "おかえりなさい", subHeader: "サインインして続行" };
+const SIGN_UP_TITLE = { header: "アカウント作成", subHeader: "BARSOUL ワークスペースを始める" };
+
 const Titles = {
   [EAuthModes.SIGN_IN]: {
-    [EAuthSteps.EMAIL]: {
-      header: "Work in all dimensions.",
-      subHeader: "Welcome back to Plane.",
-    },
-    [EAuthSteps.PASSWORD]: {
-      header: "Work in all dimensions.",
-      subHeader: "Welcome back to Plane.",
-    },
-    [EAuthSteps.UNIQUE_CODE]: {
-      header: "Work in all dimensions.",
-      subHeader: "Welcome back to Plane.",
-    },
+    [EAuthSteps.EMAIL]: SIGN_IN_TITLE,
+    [EAuthSteps.PASSWORD]: SIGN_IN_TITLE,
+    [EAuthSteps.UNIQUE_CODE]: SIGN_IN_TITLE,
   },
   [EAuthModes.SIGN_UP]: {
-    [EAuthSteps.EMAIL]: {
-      header: "Work in all dimensions.",
-      subHeader: "Create your Plane account.",
-    },
-    [EAuthSteps.PASSWORD]: {
-      header: "Work in all dimensions.",
-      subHeader: "Create your Plane account.",
-    },
-    [EAuthSteps.UNIQUE_CODE]: {
-      header: "Work in all dimensions.",
-      subHeader: "Create your Plane account.",
-    },
+    [EAuthSteps.EMAIL]: SIGN_UP_TITLE,
+    [EAuthSteps.PASSWORD]: SIGN_UP_TITLE,
+    [EAuthSteps.UNIQUE_CODE]: SIGN_UP_TITLE,
   },
 };
 
