@@ -444,11 +444,42 @@ _AUGMENT_MODEL = os.environ.get("LLM_AUGMENT_MODEL", "gemma-4-12b").strip()
 
 
 def _augment_translate(text, tgt, context=""):
-    """混合言語コメントを gemma-4-12b で選択的補訳。tgt=zh のみ対応。
-    成功=補訳文字列 / 失敗(空・モデル不通)="". """
+    """混合言語コメントを gemma-4-12b で【双方向】選択的補訳。
+    tgt が読み手の言語。読み手が読めない方の言語だけを tgt に訳し、tgt 言語の
+    部分は原文保持(BS-226: 中文+日文素材で「翻訳:日本語」を押す人は日本人 →
+    中文を日文化し、日文素材はそのまま。逆も同様)。tgt は zh / ja のみ。
+    成功=補訳文字列 / 失敗(空・モデル不通・非対応 tgt)="". """
     url = os.environ.get("LLM_GATEWAY_URL", "").strip()
-    if not url or tgt != "zh":
+    if not url or tgt not in ("zh", "ja"):
         return ""
+    if tgt == "ja":
+        # 読み手=日本人。中文を日文化、日文素材は原文保持。
+        ctx_line = ""
+        if context and context.strip():
+            ctx_line = f"（このコメントは工単「{context.strip()[:80]}」のものです）\n"
+        sys = (
+            "あなたは越境EC企業 BARSOUL(大阪・日中チーム)の業務アシスタント。"
+            "ユーザーのコメントには【中文と日本語が混在】しています——多くは"
+            "日本語のスタッフ向けに、中国語話者が書いた中文コメントの中に、"
+            "日本のサイト/メールから貼り付けた日本語素材が混ざった形です。\n"
+            "あなたの仕事:【日本人がそのまま読める、自然な日本語】の版を出力する。規則:\n"
+            "1. もともと日本語の部分(貼付け素材など) → そのまま保持、一字も変えない。\n"
+            "2. 中文の部分 → 自然な日本語に翻訳する。\n"
+            "3. 【絶対に原文保持・翻訳も改変もしない】:商品番号・クーポン番号・注文番号"
+            "等の数字ID、金額(¥10,998)、日付(6/5)、英語、ブランド名/商品名"
+            "(MonotaRO/モノタロウ 等)。\n"
+            "4. 原文の改行・段落構造(空行・箇条書き)を保持する。\n"
+            "5. 結果本文のみ出力。前置き・原文併記・説明は一切不要。"
+        )
+        usr = ctx_line + "コメント内容:\n" + text[:2000]
+        payload = {
+            "model": _AUGMENT_MODEL,
+            "messages": [{"role": "system", "content": sys},
+                         {"role": "user", "content": usr}],
+            "temperature": 0.2, "max_tokens": 2048,
+        }
+        return _augment_post(url, payload, text)
+    # tgt == zh: 読み手=中文話者。日文を中文化、中文部分は原文保持。
     ctx_line = ""
     if context and context.strip():
         ctx_line = f"（这条评论属于工单「{context.strip()[:80]}」）\n"
@@ -473,6 +504,11 @@ def _augment_translate(text, tgt, context=""):
         ],
         "temperature": 0.2, "max_tokens": 2048,
     }
+    return _augment_post(url, payload, text)
+
+
+def _augment_post(url, payload, text):
+    """gemma 補訳の POST + 截断/全コピー護欄。成功=訳文 / 失敗="". """
     try:
         r = _req.post(url, json=payload, timeout=90)
         if r.status_code != 200:
@@ -502,10 +538,11 @@ def _call_llm(text, src, tgt, context=""):
     url = os.environ.get("LLM_GATEWAY_URL", "").strip()
     if not url:
         return ""
-    # BARSOUL 2026-06-05 (hechun, BS-226): 混合言語(中文主体+日文素材)→ tgt=zh は
-    # gemma-4-12b で選択的補訳を最優先で試す。成功すれば即返(中文保持+日文だけ訳)。
-    # 失敗時は下の hy-mt2 chain へ自然退避(従来挙動を壊さない)。
-    if tgt == "zh" and _is_mixed_cn_ja(text):
+    # BARSOUL 2026-06-05 (hechun, BS-226): 混合言語(中文+日文素材)は tgt=zh/ja
+    # 両方向で gemma-4-12b の選択的補訳を最優先。読み手言語(tgt)はそのまま、
+    # 読めない方だけ tgt に訳す(日本人向け=中文を日文化+日文素材保持; 逆も)。
+    # 成功で即返、失敗時は hy-mt2 chain へ自然退避(従来挙動を壊さない)。
+    if tgt in ("zh", "ja") and _is_mixed_cn_ja(text):
         aug = _augment_translate(text, tgt, context=context)
         if aug:
             globals()["_last_model_used"] = _AUGMENT_MODEL
