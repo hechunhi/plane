@@ -46,12 +46,15 @@ const HAN_RE_G = /[一-鿿]/g;
 // 訳方向が狂う。比率では混合を取れない。中日"専属"記号の共存で混合を検出し、
 // 地の文(主体)の言語を src とする。バックエンド _is_mixed_cn_ja と対称。
 const KANA_STRICT_G = /[ぁ-ゟァ-ヺ]/g; // 中日共用の ・(30FB) ー(30FC) を除外
-const CN_PUNCT_G = /[，？！]/g; // 简体中文専属(日文は 、。 を使う)
+// BS-226 第2波 (2026-06-05 hechun): 句読点「，？！」依存は脆い(中文が「。」で
+// 終わると取りこぼし→ja 誤判→中文まで改写)。日文がまず使わない簡体字・常用語の
+// 共存で判定。バックエンド _is_mixed_cn_ja と同字種。
+const CN_CHARS_G = /[的了们这那是不在有和与将把给为对你我他她它没么呢吧吗很真还会能要看请帮做想说让跟从向当其它别也都就最较关联报价当前一起展示确认问题方案折扣优惠]/g;
 function isMixedCnJa(text: string): boolean {
   const kana = (text.match(KANA_STRICT_G) || []).length;
   if (kana < 6) return false; // 日文素材が薄い → 従来判定でよい
-  const cnPunct = (text.match(CN_PUNCT_G) || []).length;
-  return cnPunct >= 1; // 中文の地の文(，？！)+ 実質日文 = 混合
+  const cn = (text.match(CN_CHARS_G) || []).length;
+  return cn >= 3; // 中文の地の文(専属字>=3) + 実質日文 = 混合
 }
 function detectSrc(text: string): "ja" | "zh" | null {
   // 混合(中文地の文 + 日文素材)は地の文=中文 → src=zh(「翻訳元」も訳方向も
