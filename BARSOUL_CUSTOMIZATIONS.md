@@ -227,10 +227,18 @@
   - **⚠️ launchctl 坑（实测踩中）**：`launchctl kickstart -k` 只重启进程、**不重载 plist**（用内存中旧 env）。改 plist `EnvironmentVariables`(ROUTES/REWRITE 等) 后必须 `launchctl bootout gui/$(id -u)/com.local.llm.gateway && launchctl bootstrap gui/$(id -u) <plist>`。只换二进制(ProgramArguments 路径不变)用 kickstart 即可
   - **P2 待决策（不可逆·需点头）**：单 M4 Pro GPU 同驻 :8001(gemma)+:8002(qwen4b)+:8003(多模型含 gemma+coder) = 同族双份占统一内存+互抢；首次冷载 30B coder 占满队列 >60s（属单全局队列削峰设计内，UP_TIMEOUT_S=180+retry 兜底，调用方 client 超时需≥180s）。正解：收敛重模型到 :8003 单一上游 + 留 :8002 作常温小快专路 + 下线冗余 :8001
 - `~/llm-tools/ai-bot/server.py` — 愛ちゃん Plane ReAct agent + issue 状态变更 Lark 卡片推送（webhook :8098）
+- **即点即译（X 式 lazy translate, hechun 自作）— `apps/api/plane/app/views/issue/comment.py`**
+  - 入口 `CommentTranslateOnDemandEndpoint`（cookie auth, 项目成员可触发）。译文 upsert `CommentTranslation`，带 cache + 质量门（src≥3段/tgt<50% 或 src≥200字/tgt<40% → soft-delete 重译）
+  - **内容哈希缓存（2026-05-31, hechun 发现"每次打开都重译"）**：前端 `display.tsx` 永远走 **override 路径**（POST `text=maskedText` tokenized ⟦N⟧），旧实现该路径**完全不读写缓存表** → 每次开 issue 点翻译都真调 LLM。修：`CommentTranslation` 加 `source_hash`(masked text sha256, migration `0124`)，override 路径按 `(comment,target_lang)` 查 + hash 匹配则 DB hit(~5ms 零 LLM)，否则译完 upsert。**self-invalidating**：评论编辑→comment_html变→masked变→hash变→自然 miss 重译（无需 edit 事件 hook）。前端组件内 `trHtml` state memo 是互补的"同次挂载不重取"，DB 缓存解决"跨次打开"。view 级 RequestFactory 实测：call#1 cached=False/LLM=1、call#2 同内容 cached=True/**LLM 仍=1**、call#3 编辑后 cached=False/LLM=2
+  - **翻译模型 = Hy-MT2-7B 一本（2026-05-31 简化）**：`_TRANSLATE_FALLBACK_CHAIN=["hy-mt2"]`。曾有 cloud Claude(CLI subprocess) 主路 + qwen3.5-4b 退避，但 ① **Claude CLI `-p` 在 launchd 非 TTY 下 OAuth/subscribe 静默 hang 30s**（`cloud_translate` 已标 DEPRECATED 保留作未来 Anthropic API 直叩脚手架，零调用）② qwen3.5-4b 通用 4B 翻译质量差（主语颠倒/用语乱）→ 两者皆下线
+  - **模型升级 1.8B→7B（2026-05-31）**：`~/models/Hy-MT2-7B-mlx-q4`(4.0GB, mlx-community/Hy-MT2-7B-4bit)，`com.local.llm.hy-mt2.plist` serve :8004，gateway alias `hy-mt2`(served-model-name 不变→调用方零改)。延迟 0.5→0.9s。**专家诊断 26 case：7B 裸 prompt 21/26 PASS**（婉拒否定/和製英語/多义动词/複文/敬語 全过，1.8B 必崩项）；旧 1.8B 保留可秒回滚（plist 一行）
+  - **prompt 三层组合（仅 hy-mt2 分支, `_try_one_model`）**：①`voice_rule` 视点/态 4 条正例规则（**仅 tgt==zh**：省略主语施動者/とのこと转述/被动承受方/定语从句完整）②`ctx_prefix` issue 件名自然文 prefix「以下是「{件名}」工单的对话片段。」③ 基础指令。endpoint 从 `Issue.objects...only('name')` 取件名注入 context
+  - **诊断剩余短板**：A3「とのこと转述指示」施動者判定约 50% 抖动（7B 能力边界，纯 prompt 难 100% 治死，已接受）。彻底解需 Hy-MT2-30B-A3B（MoE，mlx-community 暂未转）
+  - **翻译 prompt 三铁律（小模型踩坑沉淀）**：①**只用正例，反例会被照抄**（1.8B 实测把「❌我是日本人」抄进输出）②**语法规则按方向施加**（解析日语的规则只在 ja→zh 加，中译日不挂）③**先升模型再调 prompt**（1.8B 4 轮 prompt 治不动的 c1，7B 一发+一条规则解决）④ hy-mt2 会把 marker(【】/---/&lt;tag&gt;) 漏进译文 → context 用**自然文句**而非 marker 包裹
 - `~/llm-tools/lark-bridge/server.py` — Lark↔Hermes 双向（WS 长连接→weclaw-guard，复用大脑；card action 回调；v1 message handler；OCR→建案）
 - `~/llm-tools/weclaw-guard/server.py` — 员工 assignee 过滤 + PLANE_NOUN 扩 + 路由
 - `~/.hermes/bin/` — `health-monitor`（10min, Lark 告警）`backup-to-gdrive`（每日 02:00, openssl+GFS→My Drive）`lark-notify` `lark-push` `retrospect`(→Lark)
-- `~/Library/LaunchAgents/com.local.*.plist` — healthmon / backup / ai-bot / lark-bridge / llm.guard(FAST_URL/CODER_URL→:8001)
+- `~/Library/LaunchAgents/com.local.*.plist` — healthmon / backup / ai-bot / lark-bridge / llm.guard(FAST_URL/CODER_URL→:8200) / **llm.hy-mt2**(rapid-mlx serve `~/models/Hy-MT2-7B-mlx-q4` :8004, 即点即译专用翻译模型)
 - `~/.hermes/skills/productivity/lark-send` — Lark 通知策略 skill
 - `~/.hermes/employee_uins.yml` — WeChat UIN + plane_email + lark_email + lark_open_id 映射
 
