@@ -27,6 +27,8 @@ import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { CountChip } from "@/components/common/count-chip";
 // constants
 import { HeaderFilters } from "@/components/issues/filters";
+// BARSOUL DIS v3: 看板/待我处理 切换 + AI 语言设置 + 图例
+import { AIBoardControls } from "@/components/issues/issue-layouts/kanban/ai-board-controls";
 // helpers
 // hooks
 import { useCommandPalette } from "@/hooks/store/use-command-palette";
@@ -108,6 +110,7 @@ export const IssuesHeader = observer(function IssuesHeader() {
         )}
       </Header.LeftItem>
       <Header.RightItem>
+        <AIBoardControls />
         <div className="hidden gap-2 md:flex">
           <HeaderFilters
             projectId={projectId}

@@ -6,10 +6,10 @@
  */
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { useTranslation } from "@plane/i18n";
+import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import {
   type DerivedIssueState, StallChip, dueInfo, AvatarBadge,
-  stallTone, isZhLocale, pick, Ico, ICON,
+  stallTone, useZh, pick, Ico, ICON,
 } from "./ai-state-line";
 
 type DigestItem = DerivedIssueState & {
@@ -36,7 +36,7 @@ function StatusDot({ group }: { group: string | null }) {
   return <span style={{ width: 9, height: 9, borderRadius: 99, background: color, flex: "none" }} />;
 }
 
-function DigestRow({ s, zh }: { s: DigestItem; zh: boolean }) {
+function DigestRow({ s, zh, onOpen }: { s: DigestItem; zh: boolean; onOpen: () => void }) {
   const [hover, setHover] = useState(false);
   const di = dueInfo(s.due_date, zh);
   const next = pick(s.next_action, zh);
@@ -45,8 +45,10 @@ function DigestRow({ s, zh }: { s: DigestItem; zh: boolean }) {
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      onClick={onOpen}
+      title={zh ? "打开卡片处理" : "カードを開いて対応"}
       style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8,
-        background: hover ? "#f8f9fb" : "#fff", border: "1px solid " + (hover ? "#e6e8ec" : "#eceef1"), cursor: "default" }}
+        background: hover ? "#f8f9fb" : "#fff", border: "1px solid " + (hover ? "#e6e8ec" : "#eceef1"), cursor: "pointer" }}
     >
       <StatusDot group={s.state_group} />
       <div style={{ width: 56, flex: "none", fontSize: 11.5, color: "#9499a0", fontWeight: 500 }}>
@@ -117,8 +119,9 @@ function GroupHeader({ icon, color, title, count, sub }: { icon: string[]; color
 export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: string; projectId: string }) {
   const { workspaceSlug: routerWs } = useParams();
   const slug = workspaceSlug || routerWs?.toString() || "";
-  const { currentLocale } = useTranslation();
-  const zh = isZhLocale(currentLocale);
+  const zh = useZh();
+  const { setPeekIssue } = useIssueDetail();
+  const openCard = (issueId: string) => setPeekIssue({ workspaceSlug: slug, projectId, issueId });
   const [items, setItems] = useState<DigestItem[] | null>(null);
 
   useEffect(() => {
@@ -181,11 +184,11 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
               <GroupHeader icon={ICON.inbox} color="#d97a0a" title={T.gNeed} count={needMe.length} sub={T.gNeedSub} />
-              {needMe.map((s) => <DigestRow key={s.issue_id} s={s} zh={zh} />)}
+              {needMe.map((s) => <DigestRow key={s.issue_id} s={s} zh={zh} onOpen={() => openCard(s.issue_id)} />)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <GroupHeader icon={ICON.send} color="#5d6f81" title={T.gWait} count={waiting.length} sub={T.gWaitSub} />
-              {waiting.map((s) => <DigestRow key={s.issue_id} s={s} zh={zh} />)}
+              {waiting.map((s) => <DigestRow key={s.issue_id} s={s} zh={zh} onOpen={() => openCard(s.issue_id)} />)}
             </div>
           </>
         )}

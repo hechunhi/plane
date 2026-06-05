@@ -52,8 +52,8 @@ import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-st
 import type { TRenderQuickActions } from "../list/list-view-types";
 import { IssueProperties } from "../properties/all-properties";
 import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
-// BARSOUL DIS: 派生卡片当前态 状态行
-import { AIStateLine } from "./ai-state-line";
+// BARSOUL DIS: 派生卡片当前态 摘要条 + 全局浮层控制器(整卡 hover 触发)
+import { AICardBar, aiPopover, getCachedAIState } from "./ai-state-line";
 
 interface IssueBlockProps {
   issueId: string;
@@ -172,8 +172,8 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         isEpic={isEpic}
       />
 
-      {/* BARSOUL DIS: AI 当前态行(卡底 footer, 顶部分隔线, 仿设计稿)。无派生/低置信 → 不渲染 */}
-      {issue.project_id && <AIStateLine issueId={issue.id} projectId={issue.project_id} />}
+      {/* BARSOUL DIS v3: AI 当前态摘要条(卡底 footer)。整卡 hover → 全局富浮层 */}
+      {issue.project_id && <AICardBar issueId={issue.id} projectId={issue.project_id} />}
 
       {isEpic && displayProperties && (
         <WithDisplayPropertiesHOC
@@ -318,6 +318,18 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
         id={`issue-${issueId}`}
         // make Z-index higher at the beginning of drag, to have a issue drag image of issue block without any overlaps
         className={cn("group/kanban-block relative mb-2", { "z-[1]": isCurrentBlockDragging })}
+        // BARSOUL DIS v3: 整卡 hover → 全局 AI 当前态浮层(仅当该卡有派生态时)
+        onMouseEnter={(e) => {
+          const st = issue?.id ? getCachedAIState(issue.id) : null;
+          if (st && st.ball && st.state !== "UNKNOWN" && issue?.project_id) {
+            aiPopover.show(issue.id, issue.project_id, e.currentTarget, {
+              seq: issue.sequence_id ?? null,
+              identifier: projectIdentifier ?? "",
+              name: issue.name ?? "",
+            });
+          }
+        }}
+        onMouseLeave={() => aiPopover.hide()}
         onDragStart={() => {
           if (isDragAllowed) setIsCurrentBlockDragging(true);
           else {
