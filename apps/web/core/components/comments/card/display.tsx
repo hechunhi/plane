@@ -29,8 +29,9 @@ import { useMember } from "@/hooks/store/use-member";
 //  - 外国語(閲覧者言語でない)コメント → 既定で訳文表示(cache 即時/無ければ自動取得)、
 //    「显示原文」で原文へ。自言語コメントは翻訳 UI なし。
 //  - 原 comment_html は不可変(真相)。translations は API 派生キャッシュ。
-//  - AI 自身のコメントは対象外(自分翻訳ループ防止)。
-const AI_USER_ID = "0e50881c-df94-4233-ad7e-65f943f62550"; // 愛ちゃん
+//  - 2026-06-06 (hechun): 爱酱(AI)コメントも翻訳対象(普通ユーザーと同等)。
+//    旧は AI 自身を除外していたが、爱酱の回答(中/日)は実コンテンツで、読者言語が
+//    違えば訳が要る。表示翻訳は派生キャッシュ書込のみ(新規コメント生成なし)→ ループ無し。
 
 // 文字種探知 → 起点言語推定(2026-05-27 比率ベース修正)
 // 旧: 任意 1 文字でも假名なら ja 判定 → 中文 95% + 日文名 5% でも ja 誤判
@@ -189,10 +190,9 @@ function CommentTranslatable(props: {
   projectId: string;
   issueId: string;
   comment: any;
-  actorId: string | undefined;
   children: ReactNode; // 原文 (read-only LiteTextEditor)
 }) {
-  const { workspaceSlug, workspaceId, projectId, issueId, comment, actorId, children } = props;
+  const { workspaceSlug, workspaceId, projectId, issueId, comment, children } = props;
   const { currentLocale } = useTranslation();
   const viewer: "zh" | "ja" = currentLocale === "ja" ? "ja" : "zh";
   const trEditorRef = useRef<EditorRefApi>(null);
@@ -204,9 +204,9 @@ function CommentTranslatable(props: {
   );
   const plainText = stripTokens(tokenText);
   const src = detectSrc(plainText);
-  const isAi = actorId === AI_USER_ID;
-  // 翻訳 UI を出せる条件(自言語でも「プレビュー」として出す)
-  const canTranslate = !!src && !isAi && !!plainText.trim();
+  // 翻訳 UI を出せる条件(自言語でも「プレビュー」として出す)。
+  // 2026-06-06: 爱酱(AI)含め全コメント対象 — actor で除外しない(hechun)。
+  const canTranslate = !!src && !!plainText.trim();
   const isSelf = !!src && src === viewer;
   const target: "zh" | "ja" = isSelf ? otherLang(src as "zh" | "ja") : viewer;
 
@@ -485,7 +485,6 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
             projectId={String(projectId || "")}
             issueId={String((comment as any).issue || "")}
             comment={comment}
-            actorId={comment?.actor}
           >
             <LiteTextEditor
               editable={false}
