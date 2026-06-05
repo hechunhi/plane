@@ -12,6 +12,7 @@ import { AppRailRoot } from "@/components/navigation";
 import { useAppRailVisibility } from "@/lib/app-rail";
 // local imports
 import { TopNavigationRoot } from "../navigations";
+import { PendingApprovalsTabBadge } from "./pending-approvals-tab-badge";
 
 export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper({
   children,
@@ -24,6 +25,7 @@ export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper
   return (
     <div className="relative flex size-full flex-col overflow-hidden bg-canvas transition-all duration-300 ease-in-out">
       <TopNavigationRoot />
+      <PendingApprovalsTabBadge />
       <div className="relative flex size-full overflow-hidden">
         {/* Conditionally render AppRailRoot based on context */}
         {shouldRenderAppRail && <AppRailRoot />}
