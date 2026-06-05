@@ -242,6 +242,11 @@ def _detect_src(text):
     """
     if not text:
         return None
+    # BARSOUL 2026-06-05 (hechun, BS-226): 混合(中文地の文 + 日文素材)は地の文=
+    # 中文 → src=zh。素材ブロックの假名密度で比率が 0.2 を超え ja 誤判するのを防ぐ
+    # (フロント detectSrc と対称)。混合判定は _is_mixed_cn_ja に集約。
+    if _is_mixed_cn_ja(text):
+        return "zh"
     kana = len(_HK_RE.findall(text))
     han = len(_HAN_RE.findall(text))
     total = kana + han

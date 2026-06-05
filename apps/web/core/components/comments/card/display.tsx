@@ -5,12 +5,12 @@
  */
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { usePathname } from "next/navigation";
 // plane imports
 import type { EditorRefApi } from "@plane/editor";
-import { useHashScroll, useOutsideClickDetector } from "@plane/hooks";
+import { useHashScroll } from "@plane/hooks";
 import { GlobeIcon, LockIcon } from "@plane/propel/icons";
 import { EIssueCommentAccessSpecifier } from "@plane/types";
 import type { TCommentsOperations, TIssueComment } from "@plane/types";
@@ -40,7 +40,23 @@ const AI_USER_ID = "0e50881c-df94-4233-ad7e-65f943f62550"; // 愛ちゃん
 // な前提を活用、混在テキストも多数派側に倒す.
 const HK_RE_G = /[぀-ゟ゠-ヿ]/g;
 const HAN_RE_G = /[一-鿿]/g;
+// BARSOUL 2026-06-05 (hechun, BS-226): 混合言語判定。中文母语者が中文コメントに
+// 日本サイト(MonotaRO 等)の日文素材を貼ると、素材ブロックの假名密度で全体比率が
+// 0.2 を超え(実測 0.207)、地の文は中文なのに ja 誤判 → 「翻訳元 日語」表示 +
+// 訳方向が狂う。比率では混合を取れない。中日"専属"記号の共存で混合を検出し、
+// 地の文(主体)の言語を src とする。バックエンド _is_mixed_cn_ja と対称。
+const KANA_STRICT_G = /[ぁ-ゟァ-ヺ]/g; // 中日共用の ・(30FB) ー(30FC) を除外
+const CN_PUNCT_G = /[，？！]/g; // 简体中文専属(日文は 、。 を使う)
+function isMixedCnJa(text: string): boolean {
+  const kana = (text.match(KANA_STRICT_G) || []).length;
+  if (kana < 6) return false; // 日文素材が薄い → 従来判定でよい
+  const cnPunct = (text.match(CN_PUNCT_G) || []).length;
+  return cnPunct >= 1; // 中文の地の文(，？！)+ 実質日文 = 混合
+}
 function detectSrc(text: string): "ja" | "zh" | null {
+  // 混合(中文地の文 + 日文素材)は地の文=中文 → src=zh(「翻訳元」も訳方向も
+  // 中文起点に。読み手が日本人なら zh→ja で日本語化される)。
+  if (isMixedCnJa(text)) return "zh";
   const kana = (text.match(HK_RE_G) || []).length;
   const han = (text.match(HAN_RE_G) || []).length;
   const total = kana + han;
@@ -93,98 +109,119 @@ function useAutoTranslatePref(): [boolean, (v: boolean) => void] {
   return [v, set];
 }
 
-const GearGlyph = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-  </svg>
-);
+// ── 富文本 tokenize/rebuild: 画像/@mention を ⟦N⟧ 占位符化して翻訳 → 復元 ──
+// 翻訳は文字のみ、画像(image-component)/メンション(mention-component)は
+// 原 HTML をそのまま保持 → 訳文も read-only editor で描画 → 画像表示 + @名前解決。
+const RICH_NODE_RE = /<(mention-component|image-component)\b[^>]*><\/\1>/gi;
+const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-// ⚙️ 自動翻訳 設定ポップオーバ(X の歯車相当)。
-function AutoTranslateGear(props: { enabled: boolean; onChange: (v: boolean) => void; viewer: "zh" | "ja" }) {
+function tokenizeHtml(html: string): { text: string; tokens: string[] } {
+  const tokens: string[] = [];
+  const placed = (html || "").replace(RICH_NODE_RE, (m) => {
+    const i = tokens.length;
+    tokens.push(m);
+    return ` ⟦${i}⟧ `;
+  });
+  const text = placed
+    .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&amp;/gi, "&")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { text, tokens };
+}
+
+function rebuildHtml(translated: string, tokens: string[]): string {
+  const paras = translated.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const out = paras.map((p) => {
+    const sole = p.match(/^⟦(\d+)⟧$/);
+    if (sole) {
+      const tok = tokens[Number(sole[1])];
+      if (tok && /^<image-component/i.test(tok)) return tok; // ブロック画像は <p> で包まない
+    }
+    const body = escapeHtml(p).replace(/⟦(\d+)⟧/g, (_m, i) => tokens[Number(i)] ?? "");
+    return `<p class="editor-paragraph-block">${body}</p>`;
+  });
+  return out.join("") || "<p></p>";
+}
+
+const stripTokens = (s: string) => s.replace(/⟦\d+⟧/g, "");
+const otherLang = (l: "zh" | "ja"): "zh" | "ja" => (l === "zh" ? "ja" : "zh");
+
+// 行内「自動翻訳」トグル(popover 廃止 — 定位ライブラリ不要 = 絶対壊れない)。
+// 説明は Tooltip(Plane 標準、衝突回避済)。
+function InlineAutoToggle(props: { enabled: boolean; onChange: (v: boolean) => void; viewer: "zh" | "ja" }) {
   const { enabled, onChange, viewer } = props;
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useOutsideClickDetector(ref, () => setOpen(false));
   const T = viewer === "zh"
-    ? { title: "自动翻译", desc: "外语评论自动译成你的语言。关闭后默认显示原文。", label: "默认自动翻译" }
-    : { title: "自動翻訳", desc: "外国語コメントを自動で日本語へ。OFF で既定は原文表示。", label: "既定で自動翻訳" };
+    ? { label: "自动翻译", on: "开", off: "关", tip: "外语评论自动译成你的语言。关闭后默认显示原文。" }
+    : { label: "自動翻訳", on: "ON", off: "OFF", tip: "外国語コメントを自動で日本語へ。OFF で既定は原文表示。" };
   return (
-    <div ref={ref} className="relative inline-flex">
+    <Tooltip tooltipContent={T.tip} position="top-left">
       <button
         type="button"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen((o) => !o); }}
-        className="text-tertiary hover:text-secondary transition-colors"
-        aria-label={T.title}
+        onClick={() => onChange(!enabled)}
+        className="inline-flex items-center gap-1 hover:text-secondary transition-colors outline-none"
+        aria-pressed={enabled}
       >
-        <GearGlyph />
+        <span>{T.label}</span>
+        <span className={enabled ? "text-accent-primary font-medium" : "opacity-50"}>
+          {enabled ? T.on : T.off}
+        </span>
       </button>
-      {open && (
-        <div
-          // 幅/位置は inline style で確実に効かせる(tailwind 任意値の JIT 取りこぼし回避)。
-          // right:0 で歯車の右端基準に左へ展開 → 右端クリップ防止。maxWidth で視口内に収める。
-          style={{ width: 240, maxWidth: "calc(100vw - 2rem)", right: 0 }}
-          className="absolute z-20 top-5 rounded-md border border-strong bg-surface-1 p-3 shadow-lg text-left cursor-default"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="text-12 font-medium text-primary mb-1">{T.title}</div>
-          <p className="text-11 text-tertiary leading-relaxed mb-2.5">{T.desc}</p>
-          <label className="flex items-center justify-between gap-2 cursor-pointer text-12 text-secondary">
-            <span>{T.label}</span>
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => onChange(e.target.checked)}
-              className="size-3.5 cursor-pointer"
-            />
-          </label>
-        </div>
-      )}
-    </div>
+    </Tooltip>
   );
 }
 
-// BARSOUL 評論翻訳 X 式 UX v2 (2026-05-30 hechun):
-// **目標言語 = 閲覧者の言語**(currentLocale)。閲覧者が中文なら全部中文で読める
-// のが既定 — 外国語(=閲覧者言語でない)コメントは既定で訳文を表示(cache あれば
-// 即時、無ければ自動取得)、「显示原文」で原文へ。自言語コメントは翻訳 UI 無し。
-// 旧実装の致命的欠陥: 目標を src の反対固定 → 中文ユーザが日本語コメントを既定で
-// 日本語のまま見せられる(自分の言語に翻訳されない)= 本末転倒。
+// BARSOUL 評論翻訳 v3 (2026-05-30 hechun):
+//  ・目標言語 = 閲覧者言語(外国語コメント)/ 自言語コメントは相手言語へ「プレビュー」。
+//  ・訳文は ⟦N⟧ tokenize → 翻訳 → 復元 → read-only editor 描画(画像 + @mention 保持)。
+//  ・設定は行内トグル(popover 廃止)。
 function CommentTranslatable(props: {
   workspaceSlug: string;
+  workspaceId: string;
   projectId: string;
   issueId: string;
   comment: any;
-  commentText: string;
   actorId: string | undefined;
   children: ReactNode; // 原文 (read-only LiteTextEditor)
 }) {
-  const { workspaceSlug, projectId, issueId, comment, commentText, actorId, children } = props;
+  const { workspaceSlug, workspaceId, projectId, issueId, comment, actorId, children } = props;
   const { currentLocale } = useTranslation();
-  // 閲覧者言語: zh-CN/zh-TW → zh, ja → ja, それ以外(en 等)は zh 既定(BARSOUL 運用)
   const viewer: "zh" | "ja" = currentLocale === "ja" ? "ja" : "zh";
+  const trEditorRef = useRef<EditorRefApi>(null);
 
-  const src = detectSrc(commentText);
+  // comment_html を tokenize(画像/@mention を占位符化)
+  const { text: tokenText, tokens } = useMemo(
+    () => tokenizeHtml(comment?.comment_html || ""),
+    [comment?.comment_html]
+  );
+  const plainText = stripTokens(tokenText);
+  const src = detectSrc(plainText);
   const isAi = actorId === AI_USER_ID;
-  // 自言語/判定不能/AI/空 → 翻訳不要、原文のみ
-  const needTranslate = !!src && !isAi && !!commentText.trim() && src !== viewer;
+  // 翻訳 UI を出せる条件(自言語でも「プレビュー」として出す)
+  const canTranslate = !!src && !isAi && !!plainText.trim();
+  const isSelf = !!src && src === viewer;
+  const target: "zh" | "ja" = isSelf ? otherLang(src as "zh" | "ja") : viewer;
 
-  const cached = needTranslate ? (comment?.translations as any)?.[viewer]?.text || null : null;
   const [autoPref, setAutoPref] = useAutoTranslatePref();
-  // override: null=全局pref追随, true=原文強制, false=訳文強制(ユーザの明示選択)
-  const [override, setOverride] = useState<boolean | null>(null);
-  const [text, setText] = useState<string | null>(cached);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [override, setOverride] = useState<boolean | null>(null); // null=既定追随 / true=原文 / false=訳文
+  const [trHtml, setTrHtml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fetchedRef = useRef(false);
 
-  // 既定の原文/訳文: override 優先、無ければ全局 autoPref(ON→訳文既定)。
-  const showOriginalEff = override !== null ? override : !autoPref;
-  const wantTranslation = needTranslate && !showOriginalEff;
+  // 既定: 自言語=原文(プレビューは opt-in)/ 外国語=全局 autoPref に従う。
+  const showOriginalEff = override !== null ? override : isSelf ? true : !autoPref;
+  const wantTranslation = canTranslate && !showOriginalEff;
 
-  const doFetch = useCallback(async () => {
-    if (fetchedRef.current) return;
+  // BARSOUL 2026-05-31: force=true で手動リトライ(fetchedRef ガードを跨ぐ)。
+  // 旧実装は失敗後 fetchedRef=true のままで二度と再取得できなかった(hechun 指摘)。
+  // hy-mt2 はメモリ圧でコールドスタート時に間欠 timeout する → リトライで殆ど回復。
+  const doFetch = useCallback(async (force = false) => {
+    if (fetchedRef.current && !force) return;
     fetchedRef.current = true;
     setErrorMsg(null);
     setLoading(true);
@@ -195,41 +232,47 @@ function CommentTranslatable(props: {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-          body: JSON.stringify({ target_lang: viewer }),
+          body: JSON.stringify({ target_lang: target, text: tokenText, source: src }),
         }
       );
       const j = await r.json();
-      if (!r.ok) setErrorMsg(j?.error || `翻译失败 (${r.status})`);
-      else setText(j.text || "");
+      // 生エラー文("translation failed")は出さず、穏やかな再試行可能メッセージに。
+      if (!r.ok) setErrorMsg(viewer === "zh" ? "翻译暂时不可用" : "翻訳が一時的に失敗しました");
+      else setTrHtml(rebuildHtml(j.text || "", tokens));
     } catch {
-      setErrorMsg(viewer === "zh" ? "网络错误" : "ネットワーク错误");
+      setErrorMsg(viewer === "zh" ? "网络错误，请重试" : "ネットワークエラー、再試行してください");
     } finally {
       setLoading(false);
     }
-  }, [workspaceSlug, projectId, issueId, comment.id, viewer]);
+  }, [workspaceSlug, projectId, issueId, comment.id, target, tokenText, src, tokens, viewer]);
 
-  // 訳文を見たい状態 + 未取得 → fetch(全局 ON で mount 時自動 / ユーザが訳文選択時)
   useEffect(() => {
-    if (wantTranslation && !cached && !fetchedRef.current) doFetch();
-  }, [wantTranslation, cached, doFetch]);
+    if (wantTranslation && !trHtml && !fetchedRef.current) doFetch();
+  }, [wantTranslation, trHtml, doFetch]);
 
-  // 翻訳不要 → 原文のみ(UI 無し)
-  if (!needTranslate) return <>{children}</>;
+  if (!canTranslate) return <>{children}</>;
 
-  const srcName = LANG_NAME[src!][viewer];      // 例: viewer=zh, src=ja → "日语"
+  const tgtName = LANG_NAME[target][viewer];
+  const srcName = LANG_NAME[src!][viewer];
   const L = viewer === "zh"
-    ? { from: `翻译自 ${srcName}`, showOrig: "显示原文", showTr: "显示译文", loading: "翻译中…" }
-    : { from: `${srcName}から翻訳`, showOrig: "原文を表示", showTr: "訳文を表示", loading: "翻訳中…" };
+    ? {
+        showOrig: "显示原文",
+        showTr: isSelf ? `查看${tgtName}译文` : "显示译文",
+        from: isSelf ? `机器译文 · ${tgtName}` : `翻译自 ${srcName}`,
+        loading: "翻译中…",
+      }
+    : {
+        showOrig: "原文を表示",
+        showTr: isSelf ? `${tgtName}訳を見る` : "訳文を表示",
+        from: isSelf ? `機械翻訳 · ${tgtName}` : `${srcName}から翻訳`,
+        loading: "翻訳中…",
+      };
 
-  const showingTranslation = !!text && wantTranslation;
-  const gear = <AutoTranslateGear enabled={autoPref} onChange={setAutoPref} viewer={viewer} />;
+  const showingTranslation = !!trHtml && wantTranslation;
 
   return (
     <div className="select-none">
-      {/* 固定位置 コントロール行(本文の【上】に置く → Y 座標が原文/訳文の高さ差で
-          動かない = トグルが常に同じ位置)。トグル文言は 显示原文↔显示译文(4文字
-          等幅)で位置不変 → マウス移動なしで往復切替。後続「翻訳自 X」はトグルの
-          右なので位置に影響しない。X/Twitter のヘッダ式と同型。 */}
+      {/* コントロール行(本文の上 = Y 固定、往復切替でマウス移動不要)。 */}
       <div className="mb-1 flex items-center gap-1.5 text-[11px] text-tertiary">
         <TranslateGlyph />
         {loading ? (
@@ -238,11 +281,7 @@ function CommentTranslatable(props: {
             {L.loading}
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={() => setOverride(showingTranslation)}
-            className="text-accent-primary hover:underline"
-          >
+          <button type="button" onClick={() => setOverride(showingTranslation)} className="text-accent-primary hover:underline">
             {showingTranslation ? L.showOrig : L.showTr}
           </button>
         )}
@@ -253,24 +292,39 @@ function CommentTranslatable(props: {
           </>
         )}
         <span className="flex-1" />
-        {gear}
+        <InlineAutoToggle enabled={autoPref} onChange={setAutoPref} viewer={viewer} />
       </div>
 
-      {/* 本文: 訳文 or 原文(原文は unmount せず CSS 隠し → editor ref 保持)。
-          訳文の字号/行高は原文 editor(small-font)の本文と完全一致させる:
-          --font-size-regular: 0.8rem / --line-height-regular: 1.2rem。
-          editor は py-1 のパディングを持つので ここでも合わせる。 */}
-      {showingTranslation && (
-        <div
-          className="text-primary whitespace-pre-wrap py-1"
-          style={{ fontSize: "0.8rem", lineHeight: "1.2rem" }}
-        >
-          {text}
-        </div>
+      {/* 訳文: rebuild した HTML を read-only editor で描画 → 画像 + @mention 保持。 */}
+      {showingTranslation && trHtml && (
+        <LiteTextEditor
+          editable={false}
+          ref={trEditorRef}
+          id={`${comment.id}-tr-${target}`}
+          initialValue={trHtml}
+          workspaceId={workspaceId}
+          workspaceSlug={workspaceSlug}
+          containerClassName="!py-1"
+          projectId={projectId?.toString()}
+          displayConfig={{ fontSize: "small-font" }}
+          parentClassName="border-none"
+        />
       )}
+      {/* 原文: 訳文表示中は CSS 隠し(unmount せず editor ref 保持)。 */}
       <div className={showingTranslation ? "hidden" : "block"}>{children}</div>
 
-      {errorMsg && <div className="mt-1 text-[11px] text-red-500">{errorMsg}</div>}
+      {errorMsg && !loading && (
+        <div className="mt-1 flex items-center gap-2 text-[11px] text-tertiary">
+          <span>{errorMsg}</span>
+          <button
+            type="button"
+            onClick={() => void doFetch(true)}
+            className="text-accent-primary hover:underline"
+          >
+            {viewer === "zh" ? "重试" : "再試行"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -415,10 +469,10 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
               原文を CSS で隠して訳文に置換 + 「翻訳自 X · 显示原文」ヘッダ。 */}
           <CommentTranslatable
             workspaceSlug={workspaceSlug}
+            workspaceId={workspaceId}
             projectId={String(projectId || "")}
             issueId={String((comment as any).issue || "")}
             comment={comment}
-            commentText={(comment as any).comment_stripped || ""}
             actorId={comment?.actor}
           >
             <LiteTextEditor
