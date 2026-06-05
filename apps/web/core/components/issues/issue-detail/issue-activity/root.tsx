@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import uniq from "lodash-es/uniq";
 import { observer } from "mobx-react";
 // plane package imports
@@ -17,6 +17,7 @@ import { useTranslation } from "@plane/i18n";
 import type { TFileSignedURLResponse, TIssueComment } from "@plane/types";
 // components
 import { CommentCreate } from "@/components/comments/comment-create";
+import { useRealtimeCommentVersion } from "@/components/core/realtime-bus";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
@@ -56,7 +57,30 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
   // store hooks
   const {
     issue: { getIssueById },
+    comment,
   } = useIssueDetail();
+
+  // BARSOUL コメント実時(この class の根治): パネルが開いている間、
+  //   当該 issue にコメント変更(他者/愛ちゃん の 追加・編集・削除)が
+  //   来たら comment store を【全件再取得して置換】(fetchCommentsReplace)。
+  //   旧実装の増分 fetchComments(created_at__gt で append 専用)は
+  //   削除/編集が永久に反映されない欠陥 → 全件置換に変更。レンダは
+  //   comment id を key にしているので: 変更行のみ再描画・削除行のみ
+  //   unmount・新規のみ mount・既存は据え置き = フラッシュ無し、
+  //   スクロール位置/入力中の返信欄も保持。看板には一切波及しない。
+  //   ★初回マウントはスキップ: パネル open 時の本来の取得と競合させない
+  //   (rtVersion は generation を含むためマウント時点で >0 になり得る)。
+  const rtCommentVersion = useRealtimeCommentVersion(issueId);
+  const rtcFirst = useRef(true);
+  useEffect(() => {
+    if (rtcFirst.current) {
+      rtcFirst.current = false;
+      return;
+    }
+    if (!workspaceSlug || !projectId || !issueId) return;
+    void comment.fetchCommentsReplace(workspaceSlug, projectId, issueId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rtCommentVersion]);
 
   const { getProjectRoleByWorkspaceSlugAndProjectId } = useUserPermissions();
   const { getProjectById } = useProject();

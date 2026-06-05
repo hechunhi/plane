@@ -5,15 +5,18 @@
  */
 
 import React, { useState } from "react";
+import type { Locale } from "date-fns";
+import { format } from "date-fns";
+import { ja, zhCN, zhTW } from "date-fns/locale";
 import { observer } from "mobx-react";
 import { usePopper } from "react-popper";
 import { Popover, Transition } from "@headlessui/react";
+import { useTranslation } from "@plane/i18n";
 import { ChevronLeftIcon, ChevronRightIcon } from "@plane/propel/icons";
 //hooks
 // icons
 // constants
 import { getDate } from "@plane/utils";
-import { MONTHS_LIST } from "@/constants/calendar";
 import { useCalendarView } from "@/hooks/store/use-calendar-view";
 import type { ICycleIssuesFilter } from "@/store/issue/cycle";
 import type { IModuleIssuesFilter } from "@/store/issue/module";
@@ -21,11 +24,20 @@ import type { IProjectIssuesFilter } from "@/store/issue/project";
 import type { IProjectViewIssuesFilter } from "@/store/issue/project-views";
 // helpers
 
+const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
+  ja,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
+
 interface Props {
   issuesFilterStore: IProjectIssuesFilter | IModuleIssuesFilter | ICycleIssuesFilter | IProjectViewIssuesFilter;
 }
 export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(props: Props) {
   const { issuesFilterStore } = props;
+
+  const { t, currentLocale } = useTranslation();
+  const dateFnsLocale = DATE_FNS_LOCALE_MAP[currentLocale];
 
   const issueCalendarView = useCalendarView();
 
@@ -51,26 +63,28 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
   const getWeekLayoutHeader = (): string => {
     const allDaysOfActiveWeek = issueCalendarView.allDaysOfActiveWeek;
 
-    if (!allDaysOfActiveWeek) return "Week view";
+    if (!allDaysOfActiveWeek) return t("calendar.week_view");
 
     const daysList = Object.keys(allDaysOfActiveWeek);
 
     const firstDay = getDate(daysList[0]);
     const lastDay = getDate(daysList[daysList.length - 1]);
 
-    if (!firstDay || !lastDay) return "Week view";
+    if (!firstDay || !lastDay) return t("calendar.week_view");
 
     if (firstDay.getMonth() === lastDay.getMonth() && firstDay.getFullYear() === lastDay.getFullYear())
-      return `${MONTHS_LIST[firstDay.getMonth() + 1].title} ${firstDay.getFullYear()}`;
+      return `${format(firstDay, "LLLL", { locale: dateFnsLocale })} ${firstDay.getFullYear()}`;
 
     if (firstDay.getFullYear() !== lastDay.getFullYear()) {
-      return `${MONTHS_LIST[firstDay.getMonth() + 1].shortTitle} ${firstDay.getFullYear()} - ${
-        MONTHS_LIST[lastDay.getMonth() + 1].shortTitle
-      } ${lastDay.getFullYear()}`;
+      return `${format(firstDay, "LLL", { locale: dateFnsLocale })} ${firstDay.getFullYear()} - ${format(
+        lastDay,
+        "LLL",
+        { locale: dateFnsLocale }
+      )} ${lastDay.getFullYear()}`;
     } else
-      return `${MONTHS_LIST[firstDay.getMonth() + 1].shortTitle} - ${
-        MONTHS_LIST[lastDay.getMonth() + 1].shortTitle
-      } ${lastDay.getFullYear()}`;
+      return `${format(firstDay, "LLL", { locale: dateFnsLocale })} - ${format(lastDay, "LLL", {
+        locale: dateFnsLocale,
+      })} ${lastDay.getFullYear()}`;
   };
 
   const handleDateChange = (date: Date) => {
@@ -89,7 +103,7 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
           disabled={calendarLayout === "week"}
         >
           {calendarLayout === "month"
-            ? `${MONTHS_LIST[activeMonthDate.getMonth() + 1].title} ${activeMonthDate.getFullYear()}`
+            ? `${format(activeMonthDate, "LLLL", { locale: dateFnsLocale })} ${activeMonthDate.getFullYear()}`
             : getWeekLayoutHeader()}
         </button>
       </Popover.Button>
@@ -133,9 +147,9 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
               </button>
             </div>
             <div className="grid grid-cols-4 items-stretch justify-items-stretch gap-4 pt-3">
-              {Object.values(MONTHS_LIST).map((month, index) => (
+              {Array.from({ length: 12 }, (_, index) => (
                 <button
-                  key={month.shortTitle}
+                  key={index}
                   type="button"
                   className="rounded-sm py-0.5 text-11 hover:bg-layer-1"
                   onClick={() => {
@@ -143,7 +157,7 @@ export const CalendarMonthsDropdown = observer(function CalendarMonthsDropdown(p
                     handleDateChange(newDate);
                   }}
                 >
-                  {month.shortTitle}
+                  {format(new Date(activeMonthDate.getFullYear(), index, 1), "LLL", { locale: dateFnsLocale })}
                 </button>
               ))}
             </div>

@@ -5,8 +5,11 @@
  */
 
 import type { FC, ReactNode } from "react";
+import type { Locale } from "date-fns";
+import { ja, zhCN, zhTW } from "date-fns/locale";
 import { Network } from "lucide-react";
 // types
+import { useTranslation } from "@plane/i18n";
 import { Tooltip } from "@plane/propel/tooltip";
 import type { TWorkspaceBaseActivity } from "@plane/types";
 // ui
@@ -25,10 +28,18 @@ type TActivityBlockComponent = {
   customUserName?: string;
 };
 
+const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
+  ja,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
+
 export function ActivityBlockComponent(props: TActivityBlockComponent) {
   const { icon: Icon, activity, ends, children, customUserName } = props;
   // hooks
   const { isMobile } = usePlatformOS();
+  const { currentLocale } = useTranslation();
+  const dateFnsLocale = DATE_FNS_LOCALE_MAP[currentLocale];
 
   if (!activity) return <></>;
   return (
@@ -50,7 +61,7 @@ export function ActivityBlockComponent(props: TActivityBlockComponent) {
             tooltipContent={`${renderFormattedDate(activity.created_at)}, ${renderFormattedTime(activity.created_at)}`}
           >
             <span className="cursor-help font-medium whitespace-nowrap text-tertiary">
-              {calculateTimeAgo(activity.created_at)}
+              {calculateTimeAgo(activity.created_at, dateFnsLocale)}
             </span>
           </Tooltip>
         </div>

@@ -2682,4 +2682,80 @@ export default {
     close_button: "ナビゲーションパネルを閉じる",
     outline_floating_button: "アウトラインを開く",
   },
+  issue_activity: {
+    // common connectors
+    to: " を ",
+    from: " から ",
+    for: " （対象: ",
+    of: " の ",
+    // assignee
+    added_a_new_assignee: "担当者を追加しました ",
+    removed_the_assignee: "担当者を削除しました ",
+    // default (create/delete work item)
+    created_the_work_item_via: "作業項目を作成しました（経由: ",
+    created_the_work_item: " 作業項目を作成しました。",
+    deleted_a_work_item: " 作業項目を削除しました。",
+    // label
+    added_a_new_label: "ラベルを追加しました ",
+    removed_the_label: "ラベルを削除しました ",
+    // state
+    set_the_state_to: "ステータスを次に設定しました: ",
+    // priority
+    set_the_priority_to: "優先度を次に設定しました: ",
+    // cycle
+    added_work_item_to_cycle: "この作業項目をサイクルに追加しました ",
+    set_the_cycle_to: "サイクルを次に設定しました: ",
+    removed_work_item_from_cycle: "この作業項目をサイクルから削除しました ",
+    // module
+    added_work_item_to_module: "この作業項目をモジュールに追加しました ",
+    set_the_module_to: "モジュールを次に設定しました: ",
+    removed_work_item_from_module: "この作業項目をモジュールから削除しました ",
+    // name
+    set_the_name_to: "名前を次に設定しました: ",
+    // parent
+    set_the_parent_to: "親を次に設定しました: ",
+    removed_the_parent: "親を削除しました ",
+    // link
+    added: "追加しました ",
+    updated_the: "更新しました ",
+    removed_this: "削除しました ",
+    link: "リンク",
+    // attachment
+    uploaded_a_new_attachment: "添付ファイルをアップロードしました",
+    removed_an_attachment: "添付ファイルを削除しました",
+    // description
+    updated_the_description: "説明を更新しました",
+    // estimate
+    set_the_estimate_point_to: "見積もりポイントを次に設定しました: ",
+    removed_the_estimate_point: "見積もりポイントを削除しました",
+    // archived at
+    restored_the_work_item: "作業項目を復元しました",
+    archived_the_work_item: "作業項目をアーカイブしました",
+    // inbox / intake
+    declined_from_intake: "この作業項目をインテークから却下しました。",
+    snoozed_work_item: "この作業項目をスヌーズしました。",
+    accepted_from_intake: "この作業項目をインテークから承認しました。",
+    declined_from_intake_duplicate: "重複作業項目としてマークし、この作業項目をインテークから却下しました。",
+    updated_intake_status: "インテーク作業項目のステータスを更新しました。",
+    // start date
+    set_the_start_date_to: "開始日を次に設定しました: ",
+    removed_the_start_date: "開始日を削除しました ",
+    // target date
+    set_the_due_date_to: "期日を次に設定しました: ",
+    removed_the_due_date: "期日を削除しました ",
+    // relation
+    marked_blocking: "この作業項目が次の作業項目をブロックしているとマークしました ",
+    removed_blocking: "ブロック中の作業項目を削除しました ",
+    marked_blocked_by: "この作業項目が次によってブロックされているとマークしました ",
+    removed_blocked_by: "この作業項目をブロックしている作業項目を削除しました ",
+    marked_duplicate: "この作業項目を次の重複としてマークしました ",
+    removed_duplicate: "この作業項目を次の重複から解除しました ",
+    marked_relates_to: "この作業項目が次に関連するとマークしました ",
+    removed_relates_to: "次との関連を削除しました ",
+  },
+  calendar: {
+    week_view: "週表示",
+    month_layout: "月レイアウト",
+    week_layout: "週レイアウト",
+  },
 } as const;

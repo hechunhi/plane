@@ -7,6 +7,7 @@
 import { observer } from "mobx-react";
 import { CalendarDays } from "lucide-react";
 // hooks
+import { useTranslation } from "@plane/i18n";
 import { renderFormattedDate } from "@plane/utils";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 // components
@@ -18,6 +19,7 @@ type TIssueTargetDateActivity = { activityId: string; showIssue?: boolean; ends:
 export const IssueTargetDateActivity = observer(function IssueTargetDateActivity(props: TIssueTargetDateActivity) {
   const { activityId, showIssue = true, ends } = props;
   // hooks
+  const { t } = useTranslation();
   const {
     activity: { getActivityById },
   } = useIssueDetail();
@@ -32,13 +34,15 @@ export const IssueTargetDateActivity = observer(function IssueTargetDateActivity
       ends={ends}
     >
       <>
-        {activity.new_value ? `set the due date to ` : `removed the due date `}
+        {activity.new_value
+          ? t("issue_activity.set_the_due_date_to")
+          : t("issue_activity.removed_the_due_date")}
         {activity.new_value && (
           <>
             <span className="font-medium text-primary">{renderFormattedDate(activity.new_value)}</span>
           </>
         )}
-        {showIssue && (activity.new_value ? ` for ` : ` from `)}
+        {showIssue && (activity.new_value ? t("issue_activity.for") : t("issue_activity.from"))}
         {showIssue && <IssueLink activityId={activityId} />}.
       </>
     </IssueActivityBlockComponent>

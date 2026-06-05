@@ -10,6 +10,7 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { Calendar } from "@plane/propel/calendar";
 import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
+import { getDateFnsLocaleByLang } from "@plane/utils";
 
 export type InboxIssueSnoozeModalProps = {
   isOpen: boolean;
@@ -23,7 +24,8 @@ export function InboxIssueSnoozeModal(props: InboxIssueSnoozeModalProps) {
   // states
   const [date, setDate] = useState(value || new Date());
   //hooks
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
+  const dateFnsLocale = getDateFnsLocaleByLang(currentLocale);
 
   return (
     <ModalCore
@@ -35,6 +37,7 @@ export function InboxIssueSnoozeModal(props: InboxIssueSnoozeModalProps) {
     >
       <div className="flex h-full w-full flex-col gap-y-1 px-5 py-8 sm:p-6">
         <Calendar
+          locale={dateFnsLocale}
           className="rounded-md border border-subtle p-3"
           captionLayout="dropdown"
           selected={date ? new Date(date) : undefined}

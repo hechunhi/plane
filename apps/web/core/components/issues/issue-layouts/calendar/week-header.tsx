@@ -4,13 +4,23 @@
  * See the LICENSE file for details.
  */
 
+import type { Locale } from "date-fns";
+import { format } from "date-fns";
+import { ja, zhCN, zhTW } from "date-fns/locale";
 import { observer } from "mobx-react";
+import { useTranslation } from "@plane/i18n";
 import { EStartOfTheWeek } from "@plane/types";
 import { getOrderedDays } from "@plane/utils";
 import { DAYS_LIST } from "@/constants/calendar";
 // helpers
 // hooks
 import { useUserProfile } from "@/hooks/store/user";
+
+const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
+  ja,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
 
 type Props = {
   isLoading: boolean;
@@ -20,11 +30,18 @@ type Props = {
 export const CalendarWeekHeader = observer(function CalendarWeekHeader(props: Props) {
   const { isLoading, showWeekends } = props;
   // hooks
+  const { currentLocale } = useTranslation();
   const { data } = useUserProfile();
   const startOfWeek = data?.start_of_the_week;
 
   // derived
+  const dateFnsLocale = DATE_FNS_LOCALE_MAP[currentLocale];
   const orderedDays = getOrderedDays(Object.values(DAYS_LIST), (item) => item.value, startOfWeek);
+  // 2023-01-01 is a Sunday (getDay() === 0); offsetting by the weekday value
+  // (EStartOfTheWeek SUNDAY=0..SATURDAY=6, matching Date.getDay()) yields a
+  // reference date whose getDay() equals that value, for localized formatting.
+  const getLocalizedWeekday = (value: EStartOfTheWeek) =>
+    format(new Date(2023, 0, 1 + value), "EEE", { locale: dateFnsLocale });
 
   return (
     <div
@@ -41,7 +58,7 @@ export const CalendarWeekHeader = observer(function CalendarWeekHeader(props: Pr
 
         return (
           <div key={day.shortTitle} className="flex h-11 items-center justify-center bg-layer-1 px-4 md:justify-end">
-            {day.shortTitle}
+            {getLocalizedWeekday(day.value)}
           </div>
         );
       })}

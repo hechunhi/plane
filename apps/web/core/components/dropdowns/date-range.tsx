@@ -18,7 +18,7 @@ import type { DateRange, Matcher } from "@plane/propel/calendar";
 import { Calendar } from "@plane/propel/calendar";
 import { CloseIcon, DueDatePropertyIcon } from "@plane/propel/icons";
 import { ComboDropDown } from "@plane/ui";
-import { cn, renderFormattedDate } from "@plane/utils";
+import { cn, renderFormattedDate, getDateFnsLocaleByLang } from "@plane/utils";
 // helpers
 // hooks
 import { useUserProfile } from "@/hooks/store/user";
@@ -71,7 +71,8 @@ type Props = {
 };
 
 export const DateRangeDropdown = observer(function DateRangeDropdown(props: Props) {
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
+  const dateFnsLocale = getDateFnsLocaleByLang(currentLocale);
   const {
     buttonClassName,
     buttonContainerClassName,
@@ -269,6 +270,7 @@ export const DateRangeDropdown = observer(function DateRangeDropdown(props: Prop
         {...attributes.popper}
       >
         <Calendar
+          locale={dateFnsLocale}
           className="rounded-md border border-subtle p-3 text-12"
           captionLayout="dropdown"
           selected={dateRange}

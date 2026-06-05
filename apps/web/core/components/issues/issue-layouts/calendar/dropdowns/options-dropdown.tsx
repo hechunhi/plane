@@ -144,7 +144,7 @@ export const CalendarOptionsDropdown = observer(function CalendarOptionsDropdown
                       className="flex w-full items-center justify-between gap-2 rounded-sm px-1 py-1.5 text-left text-11 hover:bg-layer-1"
                       onClick={() => handleLayoutChange(layoutDetails.key, closePopover)}
                     >
-                      {layoutDetails.title}
+                      {layoutDetails.key === "week" ? t("calendar.week_layout") : t("calendar.month_layout")}
                       {calendarLayout === layout && <CheckIcon width={12} height={12} strokeWidth={2} />}
                     </button>
                   ))}

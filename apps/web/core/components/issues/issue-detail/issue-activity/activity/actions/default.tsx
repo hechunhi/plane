@@ -6,6 +6,7 @@
 
 import { observer } from "mobx-react";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { WorkItemsIcon } from "@plane/propel/icons";
 import { EInboxIssueSource } from "@plane/types";
 // hooks
@@ -19,6 +20,7 @@ type TIssueDefaultActivity = { activityId: string; ends: "top" | "bottom" | unde
 export const IssueDefaultActivity = observer(function IssueDefaultActivity(props: TIssueDefaultActivity) {
   const { activityId, ends } = props;
   // hooks
+  const { t } = useTranslation();
   const {
     activity: { getActivityById },
   } = useIssueDetail();
@@ -38,14 +40,14 @@ export const IssueDefaultActivity = observer(function IssueDefaultActivity(props
         {activity.verb === "created" ? (
           source && source !== EInboxIssueSource.IN_APP ? (
             <span>
-              created the work item via{" "}
+              {t("issue_activity.created_the_work_item_via")}
               <span className="font-medium">{capitalizeFirstLetter(source.toLowerCase() || "")}</span>.
             </span>
           ) : (
-            <span> created the work item.</span>
+            <span>{t("issue_activity.created_the_work_item")}</span>
           )
         ) : (
-          <span> deleted a work item.</span>
+          <span>{t("issue_activity.deleted_a_work_item")}</span>
         )}
       </>
     </IssueActivityBlockComponent>

@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { concat, orderBy, set, uniq, update } from "lodash-es";
+import { concat, orderBy, set, uniq, uniqBy, update } from "lodash-es";
 import { action, makeObservable, observable, runInAction } from "mobx";
 import { computedFn } from "mobx-utils";
 // plane package imports
@@ -135,7 +135,11 @@ export class IssueActivityStore implements IIssueActivityStore {
   getActivityAndCommentsByIssueId = computedFn((issueId: string, sortOrder: E_SORT_ORDER) => {
     const baseItems = this.buildActivityAndCommentItems(issueId);
     if (!baseItems) return undefined;
-    return this.sortActivityComments(baseItems, sortOrder);
+    // BARSOUL fix: dedupe by id before sorting. Upstream activity/comment ids
+    // can leak twice into the merged list (e.g. React Strict Mode double-effect,
+    // overlapping fetch + create writes), which renders each comment twice.
+    const deduped = uniqBy(baseItems, (item) => item.id);
+    return this.sortActivityComments(deduped, sortOrder);
   });
 
   // actions

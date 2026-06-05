@@ -5,11 +5,12 @@
  */
 
 import { Controller, useForm } from "react-hook-form";
+import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { Calendar } from "@plane/propel/calendar";
 import { CloseIcon } from "@plane/propel/icons";
 import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
-import { renderFormattedPayloadDate, renderFormattedDate, getDate } from "@plane/utils";
+import { renderFormattedPayloadDate, renderFormattedDate, getDate, getDateFnsLocaleByLang } from "@plane/utils";
 import { DateFilterSelect } from "./date-filter-select";
 type Props = {
   title: string;
@@ -34,6 +35,8 @@ export function DateFilterModal({ title, handleClose, isOpen, onSelect }: Props)
   const { handleSubmit, watch, control } = useForm<TFormValues>({
     defaultValues,
   });
+  const { currentLocale } = useTranslation();
+  const dateFnsLocale = getDateFnsLocaleByLang(currentLocale);
 
   const handleFormSubmit = (formData: TFormValues) => {
     const { filterType, date1, date2 } = formData;
@@ -72,6 +75,7 @@ export function DateFilterModal({ title, handleClose, isOpen, onSelect }: Props)
               const date2Value = getDate(watch("date2"));
               return (
                 <Calendar
+                  locale={dateFnsLocale}
                   className="rounded-md border border-subtle p-3"
                   captionLayout="dropdown"
                   selected={dateValue}
@@ -95,6 +99,7 @@ export function DateFilterModal({ title, handleClose, isOpen, onSelect }: Props)
                 const date1Value = getDate(watch("date1"));
                 return (
                   <Calendar
+                    locale={dateFnsLocale}
                     className="rounded-md border border-subtle p-3"
                     captionLayout="dropdown"
                     selected={dateValue}

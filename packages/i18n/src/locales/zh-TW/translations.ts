@@ -2645,4 +2645,80 @@ export default {
     close_button: "關閉導航面板",
     outline_floating_button: "打開大綱",
   },
+  issue_activity: {
+    // common connectors
+    to: " 到 ",
+    from: " 從 ",
+    for: " 於 ",
+    of: " 的 ",
+    // assignee
+    added_a_new_assignee: "新增了指派人 ",
+    removed_the_assignee: "移除了指派人 ",
+    // default (create/delete work item)
+    created_the_work_item_via: "透過以下方式建立了工作項 ",
+    created_the_work_item: " 建立了工作項。",
+    deleted_a_work_item: " 刪除了一個工作項。",
+    // label
+    added_a_new_label: "新增了標籤 ",
+    removed_the_label: "移除了標籤 ",
+    // state
+    set_the_state_to: "將狀態設定為 ",
+    // priority
+    set_the_priority_to: "將優先級設定為 ",
+    // cycle
+    added_work_item_to_cycle: "將此工作項新增到週期 ",
+    set_the_cycle_to: "將週期設定為 ",
+    removed_work_item_from_cycle: "將此工作項從週期中移除 ",
+    // module
+    added_work_item_to_module: "將此工作項新增到模組 ",
+    set_the_module_to: "將模組設定為 ",
+    removed_work_item_from_module: "將此工作項從模組中移除 ",
+    // name
+    set_the_name_to: "將名稱設定為 ",
+    // parent
+    set_the_parent_to: "將父項設定為 ",
+    removed_the_parent: "移除了父項 ",
+    // link
+    added: "新增了 ",
+    updated_the: "更新了 ",
+    removed_this: "移除了此 ",
+    link: "連結",
+    // attachment
+    uploaded_a_new_attachment: "上傳了新的附件",
+    removed_an_attachment: "移除了一個附件",
+    // description
+    updated_the_description: "更新了描述",
+    // estimate
+    set_the_estimate_point_to: "將估算點設定為 ",
+    removed_the_estimate_point: "移除了估算點",
+    // archived at
+    restored_the_work_item: "還原了工作項",
+    archived_the_work_item: "封存了工作項",
+    // inbox / intake
+    declined_from_intake: "從收件區拒絕了此工作項。",
+    snoozed_work_item: "暫緩了此工作項。",
+    accepted_from_intake: "從收件區接受了此工作項。",
+    declined_from_intake_duplicate: "透過標記為重複工作項，從收件區拒絕了此工作項。",
+    updated_intake_status: "更新了收件區工作項狀態。",
+    // start date
+    set_the_start_date_to: "將開始日期設定為 ",
+    removed_the_start_date: "移除了開始日期 ",
+    // target date
+    set_the_due_date_to: "將截止日期設定為 ",
+    removed_the_due_date: "移除了截止日期 ",
+    // relation
+    marked_blocking: "標記此工作項正在阻擋工作項 ",
+    removed_blocking: "移除了阻擋的工作項 ",
+    marked_blocked_by: "標記此工作項正在被阻擋，阻擋方為 ",
+    removed_blocked_by: "移除了阻擋此工作項的工作項 ",
+    marked_duplicate: "標記此工作項為以下項的重複 ",
+    removed_duplicate: "移除了此工作項作為以下項重複的標記 ",
+    marked_relates_to: "標記此工作項關聯到 ",
+    removed_relates_to: "移除了關聯，來源 ",
+  },
+  calendar: {
+    week_view: "週檢視",
+    month_layout: "月版面",
+    week_layout: "週版面",
+  },
 } as const;

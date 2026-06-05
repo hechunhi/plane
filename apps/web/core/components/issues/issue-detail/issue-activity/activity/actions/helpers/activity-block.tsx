@@ -5,8 +5,11 @@
  */
 
 import type { ReactNode } from "react";
+import type { Locale } from "date-fns";
+import { ja, zhCN, zhTW } from "date-fns/locale";
 import { Network } from "lucide-react";
 // plane imports
+import { useTranslation } from "@plane/i18n";
 import { Tooltip } from "@plane/propel/tooltip";
 import { renderFormattedTime, renderFormattedDate, calculateTimeAgo } from "@plane/utils";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -24,15 +27,23 @@ type TIssueActivityBlockComponent = {
   customUserName?: string;
 };
 
+const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
+  ja,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
+
 export function IssueActivityBlockComponent(props: TIssueActivityBlockComponent) {
   const { icon, activityId, ends, children, customUserName } = props;
   // hooks
+  const { currentLocale } = useTranslation();
   const {
     activity: { getActivityById },
   } = useIssueDetail();
 
   const activity = getActivityById(activityId);
   const { isMobile } = usePlatformOS();
+  const dateFnsLocale = DATE_FNS_LOCALE_MAP[currentLocale];
   if (!activity) return <></>;
   return (
     <div
@@ -56,7 +67,10 @@ export function IssueActivityBlockComponent(props: TIssueActivityBlockComponent)
             isMobile={isMobile}
             tooltipContent={`${renderFormattedDate(activity.created_at)}, ${renderFormattedTime(activity.created_at)}`}
           >
-            <span className="whitespace-nowrap text-tertiary"> {calculateTimeAgo(activity.created_at)}</span>
+            <span className="whitespace-nowrap text-tertiary">
+              {" "}
+              {calculateTimeAgo(activity.created_at, dateFnsLocale)}
+            </span>
           </Tooltip>
         </span>
       </div>

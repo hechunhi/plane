@@ -7,9 +7,13 @@
 import { useEffect, useRef, useState } from "react";
 import { combine } from "@atlaskit/pragmatic-drag-and-drop/combine";
 import { autoScrollForElements } from "@atlaskit/pragmatic-drag-and-drop-auto-scroll/element";
+import type { Locale } from "date-fns";
+import { format } from "date-fns";
+import { ja, zhCN, zhTW } from "date-fns/locale";
 import { observer } from "mobx-react";
 // plane constants
 import type { TSupportedFilterTypeForUpdate } from "@plane/constants";
+import { useTranslation } from "@plane/i18n";
 // types
 import type {
   TGroupedIssues,
@@ -24,7 +28,6 @@ import { EIssuesStoreType, EIssueLayoutTypes } from "@plane/types";
 import { Spinner } from "@plane/ui";
 import { renderFormattedPayloadDate, cn } from "@plane/utils";
 // constants
-import { MONTHS_LIST } from "@/constants/calendar";
 // helpers
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -42,6 +45,12 @@ import { CalendarHeader } from "./header";
 import { CalendarIssueBlocks } from "./issue-blocks";
 import { CalendarWeekDays } from "./week-days";
 import { CalendarWeekHeader } from "./week-header";
+
+const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
+  ja,
+  "zh-CN": zhCN,
+  "zh-TW": zhTW,
+};
 
 type Props = {
   issuesFilterStore: IProjectIssuesFilter | IModuleIssuesFilter | ICycleIssuesFilter | IProjectViewIssuesFilter;
@@ -92,6 +101,9 @@ export const CalendarChart = observer(function CalendarChart(props: Props) {
     readOnly = false,
     isEpic = false,
   } = props;
+  // hooks
+  const { currentLocale } = useTranslation();
+  const dateFnsLocale = DATE_FNS_LOCALE_MAP[currentLocale];
   // states
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   //refs
@@ -206,9 +218,9 @@ export const CalendarChart = observer(function CalendarChart(props: Props) {
             {/* mobile view */}
             <div className="md:hidden">
               <p className="p-4 text-18 font-semibold">
-                {`${selectedDate.getDate()} ${
-                  MONTHS_LIST[selectedDate.getMonth() + 1].title
-                }, ${selectedDate.getFullYear()}`}
+                {`${selectedDate.getDate()} ${format(selectedDate, "LLLL", {
+                  locale: dateFnsLocale,
+                })}, ${selectedDate.getFullYear()}`}
               </p>
               <CalendarIssueBlocks
                 date={selectedDate}
@@ -234,9 +246,9 @@ export const CalendarChart = observer(function CalendarChart(props: Props) {
         {/* mobile view */}
         <div className="md:hidden">
           <p className="p-4 text-18 font-semibold">
-            {`${selectedDate.getDate()} ${
-              MONTHS_LIST[selectedDate.getMonth() + 1].title
-            }, ${selectedDate.getFullYear()}`}
+            {`${selectedDate.getDate()} ${format(selectedDate, "LLLL", {
+              locale: dateFnsLocale,
+            })}, ${selectedDate.getFullYear()}`}
           </p>
           <CalendarIssueBlocks
             date={selectedDate}

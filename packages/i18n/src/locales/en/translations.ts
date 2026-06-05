@@ -2750,4 +2750,80 @@ export default {
   enter_number_of_projects: "Enter number of projects",
   pin: "Pin",
   unpin: "Unpin",
+  issue_activity: {
+    // common connectors
+    to: " to ",
+    from: " from ",
+    for: " for ",
+    of: " of ",
+    // assignee
+    added_a_new_assignee: "added a new assignee ",
+    removed_the_assignee: "removed the assignee ",
+    // default (create/delete work item)
+    created_the_work_item_via: "created the work item via ",
+    created_the_work_item: " created the work item.",
+    deleted_a_work_item: " deleted a work item.",
+    // label
+    added_a_new_label: "added a new label ",
+    removed_the_label: "removed the label ",
+    // state
+    set_the_state_to: "set the state to ",
+    // priority
+    set_the_priority_to: "set the priority to ",
+    // cycle
+    added_work_item_to_cycle: "added this work item to the cycle ",
+    set_the_cycle_to: "set the cycle to ",
+    removed_work_item_from_cycle: "removed the work item from the cycle ",
+    // module
+    added_work_item_to_module: "added this work item to the module ",
+    set_the_module_to: "set the module to ",
+    removed_work_item_from_module: "removed the work item from the module ",
+    // name
+    set_the_name_to: "set the name to ",
+    // parent
+    set_the_parent_to: "set the parent to ",
+    removed_the_parent: "removed the parent ",
+    // link
+    added: "added ",
+    updated_the: "updated the ",
+    removed_this: "removed this ",
+    link: "link",
+    // attachment
+    uploaded_a_new_attachment: "uploaded a new attachment",
+    removed_an_attachment: "removed an attachment",
+    // description
+    updated_the_description: "updated the description",
+    // estimate
+    set_the_estimate_point_to: "set the estimate point to ",
+    removed_the_estimate_point: "removed the estimate point",
+    // archived at
+    restored_the_work_item: "restored the work item",
+    archived_the_work_item: "archived the work item",
+    // inbox / intake
+    declined_from_intake: "declined this work item from intake.",
+    snoozed_work_item: "snoozed this work item.",
+    accepted_from_intake: "accepted this work item from intake.",
+    declined_from_intake_duplicate: "declined this work item from intake by marking a duplicate work item.",
+    updated_intake_status: "updated intake work item status.",
+    // start date
+    set_the_start_date_to: "set the start date to ",
+    removed_the_start_date: "removed the start date ",
+    // target date
+    set_the_due_date_to: "set the due date to ",
+    removed_the_due_date: "removed the due date ",
+    // relation
+    marked_blocking: "marked this work item is blocking work item ",
+    removed_blocking: "removed the blocking work item ",
+    marked_blocked_by: "marked this work item is being blocked by ",
+    removed_blocked_by: "removed this work item being blocked by work item ",
+    marked_duplicate: "marked this work item as duplicate of ",
+    removed_duplicate: "removed this work item as a duplicate of ",
+    marked_relates_to: "marked that this work item relates to ",
+    removed_relates_to: "removed the relation from ",
+  },
+  calendar: {
+    week_view: "Week view",
+    month_layout: "Month layout",
+    week_layout: "Week layout",
+  },
 } as const;
