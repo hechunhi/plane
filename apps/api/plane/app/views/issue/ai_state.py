@@ -34,7 +34,9 @@ def _has_kana(t):
 
 def _aibot_translate(text, target):
     try:
-        r = requests.post(f"{_AIBOT}/translate", json={"text": text, "target": target}, timeout=20)
+        # timeout=45: 与评论区按需翻译一致(comment.py)。ai-bot 内 cloud Claude 上限 ~30s,
+        # HTTP 必须给足余量,否则 plane-api 先于 ai-bot 超时 → 误判 translation failed。
+        r = requests.post(f"{_AIBOT}/translate", json={"text": text, "target": target}, timeout=45)
         if r.ok:
             return (r.json() or {}).get("text") or ""
     except Exception:
@@ -162,3 +164,35 @@ class IssueAIStateCorrectEndpoint(BaseAPIView):
 
         fresh = IssueAIState.objects.select_related("issue", "issue__state", "project").get(pk=row.pk)
         return Response(_serialize(fresh), status=status.HTTP_200_OK)
+
+
+class IssueAIStateTranslateEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/translate/
+    Body: {text, target?}. 翻译引用依据片段(走 ai-bot,与评论区同款翻译引擎)。
+    target 省略时自动翻到另一语言(zh↔ja)。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        text = ((request.data or {}).get("text") or "").strip()[:1000]
+        if not text:
+            return Response({"text": ""}, status=status.HTTP_200_OK)
+        target = ((request.data or {}).get("target") or "").strip().lower()[:2]
+        if target not in ("zh", "ja"):
+            target = "zh" if _has_kana(text) else "ja"
+        out = _aibot_translate(text, target)
+        return Response({"text": out or "", "target": target}, status=status.HTTP_200_OK)
+
+
+class IssueAIStateRederiveEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/rederive/
+    手动触发 AI 重新分析该卡。**仅重算派生表(issue_ai_states),绝不写 SoR**。
+    fire-and-forget(worker 异步重判);幂等。用户怀疑 AI 判断过时/有误时主动刷新。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        try:
+            Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+        _trigger_rederive(project_id, issue_id)
+        return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)

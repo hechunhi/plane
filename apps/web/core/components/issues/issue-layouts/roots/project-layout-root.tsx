@@ -16,6 +16,7 @@ import { Spinner } from "@plane/ui";
 import { AIDigestView } from "../kanban/ai-digest-view";
 import { useAiView, setAiView } from "../kanban/ai-state-line";
 import { GlobalAICurrentStatePopover } from "../kanban/ai-current-state-popover";
+import { GlobalDISActionDialogs } from "../kanban/ai-state-actions";
 // components
 import { ProjectLevelWorkItemFiltersHOC } from "@/components/work-item-filters/filters-hoc/project-level";
 import { WorkItemFiltersRow } from "@/components/work-item-filters/filters-row";
@@ -111,6 +112,8 @@ export const ProjectLayoutRoot = observer(function ProjectLayoutRoot() {
             <IssuePeekOverview />
             {/* BARSOUL DIS v3: 全局单浮层(整卡 hover 触发) */}
             <GlobalAICurrentStatePopover />
+            {/* BARSOUL DIS v9: 全局行动操作对话框(催促/再指派,人手确认闸门) */}
+            <GlobalDISActionDialogs />
           </div>
         )}
       </ProjectLevelWorkItemFiltersHOC>

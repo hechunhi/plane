@@ -20,6 +20,7 @@ import { useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { mutate } from "swr";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
+import { invalidateAIState } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 import { peerSync } from "./peer-sync";
 import { realtimeBus } from "./realtime-bus";
 
@@ -152,6 +153,13 @@ export const RealtimeSync = () => {
       ]);
       affectedIssues.forEach((iid) => {
         try { void mutate(`ISSUE_APPROVAL:${iid}`); } catch { /* noop */ }
+      });
+      // BARSOUL DIS: 评论/卡片变更很可能触发 AI 异步重判(debounce 4s + LLM)。
+      //   延时失效该 issue 的 ai-state 缓存 → 看板/详情的「AI 当前态」在重判
+      //   落地后自动刷新(近实时,无需手刷)。两档延时覆盖重判耗时窗口。
+      affectedIssues.forEach((iid) => {
+        setTimeout(() => { try { invalidateAIState(iid); } catch { /* noop */ } }, 8000);
+        setTimeout(() => { try { invalidateAIState(iid); } catch { /* noop */ } }, 22000);
       });
     };
 

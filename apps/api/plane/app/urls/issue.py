@@ -14,6 +14,8 @@ from plane.app.views import (
     CommentTranslateOnDemandEndpoint,
     IssueAIStateBatchEndpoint,
     IssueAIStateCorrectEndpoint,
+    IssueAIStateTranslateEndpoint,
+    IssueAIStateRederiveEndpoint,
     IssueActivityEndpoint,
     IssueArchiveViewSet,
     IssueCommentViewSet,
@@ -191,6 +193,18 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/correct/",
         IssueAIStateCorrectEndpoint.as_view(),
         name="project-issue-ai-state-correct",
+    ),
+    # BARSOUL DIS: 引用依据按需翻译(语言≠阅览者时,走 ai-bot 与评论区同款翻译)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/translate/",
+        IssueAIStateTranslateEndpoint.as_view(),
+        name="project-issue-ai-state-translate",
+    ),
+    # BARSOUL DIS: 手动再分析(仅重算派生表,不碰 SoR)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/rederive/",
+        IssueAIStateRederiveEndpoint.as_view(),
+        name="project-issue-ai-state-rederive",
     ),
     # Issue Subscribers
     path(

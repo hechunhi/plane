@@ -4,13 +4,14 @@
  * ⑤AI 最終更新时效 ⑧-⑬日文文案规范 + カードを開く 行操作。
  * 下一批(SoR 写+实时):催促/担当者変更/既読、再分析、实时迁移、键盘导航(task #42)。
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useUser } from "@/hooks/store/user";
 import {
   type DerivedIssueState, dueInfo, AvatarBadge, stallTone, useZh, pick, Ico, ICON,
 } from "./ai-state-line";
+import { DISActionBar, disDialog, rederiveAIState } from "./ai-state-actions";
 
 const STALL_TH = 4;
 type DigestItem = DerivedIssueState & { name: string; sequence_id: number | null; project_identifier: string; state_group: string | null };
@@ -36,56 +37,62 @@ function StatusDot({ group }: { group: string | null }) {
   return <span style={{ width: 9, height: 9, borderRadius: 99, background: group === "started" ? "#e67e22" : "#e0a82e", flex: "none" }} />;
 }
 
-function Row({ s, zh, onOpen }: { s: DigestItem; zh: boolean; onOpen: () => void }) {
+function Row({ s, zh, projectId, focused, onOpen }: { s: DigestItem; zh: boolean; projectId: string; focused: boolean; onOpen: () => void }) {
   const [hover, setHover] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const di = dueInfo(s.due_date, zh);
   const next = pick(s.next_action, zh);
   const overdue = di?.tone === "overdue";
   const st = stallTone(s.stale_days);
+  const showActions = hover || focused;
+  useEffect(() => { if (focused) ref.current?.scrollIntoView({ block: "nearest" }); }, [focused]);
   return (
-    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onOpen}
+    <div ref={ref} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onClick={onOpen}
       title={zh ? "打开卡片" : "カードを開く"}
-      style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-        background: hover ? "#f8f9fb" : "#fff", border: "1px solid " + (hover ? "#e6e8ec" : "#eceef1") }}>
-      <StatusDot group={s.state_group} />
-      <div style={{ width: 56, flex: "none", fontSize: 11.5, color: "#9499a0", fontWeight: 500 }}>
-        {s.project_identifier && s.sequence_id != null ? `${s.project_identifier}-${s.sequence_id}` : ""}
-      </div>
-      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, color: "#2b2e34", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
-        {next && (
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, fontSize: 11.5, color: "#6b6e74", minWidth: 0 }}>
-            <Ico d={ICON.arrowRight} size={11} sw={2} color="#b5b8be" />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{next}</span>
-          </div>
-        )}
-      </div>
-      <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
-        {/* hover 行操作(本批仅 カードを開く;催促/担当者/既読 下一批) */}
-        {hover && (
-          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }}
-            style={{ height: 24, padding: "0 8px", border: "1px solid #e3e5e9", borderRadius: 5, background: "#fff", color: "#33363c", fontSize: 11, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <Ico d={ICON.external} size={11} color="#7c5cff" />{zh ? "打开卡片" : "カードを開く"}
-          </button>
-        )}
-        {s.ball === "OTHER" && s.actor_name && (
-          <span style={{ fontSize: 11, color: "#5d6f81", whiteSpace: "nowrap" }}>{zh ? `对方:${s.actor_name}` : `先方:${s.actor_name}`}</span>
-        )}
-        {st !== "none" && (
-          <span style={{ fontSize: 11, fontWeight: 600, color: st === "high" ? "#c0392b" : "#b06d09", whiteSpace: "nowrap" }}>{zh ? `停滞 ${s.stale_days} 天` : `${s.stale_days}日停滞`}</span>
-        )}
-        {di && (
-          <span style={{ fontSize: 11, fontWeight: 600, minWidth: 78, textAlign: "right",
-            color: overdue ? "#c0392b" : di.tone === "soon" ? "#b45309" : "#9ca3af", display: "inline-flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
-            {overdue && <Ico d={ICON.alert} size={11} sw={2} />}{overdue ? (zh ? `逾期 ${-di.diff} 天` : `期限を${-di.diff}日超過`) : di.label}
+      style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 14px", borderRadius: 8, cursor: "pointer",
+        background: focused ? "#f5f3ff" : hover ? "#f8f9fb" : "#fff",
+        border: "1px solid " + (focused ? "#c9bdff" : hover ? "#e6e8ec" : "#eceef1"),
+        boxShadow: focused ? "0 0 0 1px #c9bdff" : "none" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, width: "100%" }}>
+        <StatusDot group={s.state_group} />
+        <div style={{ width: 56, flex: "none", fontSize: 11.5, color: "#9499a0", fontWeight: 500 }}>
+          {s.project_identifier && s.sequence_id != null ? `${s.project_identifier}-${s.sequence_id}` : ""}
+        </div>
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, color: "#2b2e34", fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+          {next && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 3, fontSize: 11.5, color: "#6b6e74", minWidth: 0 }}>
+              <Ico d={ICON.arrowRight} size={11} sw={2} color="#b5b8be" />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{next}</span>
+            </div>
+          )}
+        </div>
+        <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8 }}>
+          {s.ball === "OTHER" && s.actor_name && (
+            <span style={{ fontSize: 11, color: "#5d6f81", whiteSpace: "nowrap" }}>{zh ? `对方:${s.actor_name}` : `先方:${s.actor_name}`}</span>
+          )}
+          {st !== "none" && (
+            <span style={{ fontSize: 11, fontWeight: 600, color: st === "high" ? "#c0392b" : "#b06d09", whiteSpace: "nowrap" }}>{zh ? `停滞 ${s.stale_days} 天` : `${s.stale_days}日停滞`}</span>
+          )}
+          {di && (
+            <span style={{ fontSize: 11, fontWeight: 600, minWidth: 78, textAlign: "right",
+              color: overdue ? "#c0392b" : di.tone === "soon" ? "#b45309" : "#9ca3af", display: "inline-flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
+              {overdue && <Ico d={ICON.alert} size={11} sw={2} />}{overdue ? (zh ? `逾期 ${-di.diff} 天` : `期限を${-di.diff}日超過`) : di.label}
+            </span>
+          )}
+          <span style={{ width: 22, display: "inline-flex", justifyContent: "flex-end" }}>
+            {s.actor_kind === "person" && s.actor_name ? <AvatarBadge name={s.actor_name} size={20} />
+              : s.unassigned ? <span title={zh ? "待指派" : "担当未定"} style={{ width: 20, height: 20, borderRadius: 4, border: "1.5px dashed #d6b483", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#b45309", fontSize: 13 }}>?</span>
+                : <Ico d={ICON.building} size={15} color="#a3a7ad" />}
           </span>
-        )}
-        <span style={{ width: 22, display: "inline-flex", justifyContent: "flex-end" }}>
-          {s.actor_kind === "person" && s.actor_name ? <AvatarBadge name={s.actor_name} size={20} />
-            : s.unassigned ? <span title={zh ? "待指派" : "担当未定"} style={{ width: 20, height: 20, borderRadius: 4, border: "1.5px dashed #d6b483", display: "inline-flex", alignItems: "center", justifyContent: "center", color: "#b45309", fontSize: 13 }}>?</span>
-              : <Ico d={ICON.building} size={15} color="#a3a7ad" />}
-        </span>
+        </div>
       </div>
+      {/* v9 行操作(hover/键盘聚焦时):催促 / 改担当(确认闸门)/ 再分析 */}
+      {showActions && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }} onClick={(e) => e.stopPropagation()}>
+          <DISActionBar s={s} projectId={projectId} zh={zh} compact />
+        </div>
+      )}
     </div>
   );
 }
@@ -124,7 +131,8 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
   const { workspaceSlug: routerWs } = useParams();
   const slug = workspaceSlug || routerWs?.toString() || "";
   const zh = useZh();
-  const { setPeekIssue } = useIssueDetail();
+  const issueDetail = useIssueDetail();
+  const { setPeekIssue } = issueDetail;
   const { data: currentUser } = useUser();
   const openCard = (id: string) => setPeekIssue({ workspaceSlug: slug, projectId, issueId: id });
 
@@ -133,6 +141,7 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
   const [slices, setSlices] = useState<Set<Slice>>(new Set());
   const [sort, setSort] = useState<SortKey>("urgency");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [focusIdx, setFocusIdx] = useState(-1); // 键盘聚焦行(-1=无)
 
   useEffect(() => {
     let alive = true;
@@ -154,6 +163,7 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
     sortLabel: "排序", urgency: "紧急度", due: "期限近", stallS: "停滞久", updated: "最近更新",
     lastUpd: (n: number) => `AI 最终更新:${n < 60 ? n + " 分钟前" : Math.round(n / 60) + " 小时前"}`, reanalyze: "重新分析",
     emptyAll: "没有需要处理的项目", emptyAllSub: "等待对方的项目可在「等待对方」查看", emptyFilter: "没有符合条件的项目", clear: "清除筛选",
+    kbd: "↑↓ 选择 · Enter 打开 · e 催促 · r 再分析",
   } : {
     title: "対応待ち", sub: "タイトル・説明・最新コメント・期限からAIが現在の状況を推定します。",
     self: "自分", all: "全員", needMe: "要対応", waiting: "先方待ち", stall: `${STALL_TH}日以上停滞`, overdue: "期限超過",
@@ -161,6 +171,7 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
     sortLabel: "並び替え", urgency: "緊急度順", due: "期限が近い順", stallS: "停滞が長い順", updated: "更新が新しい順",
     lastUpd: (n: number) => `AI 最終更新:${n < 60 ? n + "分前" : Math.round(n / 60) + "時間前"}`, reanalyze: "再分析",
     emptyAll: "対応が必要な項目はありません", emptyAllSub: "先方待ちの項目はこちらで確認できます", emptyFilter: "条件に一致する項目がありません", clear: "フィルターをクリア",
+    kbd: "↑↓ 選択 · Enter 開く · e 催促 · r 再分析",
   };
 
   const myId = currentUser?.id;
@@ -179,6 +190,39 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
   const needMe = useMemo(() => filtered.filter((s) => s.ball === "SELF").sort(sortFn), [filtered, sort]);
   const waiting = useMemo(() => filtered.filter((s) => s.ball === "OTHER").sort(sortFn), [filtered, sort]);
   const lastUpd = minutesAgo(scoped.reduce<string | null>((m, s) => (!m || String(s.updated_at) > m ? (s.updated_at ?? m) : m), null));
+
+  // ── 分组显隐(切片联动)+ 扁平可聚焦行(供键盘导航;折叠组的行不可聚焦)──
+  const showNeed = (!slices.has("other") || slices.has("self")) && needMe.length > 0;
+  const showWait = (!slices.has("self") || slices.has("other")) && waiting.length > 0;
+  const flat = useMemo(() => [
+    ...(showNeed && !collapsed.has("need") ? needMe : []),
+    ...(showWait && !collapsed.has("wait") ? waiting : []),
+  ], [showNeed, showWait, collapsed, needMe, waiting]);
+  // flat 变动后夹紧聚焦下标
+  useEffect(() => { setFocusIdx((i) => (i >= flat.length ? flat.length - 1 : i)); }, [flat.length]);
+
+  // 键盘导航:↑/↓ 或 j/k 移动、Enter 打开、e 催促、r 再分析。
+  // 在输入/可编辑元素中、或卡片详情(peek)打开时不拦截。
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return;
+      if (issueDetail.peekIssue) return;
+      if (disDialog.get()) return; // 对话框打开时让位
+      if (flat.length === 0) return;
+      const k = e.key;
+      if (k === "ArrowDown" || k === "j") { e.preventDefault(); setFocusIdx((i) => Math.min(flat.length - 1, i + 1)); return; }
+      if (k === "ArrowUp" || k === "k") { e.preventDefault(); setFocusIdx((i) => Math.max(0, (i < 0 ? 1 : i) - 1)); return; }
+      const cur = focusIdx >= 0 && focusIdx < flat.length ? flat[focusIdx] : undefined;
+      if (!cur) return;
+      if (k === "Enter") { e.preventDefault(); setPeekIssue({ workspaceSlug: slug, projectId, issueId: cur.issue_id }); }
+      else if (k === "e") { e.preventDefault(); disDialog.open({ kind: "urge", issueId: cur.issue_id, projectId, actorName: cur.actor_name || "", nextAction: pick(cur.next_action, zh) }); }
+      else if (k === "r") { e.preventDefault(); rederiveAIState(slug, projectId, cur.issue_id, zh); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [flat, focusIdx, slug, projectId, zh, issueDetail, setPeekIssue]);
 
   const statN = (sl: Slice) => scoped.filter((s) => sliceOf(s, sl)).length;
   const toggleSlice = (sl: Slice) => setSlices((p) => { const n = new Set(p); n.has(sl) ? n.delete(sl) : n.add(sl); return n; });
@@ -202,6 +246,7 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
           </div>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             {lastUpd != null && <span style={{ fontSize: 11.5, color: "#9499a0" }}>{T.lastUpd(lastUpd)}</span>}
+            <span style={{ fontSize: 10.5, color: "#b4b8bf", whiteSpace: "nowrap" }} title={T.kbd}>{T.kbd}</span>
             <label style={{ fontSize: 12, color: "#71757c", display: "inline-flex", alignItems: "center", gap: 5 }}>
               {T.sortLabel}
               <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} style={{ fontSize: 12, color: "#33363c", border: "1px solid #e3e5e9", borderRadius: 6, padding: "3px 6px", background: "#fff", fontFamily: "inherit", cursor: "pointer" }}>
@@ -241,14 +286,14 @@ export function AIDigestView({ workspaceSlug, projectId }: { workspaceSlug: stri
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-            {(!slices.has("other") || slices.has("self")) && needMe.length > 0 && (
+            {showNeed && (
               <Group icon={ICON.inbox} color="#d97a0a" title={T.gNeed} count={needMe.length} sub={T.gNeedSub} collapsed={collapsed.has("need")} onToggle={() => toggleGroup("need")}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{needMe.map((s) => <Row key={s.issue_id} s={s} zh={zh} onOpen={() => openCard(s.issue_id)} />)}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{needMe.map((s) => <Row key={s.issue_id} s={s} zh={zh} projectId={projectId} focused={flat[focusIdx] === s} onOpen={() => openCard(s.issue_id)} />)}</div>
               </Group>
             )}
-            {(!slices.has("self") || slices.has("other")) && waiting.length > 0 && (
+            {showWait && (
               <Group icon={ICON.send} color="#5d6f81" title={T.gWait} count={waiting.length} sub={T.gWaitSub} collapsed={collapsed.has("wait")} onToggle={() => toggleGroup("wait")}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{waiting.map((s) => <Row key={s.issue_id} s={s} zh={zh} onOpen={() => openCard(s.issue_id)} />)}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{waiting.map((s) => <Row key={s.issue_id} s={s} zh={zh} projectId={projectId} focused={flat[focusIdx] === s} onOpen={() => openCard(s.issue_id)} />)}</div>
               </Group>
             )}
           </div>

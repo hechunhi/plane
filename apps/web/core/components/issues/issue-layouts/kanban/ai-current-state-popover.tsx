@@ -3,7 +3,7 @@
  * v4: ①详情/peek 面板打开时全局禁弹浮层(详情用内嵌块代替)②抽出 AICurrentStateBody
  * 给浮层与内嵌块复用 ④置信度灰点 tooltip ⑦碰撞检测右→左→下。
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, type MouseEvent } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -12,6 +12,7 @@ import {
   useActivePopover, aiPopover, getCachedAIState, useZh, pick, ballView,
   AvatarBadge, dueInfo, Ico, ICON, POP_W, type DerivedIssueState,
 } from "./ai-state-line";
+import { DISActionBar } from "./ai-state-actions";
 
 const LOW_CONF = 0.45;
 
@@ -26,8 +27,63 @@ function Field({ label, icon, children }: { label: string; icon: string[]; child
   );
 }
 
+// 引用依据片段的按需翻译(与评论区同款:即点即译 + 模块级缓存)。
+// 仅当「引用语言 ≠ 阅览语言」时露出「翻译/翻訳」入口;走 ai-state/translate/ → ai-bot。
+const _qtCache = new Map<string, string>();
+
+function TransQuote({ quote, author, zh, slug, projectId, issueId }: {
+  quote: string; author: string; zh: boolean; slug: string; projectId: string; issueId: string;
+}) {
+  const target = zh ? "zh" : "ja";
+  const key = `${target}:${quote}`;
+  const quoteIsJa = /[぀-ヿ]/.test(quote);          // 含假名 → 日文引用
+  const mismatch = zh ? quoteIsJa : !quoteIsJa;             // 引用语言 ≠ 阅览语言
+  const [tr, setTr] = useState<string>(() => _qtCache.get(key) || "");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const onToggle = async (e: MouseEvent) => {
+    e.stopPropagation();                                    // 不触发父层「跳到该评论」
+    if (show) { setShow(false); return; }
+    const cached = tr || _qtCache.get(key);
+    if (cached) { setTr(cached); setShow(true); return; }
+    if (busy || !slug || !projectId) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/workspaces/${slug}/projects/${projectId}/issues/${issueId}/ai-state/translate/`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: quote, target }),
+      });
+      if (r.ok) {
+        const t = ((await r.json()) || {}).text || "";
+        if (t) { _qtCache.set(key, t); setTr(t); setShow(true); }
+      }
+    } catch { /* 翻译失败非致命:保持原文 */ }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 11.5, color: "#4a4d53", lineHeight: 1.45, background: "#f6f7f9", borderRadius: 6, padding: "6px 8px", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>「{show && tr ? tr : quote}」</div>
+      <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 3, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        {author && <span>{author}{zh ? " · 最新评论" : " · 最新コメント"}</span>}
+        {mismatch && (
+          <button onClick={onToggle} disabled={busy}
+            style={{ border: "none", background: "transparent", padding: 0, cursor: busy ? "default" : "pointer", fontSize: 10.5, fontWeight: 600, color: "#7c5cff", lineHeight: 1 }}>
+            {busy ? (zh ? "翻译中…" : "翻訳中…") : show ? (zh ? "原文" : "原文") : (zh ? "翻译" : "翻訳")}
+          </button>
+        )}
+        {show && tr && <span style={{ color: "#b4b8bf", fontSize: 9.5 }}>{zh ? "· AI 翻译" : "· AI 翻訳"}</span>}
+      </div>
+    </div>
+  );
+}
+
 /** 浮层 与 详情内嵌块 共享的内容(球/告警/下一步/行动人/推断依据)。ball 由 caller 保证非空。 */
-export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; zh: boolean; onSource?: () => void }) {
+export function AICurrentStateBody({ s, zh, projectId, onSource }: { s: DerivedIssueState; zh: boolean; projectId: string; onSource?: () => void }) {
+  const { workspaceSlug } = useParams();
+  const slug = workspaceSlug?.toString() || "";
   const { data: currentUser } = useUser();
   const bv = ballView(s, zh, currentUser?.id);
   const di = dueInfo(s.due_date, zh);
@@ -76,10 +132,7 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
           {s.source.quote && (
             <div style={{ display: "flex", gap: 7, cursor: onSource ? "pointer" : "default" }} onClick={onSource} title={onSource ? (zh ? "定位到该评论" : "コメントへ移動") : undefined}>
               {s.source.author && <AvatarBadge name={s.source.author} size={18} />}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11.5, color: "#4a4d53", lineHeight: 1.45, background: "#f6f7f9", borderRadius: 6, padding: "6px 8px", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>「{s.source.quote}」</div>
-                {s.source.author && <div style={{ fontSize: 10.5, color: "#9ca3af", marginTop: 3 }}>{s.source.author}{zh ? " · 最新评论" : " · 最新コメント"}</div>}
-              </div>
+              <TransQuote quote={s.source.quote} author={s.source.author} zh={zh} slug={slug} projectId={projectId} issueId={s.issue_id} />
             </div>
           )}
           {reason && <div style={{ fontSize: 11, color: "#7c8088", lineHeight: 1.5, fontStyle: "italic", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>→ {reason}</div>}
@@ -148,7 +201,11 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         )}
       </div>
       <div style={{ padding: "10px 11px", overflow: "auto" }}>
-        <AICurrentStateBody s={s} zh={zh} onSource={openCard} />
+        <AICurrentStateBody s={s} zh={zh} projectId={active.projectId} onSource={openCard} />
+      </div>
+      {/* v9 行动操作:催促/改担当(确认闸门)/再分析 */}
+      <div style={{ padding: "8px 11px", borderTop: "1px solid #f0f1f3", background: "#fbfbfc", flex: "none" }}>
+        <DISActionBar s={s} projectId={active.projectId} zh={zh} compact />
       </div>
     </div>
   );

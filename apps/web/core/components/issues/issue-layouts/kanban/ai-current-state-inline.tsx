@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssueAIState, useZh, pick, invalidateAIState, Ico, ICON } from "./ai-state-line";
 import { AICurrentStateBody } from "./ai-current-state-popover";
+import { DISActionBar } from "./ai-state-actions";
 
 const LOW_CONF = 0.45;
 
@@ -68,7 +69,7 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <textarea
             value={text} onChange={(e) => setText(e.target.value)} rows={3} autoFocus
-            placeholder={zh ? "向 AI 补充背景 / 纠正判断(例:其实在等李老师确认教室日期)。自动多语言、留痕。" : "AI に背景を補足・訂正(例:実は李先生の教室日待ちです)。自動翻訳・履歴保存。"}
+            placeholder={zh ? "补充评论里没有、AI 看不到的背景,或纠正判断(例:已在电话里口头确认,无需催办)。自动多语言、留痕。" : "コメントに出ていない・AIが把握できない背景の補足、または判断の訂正(例:電話で口頭確認済み、催促不要)。自動翻訳・履歴保存。"}
             style={{ width: "100%", fontSize: 12, color: "#1f2328", border: "1px solid #d6d3ea", borderRadius: 6, padding: "6px 8px", fontFamily: "inherit", resize: "vertical", outline: "none" }}
           />
           <div style={{ display: "flex", gap: 6 }}>
@@ -126,11 +127,13 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
           <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: conf.c }}>{(zh ? "置信度 " : "確度 ") + conf.t}</span>
         )}
       </div>
-      <AICurrentStateBody s={s} zh={zh} onSource={jumpComment} />
-      <div style={{ marginTop: 9 }}>
+      <AICurrentStateBody s={s} zh={zh} projectId={projectId} onSource={jumpComment} />
+      <div style={{ marginTop: 9, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <button type="button" onClick={jumpComment} style={{ height: 26, padding: "0 10px", border: "1px solid #e3e5e9", borderRadius: 6, background: "#fff", color: "#33363c", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}>
           <Ico d={ICON.message} size={12} color="#7c5cff" />{zh ? "跳到最新评论" : "最新コメントへ移動"}
         </button>
+        {/* v9 行动操作:催促/改担当(确认闸门)/再分析 */}
+        <DISActionBar s={s} projectId={projectId} zh={zh} />
       </div>
       {correctUI}
     </div>
