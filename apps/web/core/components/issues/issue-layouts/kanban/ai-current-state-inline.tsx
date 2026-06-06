@@ -50,7 +50,7 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
         <Ico d={ICON.sparkle} size={13} color="#7c5cff" sw={1.8} />
         <span style={{ fontSize: 11.5, fontWeight: 700, color: "#3a3d42", letterSpacing: ".02em" }}>{zh ? "AI 当前态" : "AI 現状"}</span>
         {s.confidence < LOW_CONF ? (
-          <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 600, color: "#92700a", background: "#fdf6dd", border: "1px solid #ecd98a", borderRadius: 4, padding: "0 5px" }}>{zh ? "要确认" : "要確認"}</span>
+          <span title={(zh ? "AI 置信度:低" : "AI 確度:低")} style={{ marginLeft: "auto", fontSize: 10.5, fontWeight: 600, color: "#92700a", background: "#fdf6dd", border: "1px solid #ecd98a", borderRadius: 4, padding: "0 5px" }}>{zh ? "AI 不确定" : "AI 不確実"}</span>
         ) : (
           <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "#9499a0" }}>
             <span style={{ width: 8, height: 8, borderRadius: 99, background: conf.c, opacity: 0.6 }} />{(zh ? "置信度 " : "確度 ") + conf.t}
