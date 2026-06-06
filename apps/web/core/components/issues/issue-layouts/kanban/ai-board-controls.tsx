@@ -10,8 +10,8 @@ export function AIBoardControls() {
   const { currentLocale } = useTranslation();
   const zh = isZhLocale(currentLocale);
   const L = zh
-    ? { board: "看板", digest: "待我处理", legend: "颜色含义", us: "球在我方(需我方行动)", them: "球在对方(等待对方)", red: "逾期 / 严重停滞", amber: "中度停滞 / 低置信" }
-    : { board: "ボード", digest: "対応待ち", legend: "色の意味", us: "自社ボール(要対応)", them: "先方ボール(待機)", red: "期限超過 / 重度停滞", amber: "中度停滞 / 低確度" };
+    ? { board: "看板", digest: "待我处理", legend: "颜色含义", us: "需我处理(球在自己)", them: "球在他人(同事 / 外部 · 显示具体名)", red: "逾期 / 严重停滞", amber: "中度停滞 / 低置信" }
+    : { board: "ボード", digest: "対応待ち", legend: "色の意味", us: "自分が対応(自分にボール)", them: "他者待ち(同僚 / 先方 · 名前表示)", red: "期限超過 / 重度停滞", amber: "中度停滞 / 低確度" };
 
   const Tab = ({ id, icon, label }: { id: "board" | "digest"; icon: string[]; label: string }) => {
     const active = view === id;

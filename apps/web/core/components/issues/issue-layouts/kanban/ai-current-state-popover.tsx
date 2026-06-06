@@ -7,8 +7,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useUser } from "@/hooks/store/user";
 import {
-  useActivePopover, aiPopover, getCachedAIState, useZh, pick, BALL_META,
+  useActivePopover, aiPopover, getCachedAIState, useZh, pick, ballView,
   AvatarBadge, dueInfo, Ico, ICON, POP_W, type DerivedIssueState,
 } from "./ai-state-line";
 
@@ -27,13 +28,15 @@ function Field({ label, icon, children }: { label: string; icon: string[]; child
 
 /** 浮层 与 详情内嵌块 共享的内容(球/告警/下一步/行动人/推断依据)。ball 由 caller 保证非空。 */
 export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; zh: boolean; onSource?: () => void }) {
-  const ball = BALL_META[s.ball as "SELF" | "OTHER"];
+  const { data: currentUser } = useUser();
+  const bv = ballView(s, zh, currentUser?.id);
   const di = dueInfo(s.due_date, zh);
   const reason = pick(s.reasoning, zh);
   const lowConf = s.confidence < LOW_CONF;
-  // 仿设计稿:球 pill 带「· 等 {等待对象}」(对方)/「· {对応者}」(我方)尾巴
-  const tailTarget = s.ball === "OTHER" ? (pick(s.waiting_on, zh) || s.actor_name || "") : (s.actor_name || "");
-  const ballTail = tailTarget ? ` · ${s.ball === "OTHER" ? (zh ? "等 " : "") : ""}${tailTarget}${s.ball === "OTHER" && !zh ? "待ち" : ""}` : "";
+  // 视角相关球(需我处理 / 球在{同事} / {外部}待ち);外部把等待详情并入尾巴(label 已含名)
+  const ext = s.ball === "OTHER" || s.actor_kind === "external";
+  const waitDetail = ext ? pick(s.waiting_on, zh) : "";
+  const ballTail = waitDetail ? ` · ${waitDetail}` : "";
   const stallRed = s.stale_days >= 2;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
@@ -43,9 +46,9 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
         </div>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%", fontSize: 11, fontWeight: 600, background: ball.bg, border: "1px solid " + ball.border, color: ball.text, borderRadius: 4, padding: "1px 7px" }}>
-          <Ico d={s.ball === "SELF" ? ICON.inbox : ICON.send} size={11} sw={1.8} color={ball.text} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick(ball.label, zh)}{ballTail}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%", fontSize: 11, fontWeight: 600, background: bv.bg, border: "1px solid " + bv.border, color: bv.text, borderRadius: 4, padding: "1px 7px" }}>
+          <Ico d={bv.icon} size={11} sw={1.8} color={bv.text} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bv.label}{ballTail}</span>
         </span>
         {s.stale_days >= 1 && (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, borderRadius: 4, padding: "0 5px",

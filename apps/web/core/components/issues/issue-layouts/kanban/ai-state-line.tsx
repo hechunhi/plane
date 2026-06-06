@@ -10,6 +10,7 @@
 import { useEffect, useReducer, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
 import { useTranslation } from "@plane/i18n";
+import { useUser } from "@/hooks/store/user";
 
 type Bilingual = { zh: string; ja: string };
 export type DerivedIssueState = {
@@ -59,6 +60,16 @@ export const BALL_META = {
   SELF: { bg: "#fef3e2", border: "#f3d3a0", text: "#9a5b08", dot: "#d97a0a", label: { zh: "球在我方", ja: "自社ボール" } },
   OTHER: { bg: "#eef2f6", border: "#dbe3ea", text: "#4d6076", dot: "#7a8da0", label: { zh: "球在对方", ja: "先方ボール" } },
 };
+/** 视角相关的「球在谁手」: actor=阅览者 → 需我处理(暖琥珀);其他人(同事或外部)→ 球在{具体名}(冷灰),
+ *  靠 icon 区分 同事(人)/外部(送出)。myId 来自当前登录用户。 */
+export function ballView(s: DerivedIssueState, zh: boolean, myId?: string): { label: string; bg: string; border: string; text: string; dot: string; icon: string[]; mine: boolean } {
+  const actor = (s.actor_name || "").trim();
+  const mine = s.ball === "SELF" && !!myId && !!s.actor_user_id && s.actor_user_id === myId;
+  if (mine) return { mine: true, label: zh ? "需我处理" : "自分が対応", bg: "#fef3e2", border: "#f3d3a0", text: "#9a5b08", dot: "#d97a0a", icon: ICON.inbox };
+  const external = s.ball === "OTHER" || s.actor_kind === "external";
+  const name = actor || (external ? (zh ? "对方" : "先方") : (zh ? "他人" : "担当者"));
+  return { mine: false, label: zh ? `球在 ${name}` : `${name}待ち`, bg: "#eef2f6", border: "#dbe3ea", text: "#4d6076", dot: "#7a8da0", icon: external ? ICON.send : ICON.user };
+}
 export function stallTone(days: number): "none" | "mid" | "high" {
   if (days >= STALL_TH * 2) return "high";
   if (days >= STALL_TH) return "mid";
@@ -254,6 +265,7 @@ export function useActivePopover(): ActivePop {
 export function AICardBar({ issueId, projectId }: { issueId: string; projectId: string | null | undefined }) {
   const { workspaceSlug } = useParams();
   const zh = useZh();
+  const { data: currentUser } = useUser();
   const s = useIssueAIState(workspaceSlug?.toString(), projectId, issueId);
   if (!s) return null; // 无派生 → 不渲染
 
@@ -271,14 +283,14 @@ export function AICardBar({ issueId, projectId }: { issueId: string; projectId: 
     );
   }
 
-  const ball = BALL_META[s.ball];
+  const bv = ballView(s, zh, currentUser?.id);
   const next = pick(s.next_action, zh);
   const alert = topAlert(s, zh);
   const lowConf = s.confidence < LOW_CONF;
   return (
     <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3 }}>
-      <Ico d={s.ball === "SELF" ? ICON.inbox : ICON.send} size={12} sw={1.8} color={ball.dot} />
-      <span style={{ fontWeight: 600, color: ball.text, flex: "none" }}>{pick(ball.label, zh)}</span>
+      <Ico d={bv.icon} size={12} sw={1.8} color={bv.dot} />
+      <span style={{ fontWeight: 600, color: bv.text, flex: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{bv.label}</span>
       {next && (<>
         <span style={{ color: "#c8cace", flex: "none" }}>·</span>
         <span style={{ color: "#52555b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{next}</span>
