@@ -9,7 +9,7 @@ import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import {
   useActivePopover, aiPopover, getCachedAIState, useZh, pick, BALL_META,
-  AvatarBadge, dueInfo, StallChip, Ico, ICON, type DerivedIssueState,
+  AvatarBadge, dueInfo, StallChip, Ico, ICON, POP_W, type DerivedIssueState,
 } from "./ai-state-line";
 
 const LOW_CONF = 0.45;
@@ -49,7 +49,7 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
           </span>
         )}
       </div>
-      <Field label={zh ? "下一步" : "次アクション"} icon={ICON.arrowRight}>{pick(s.next_action, zh) || "—"}</Field>
+      <Field label={zh ? "下一步" : "次のアクション"} icon={ICON.arrowRight}>{pick(s.next_action, zh) || "—"}</Field>
       <Field label={zh ? "当前行动人" : "対応者"} icon={s.actor_kind === "person" ? ICON.user : ICON.building}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
           {s.actor_kind === "person" && s.actor_name && <AvatarBadge name={s.actor_name} size={16} />}
@@ -61,7 +61,7 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
       )}
       {(s.source.quote || reason) && (
         <div style={{ borderTop: "1px dashed #ebedf0", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: ".05em" }}>{zh ? "推断依据" : "推定根拠"}</div>
+          <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: ".05em" }}>{zh ? "AI 推断依据" : "AI推定の根拠"}</div>
           {s.source.quote && (
             <div style={{ display: "flex", gap: 7, cursor: onSource ? "pointer" : "default" }} onClick={onSource} title={onSource ? (zh ? "定位到该评论" : "コメントへ移動") : undefined}>
               {s.source.author && <AvatarBadge name={s.source.author} size={18} />}
@@ -100,13 +100,16 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
   const s = getCachedAIState(active.issueId);
   if (!s || s.state === "UNKNOWN" || !s.ball) return null;
 
-  // item 7: 碰撞检测 右→左→下,贴边收窄
+  // item 6/7: 方位由控制器 elementFromPoint 选(不盖其他卡片);此处据 side 算坐标
   const rect = active.el.getBoundingClientRect();
-  let W = 320; const GAP = 12, M = 10;
-  let side: "right" | "left" | "below" = "right";
-  let left = rect.right + GAP;
-  if (left + W > window.innerWidth - M) { left = rect.left - W - GAP; side = "left"; }
-  if (left < M) { side = "below"; W = Math.min(W, window.innerWidth - 2 * M); left = Math.min(Math.max(M, rect.left), window.innerWidth - W - M); }
+  const side = active.side;
+  const GAP = 12, M = 10, vw = window.innerWidth;
+  let W = POP_W;
+  let left: number;
+  if (side === "left") left = rect.left - W - GAP;
+  else if (side === "below") { W = Math.min(W, vw - 2 * M); left = Math.min(Math.max(M, rect.left), vw - W - M); }
+  else left = rect.right + GAP;
+  left = Math.max(M, Math.min(left, vw - W - M));
   let top = side === "below" ? rect.bottom + GAP : rect.top;
   top = Math.max(M, Math.min(top, window.innerHeight - 160 - M));
 
@@ -127,7 +130,11 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         <Ico d={ICON.sparkle} size={13} color="#7c5cff" sw={1.8} />
         <span style={{ fontSize: 11, fontWeight: 700, color: "#71757c", flex: "none" }}>{active.meta.identifier && active.meta.seq != null ? `${active.meta.identifier}-${active.meta.seq}` : ""}</span>
         <span style={{ fontSize: 12, color: "#3a3d42", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{active.meta.name}</span>
-        <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", flex: "none", width: 8, height: 8, borderRadius: 99, background: conf.c, opacity: 0.55 }} />
+        {s.confidence < LOW_CONF ? (
+          <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", flex: "none", fontSize: 10.5, fontWeight: 600, color: "#92700a", background: "#fdf6dd", border: "1px solid #ecd98a", borderRadius: 4, padding: "0 5px" }}>{zh ? "要确认" : "要確認"}</span>
+        ) : (
+          <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", flex: "none", width: 8, height: 8, borderRadius: 99, background: conf.c, opacity: 0.55 }} />
+        )}
       </div>
       <div style={{ padding: "10px 11px", overflow: "auto" }}>
         <AICurrentStateBody s={s} zh={zh} onSource={openCard} />

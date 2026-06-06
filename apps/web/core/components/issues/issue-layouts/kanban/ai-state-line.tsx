@@ -34,24 +34,6 @@ export type DerivedIssueState = {
 const STALL_TH = 4;
 const LOW_CONF = 0.45;
 
-// ── 语言设置(item 9): auto=跟随界面 / ja / zh。前端因双存可纯前端切。──────────
-type LangPref = "auto" | "ja" | "zh";
-let _langPref: LangPref = "auto";
-try { const v = localStorage.getItem("dis_lang_pref"); if (v === "ja" || v === "zh" || v === "auto") _langPref = v; } catch { /* ssr */ }
-const _langSubs = new Set<() => void>();
-export function getLangPref() { return _langPref; }
-export function setLangPref(p: LangPref) {
-  _langPref = p;
-  try { localStorage.setItem("dis_lang_pref", p); } catch { /* */ }
-  _langSubs.forEach((f) => f());
-}
-export function useLangPref(): LangPref {
-  return useSyncExternalStore(
-    (cb) => { _langSubs.add(cb); return () => _langSubs.delete(cb); },
-    () => _langPref,
-    () => _langPref
-  );
-}
 export function isZhLocale(loc: string | undefined) { return (loc || "").toLowerCase().startsWith("zh"); }
 
 // ── 看板 ↔ 待我处理 视图(切换在真实 header, digest 在 layout root → 模块级共享)──
@@ -62,12 +44,9 @@ export function setAiView(v: AiView) { _aiView = v; _viewSubs.forEach((f) => f()
 export function useAiView(): AiView {
   return useSyncExternalStore((cb) => { _viewSubs.add(cb); return () => _viewSubs.delete(cb); }, () => _aiView, () => _aiView);
 }
-/** 决定派生文案显示语言:pref 优先,auto 跟随界面 locale。 */
+/** 派生文案显示语言 = 跟随 Plane 界面语言设置(v5 移除独立语言控件)。 */
 export function useZh(): boolean {
   const { currentLocale } = useTranslation();
-  const pref = useLangPref();
-  if (pref === "zh") return true;
-  if (pref === "ja") return false;
   return isZhLocale(currentLocale);
 }
 export function pick(b: Bilingual | undefined, zh: boolean): string {
@@ -77,8 +56,8 @@ export function pick(b: Bilingual | undefined, zh: boolean): string {
 
 // ── 视觉常量 ────────────────────────────────────────────────────────────────
 export const BALL_META = {
-  SELF: { bg: "#fef3e2", border: "#f3d3a0", text: "#9a5b08", dot: "#d97a0a", label: { zh: "球在我方", ja: "自社対応" } },
-  OTHER: { bg: "#eef2f6", border: "#dbe3ea", text: "#4d6076", dot: "#7a8da0", label: { zh: "球在对方", ja: "先方待ち" } },
+  SELF: { bg: "#fef3e2", border: "#f3d3a0", text: "#9a5b08", dot: "#d97a0a", label: { zh: "球在我方", ja: "自社ボール" } },
+  OTHER: { bg: "#eef2f6", border: "#dbe3ea", text: "#4d6076", dot: "#7a8da0", label: { zh: "球在对方", ja: "先方ボール" } },
 };
 export function stallTone(days: number): "none" | "mid" | "high" {
   if (days >= STALL_TH * 2) return "high";
@@ -197,7 +176,8 @@ export function useIssueAIState(slug: string | undefined, projectId: string | nu
 
 // ── 全局单浮层 控制器(item 1)──────────────────────────────────────────────
 export type AIPopoverMeta = { seq: number | null; identifier: string; name: string };
-type ActivePop = { issueId: string; projectId: string; el: HTMLElement; meta: AIPopoverMeta } | null;
+export type AIPopSide = "right" | "left" | "below";
+type ActivePop = { issueId: string; projectId: string; el: HTMLElement; meta: AIPopoverMeta; side: AIPopSide } | null;
 let _active: ActivePop = null;
 let _showT: ReturnType<typeof setTimeout> | null = null;
 let _hideT: ReturnType<typeof setTimeout> | null = null;
@@ -208,6 +188,34 @@ function _highlight(el: HTMLElement | null, on: boolean) {
   if (on) { el.style.boxShadow = "0 0 0 2px var(--bg-accent-primary, #7c5cff)"; el.style.borderRadius = "8px"; }
   else { el.style.boxShadow = ""; }
 }
+// item 6: 在浮层挂载前用 elementFromPoint 选不盖其他卡片的方位(右→左→下,取重叠最少)
+export const POP_W = 320;
+const _POP_H = 230, _GAP = 12, _EDGE = 10;
+function _overlapCount(x: number, y: number, srcId: string): number {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const pts: Array<[number, number]> = [[x + 10, y + 10], [x + POP_W - 10, y + 10], [x + 10, y + _POP_H / 2], [x + POP_W - 10, y + _POP_H - 10]];
+  let c = 0;
+  for (const [px, py] of pts) {
+    if (px < 0 || py < 0 || px > vw || py > vh) continue;
+    const card = (document.elementFromPoint(px, py) as HTMLElement | null)?.closest('[id^="issue-"]') as HTMLElement | null;
+    if (card && card.id !== `issue-${srcId}`) c++;
+  }
+  return c;
+}
+function _chooseSide(rect: DOMRect, srcId: string): AIPopSide {
+  const vw = window.innerWidth;
+  const cands: Array<{ side: AIPopSide; x: number; y: number }> = [];
+  if (rect.right + _GAP + POP_W <= vw - _EDGE) cands.push({ side: "right", x: rect.right + _GAP, y: rect.top });
+  if (rect.left - _GAP - POP_W >= _EDGE) cands.push({ side: "left", x: rect.left - _GAP - POP_W, y: rect.top });
+  cands.push({ side: "below", x: Math.min(Math.max(_EDGE, rect.left), vw - POP_W - _EDGE), y: rect.bottom + _GAP });
+  let best = cands[0], bestScore = Infinity;
+  for (const c of cands) {
+    const s = _overlapCount(c.x, c.y, srcId);
+    if (s < bestScore) { bestScore = s; best = c; }
+    if (s === 0) break;
+  }
+  return best.side;
+}
 export const aiPopover = {
   show(issueId: string, projectId: string, el: HTMLElement, meta: AIPopoverMeta) {
     if (_hideT) { clearTimeout(_hideT); _hideT = null; }
@@ -215,7 +223,8 @@ export const aiPopover = {
     if (_showT) clearTimeout(_showT);
     _showT = setTimeout(() => {
       if (_active) _highlight(_active.el, false);
-      _active = { issueId, projectId, el, meta };
+      const side = _chooseSide(el.getBoundingClientRect(), issueId);
+      _active = { issueId, projectId, el, meta, side };
       _highlight(el, true);
       _emitPop();
     }, 120);
