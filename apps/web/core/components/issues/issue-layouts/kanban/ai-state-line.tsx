@@ -185,8 +185,14 @@ const _popSubs = new Set<() => void>();
 function _emitPop() { _popSubs.forEach((f) => f()); }
 function _highlight(el: HTMLElement | null, on: boolean) {
   if (!el) return;
-  if (on) { el.style.boxShadow = "0 0 0 2px var(--bg-accent-primary, #7c5cff)"; el.style.borderRadius = "8px"; }
-  else { el.style.boxShadow = ""; }
+  if (on) {
+    // 打磨(v6.1): 弃刺眼 2px 蓝框,改柔和上浮 + 发丝级紫描边(呼应 AI 紫、连接浮层)
+    el.style.transition = "box-shadow .12s ease";
+    el.style.borderRadius = "8px";
+    el.style.boxShadow = "0 8px 24px -8px rgba(16,24,40,0.16), 0 0 0 1px rgba(124,92,255,0.32)";
+  } else {
+    el.style.boxShadow = "";
+  }
 }
 // item 6: 在浮层挂载前用 elementFromPoint 选不盖其他卡片的方位(右→左→下,取重叠最少)
 export const POP_W = 320;
