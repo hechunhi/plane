@@ -33,6 +33,8 @@ import type { TIssueOperations } from "../issue-detail";
 import { IssueParentDetail } from "../issue-detail/parent";
 import { IssueReaction } from "../issue-detail/reactions";
 import { IssueTitleInput } from "../title-input";
+// BARSOUL DIS v4: 详情内嵌 AI 当前态区块
+import { AICurrentStateInline } from "@/components/issues/issue-layouts/kanban/ai-current-state-inline";
 // services init
 const workItemVersionService = new WorkItemVersionService();
 
@@ -130,6 +132,9 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
         value={issue.name}
         containerClassName="-ml-3"
       />
+
+      {/* BARSOUL DIS v4: 详情内嵌 AI 当前态(标题下方,代替 hover 浮层) */}
+      {issue.project_id && <AICurrentStateInline issueId={issue.id} projectId={issue.project_id} />}
 
       <DescriptionInput
         issueSequenceId={issue.sequence_id}

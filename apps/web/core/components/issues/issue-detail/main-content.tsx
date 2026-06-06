@@ -32,6 +32,8 @@ import { IssueDetailWidgets } from "../issue-detail-widgets";
 import { NameDescriptionUpdateStatus } from "../issue-update-status";
 import { PeekOverviewProperties } from "../peek-overview/properties";
 import { IssueTitleInput } from "../title-input";
+// BARSOUL DIS v4: 详情内嵌 AI 当前态区块
+import { AICurrentStateInline } from "@/components/issues/issue-layouts/kanban/ai-current-state-inline";
 // BARSOUL ADR-029: 凍結カード banner(役割別)
 import { FrozenBanner } from "./frozen-banner";
 import { IssueActivity } from "./issue-activity";
@@ -136,6 +138,9 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
           value={issue.name}
           containerClassName="-ml-3"
         />
+
+        {/* BARSOUL DIS v4: 详情内嵌 AI 当前态(标题下方,代替 hover 浮层) */}
+        {issue.project_id && <AICurrentStateInline issueId={issue.id} projectId={issue.project_id} />}
 
         <DescriptionInput
           issueSequenceId={issue.sequence_id}
