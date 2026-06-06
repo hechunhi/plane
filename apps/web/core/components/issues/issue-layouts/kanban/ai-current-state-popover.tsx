@@ -147,11 +147,6 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
       <div style={{ padding: "10px 11px", overflow: "auto" }}>
         <AICurrentStateBody s={s} zh={zh} onSource={openCard} />
       </div>
-      <div style={{ display: "flex", gap: 6, padding: "8px 11px", borderTop: "1px solid #f0f1f3", background: "#fbfbfc" }}>
-        <button type="button" onClick={openCard} style={{ flex: 1, height: 28, border: "1px solid #e3e5e9", borderRadius: 6, background: "#fff", color: "#33363c", fontSize: 12, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-          <Ico d={ICON.external} size={13} color="#7c5cff" />{zh ? "打开卡片处理" : "カードを開いて対応"}
-        </button>
-      </div>
     </div>
   );
 });
