@@ -9,7 +9,7 @@ import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import {
   useActivePopover, aiPopover, getCachedAIState, useZh, pick, BALL_META,
-  AvatarBadge, dueInfo, StallChip, Ico, ICON, POP_W, type DerivedIssueState,
+  AvatarBadge, dueInfo, Ico, ICON, POP_W, type DerivedIssueState,
 } from "./ai-state-line";
 
 const LOW_CONF = 0.45;
@@ -31,6 +31,10 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
   const di = dueInfo(s.due_date, zh);
   const reason = pick(s.reasoning, zh);
   const lowConf = s.confidence < LOW_CONF;
+  // 仿设计稿:球 pill 带「· 等 {等待对象}」(对方)/「· {对応者}」(我方)尾巴
+  const tailTarget = s.ball === "OTHER" ? (pick(s.waiting_on, zh) || s.actor_name || "") : (s.actor_name || "");
+  const ballTail = tailTarget ? ` · ${s.ball === "OTHER" ? (zh ? "等 " : "") : ""}${tailTarget}${s.ball === "OTHER" && !zh ? "待ち" : ""}` : "";
+  const stallRed = s.stale_days >= 2;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
       {lowConf && (
@@ -39,12 +43,19 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
         </div>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 600, background: ball.bg, border: "1px solid " + ball.border, color: ball.text, borderRadius: 4, padding: "1px 7px" }}>
-          <Ico d={s.ball === "SELF" ? ICON.inbox : ICON.send} size={11} sw={1.8} color={ball.text} />{pick(ball.label, zh)}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%", fontSize: 11, fontWeight: 600, background: ball.bg, border: "1px solid " + ball.border, color: ball.text, borderRadius: 4, padding: "1px 7px" }}>
+          <Ico d={s.ball === "SELF" ? ICON.inbox : ICON.send} size={11} sw={1.8} color={ball.text} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pick(ball.label, zh)}{ballTail}</span>
         </span>
-        <StallChip days={s.stale_days} zh={zh} />
+        {s.stale_days >= 1 && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, borderRadius: 4, padding: "0 5px",
+            background: stallRed ? "#fdeaea" : "#fdf3e2", border: "1px solid " + (stallRed ? "#f3c4c4" : "#f0d9a8"), color: stallRed ? "#c0392b" : "#b06d09" }}>
+            {stallRed && <Ico d={ICON.alert} size={10} sw={2} />}{zh ? `停滞 ${s.stale_days} 天` : `${s.stale_days}日停滞`}
+          </span>
+        )}
         {di && (
-          <span style={{ fontSize: 11, color: di.tone === "overdue" ? "#c0392b" : "#6b7280", display: "inline-flex", alignItems: "center", gap: 3, border: "1px solid #eceef1", borderRadius: 4, padding: "0 6px" }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: di.tone === "overdue" ? "#c0392b" : "#6b7280", display: "inline-flex", alignItems: "center", gap: 3,
+            background: di.tone === "overdue" ? "#fdeaea" : "transparent", border: "1px solid " + (di.tone === "overdue" ? "#f3c4c4" : "#eceef1"), borderRadius: 4, padding: "0 6px" }}>
             <Ico d={ICON.calendar} size={10} />{di.label}
           </span>
         )}
@@ -56,9 +67,6 @@ export function AICurrentStateBody({ s, zh, onSource }: { s: DerivedIssueState; 
           {s.actor_name || "—"}{s.unassigned && <span style={{ color: "#b45309", fontWeight: 600 }}>（{zh ? "待指派" : "担当未定"}）</span>}
         </span>
       </Field>
-      {s.ball === "OTHER" && pick(s.waiting_on, zh) && (
-        <Field label={zh ? "在等" : "待ち"} icon={ICON.clock}>{pick(s.waiting_on, zh)}</Field>
-      )}
       {(s.source.quote || reason) && (
         <div style={{ borderTop: "1px dashed #ebedf0", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: ".05em" }}>{zh ? "AI 推断依据" : "AI推定の根拠"}</div>
@@ -133,9 +141,7 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         {s.confidence < LOW_CONF ? (
           <span title={(zh ? "AI 置信度:低" : "AI 確度:低")} style={{ marginLeft: "auto", flex: "none", fontSize: 10.5, fontWeight: 600, color: "#92700a", background: "#fdf6dd", border: "1px solid #ecd98a", borderRadius: 4, padding: "0 5px" }}>{zh ? "AI 不确定" : "AI 不確実"}</span>
         ) : (
-          <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", flex: "none", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, color: "#9499a0" }}>
-            <span style={{ width: 7, height: 7, borderRadius: 99, background: conf.c, opacity: 0.6 }} />{(zh ? "置信度 " : "確度 ") + conf.t}
-          </span>
+          <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", flex: "none", fontSize: 11, fontWeight: 600, color: conf.c }}>{(zh ? "置信度 " : "確度 ") + conf.t}</span>
         )}
       </div>
       <div style={{ padding: "10px 11px", overflow: "auto" }}>
