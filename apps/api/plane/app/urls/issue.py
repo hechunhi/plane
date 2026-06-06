@@ -13,6 +13,7 @@ from plane.app.views import (
     CommentReactionViewSet,
     CommentTranslateOnDemandEndpoint,
     IssueAIStateBatchEndpoint,
+    IssueAIStateCorrectEndpoint,
     IssueActivityEndpoint,
     IssueArchiveViewSet,
     IssueCommentViewSet,
@@ -184,6 +185,12 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/ai-states/",
         IssueAIStateBatchEndpoint.as_view(),
         name="project-issue-ai-states",
+    ),
+    # BARSOUL DIS: 人工纠正/补充(向 AI 补足背景 → 双语留痕 + 触发重判)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/correct/",
+        IssueAIStateCorrectEndpoint.as_view(),
+        name="project-issue-ai-state-correct",
     ),
     # Issue Subscribers
     path(

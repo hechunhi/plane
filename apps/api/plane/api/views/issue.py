@@ -1829,6 +1829,17 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
     _STATES = {"ACTIVE", "WAITING", "STALE", "UNKNOWN"}
     _BALLS = {"SELF", "OTHER", ""}
 
+    def get(self, request, slug, project_id, issue_id):
+        # ai-bot worker 读 human_note(人手补充)以喂入重判 prompt
+        obj = IssueAIState.objects.filter(
+            issue_id=issue_id, workspace__slug=slug, project_id=project_id).first()
+        if not obj:
+            return Response({}, status=status.HTTP_200_OK)
+        return Response({
+            "human_note_zh": obj.human_note_zh, "human_note_ja": obj.human_note_ja,
+            "ball": obj.ball, "current_actor": obj.current_actor,
+        }, status=status.HTTP_200_OK)
+
     def post(self, request, slug, project_id, issue_id):
         from datetime import date as _date
 

@@ -32,6 +32,7 @@ from .issue import (
     CommentReaction,
     CommentTranslation,
     IssueAIState,
+    IssueAIStateCorrection,
     Issue,
     IssueActivity,
     IssueAssignee,

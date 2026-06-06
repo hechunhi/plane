@@ -73,7 +73,7 @@ old_url_patterns = [
     # BARSOUL: 派生卡片当前态 (DIS) upsert (愛ちゃん/cloud Claude)
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/",
-        IssueAIStateUpsertAPIEndpoint.as_view(http_method_names=["post"]),
+        IssueAIStateUpsertAPIEndpoint.as_view(http_method_names=["get", "post"]),
         name="issue-ai-state",
     ),
     path(

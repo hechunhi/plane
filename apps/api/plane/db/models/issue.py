@@ -882,6 +882,11 @@ class IssueAIState(ProjectBaseModel):
     # 输入指纹: 同 hash 跳过 LLM (去抖/省钱), self-invalidating
     source_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
     schema_version = models.PositiveSmallIntegerField(default=1)
+    # 人手补充说明(双语,喂给 AI 重判 + 详情展示)+ 纠正者/时间(留痕)
+    human_note_zh = models.CharField(max_length=1000, blank=True, default="")
+    human_note_ja = models.CharField(max_length=1000, blank=True, default="")
+    corrected_by = models.CharField(max_length=120, blank=True, default="")
+    corrected_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Issue AI State"
@@ -894,3 +899,25 @@ class IssueAIState(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.issue_id}:{self.state}"
+
+
+# BARSOUL: 人工纠正/补充 审计表(append-only, 留痕可追溯)。每次人进详情向 AI
+# 补足背景说明记一行(双语 + 当时的旧 ball/actor)。绝不污染 SoR。
+class IssueAIStateCorrection(ProjectBaseModel):
+    issue = models.ForeignKey(
+        Issue, on_delete=models.CASCADE, related_name="ai_state_corrections")
+    note_zh = models.CharField(max_length=1000, blank=True, default="")
+    note_ja = models.CharField(max_length=1000, blank=True, default="")
+    note_lang = models.CharField(max_length=8, blank=True, default="")  # 录入原文语言
+    prev_ball = models.CharField(max_length=8, blank=True, default="")
+    prev_actor = models.CharField(max_length=120, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Issue AI State Correction"
+        verbose_name_plural = "Issue AI State Corrections"
+        db_table = "issue_ai_state_corrections"
+        ordering = ("-created_at",)
+        indexes = [models.Index(fields=["issue", "-created_at"])]
+
+    def __str__(self):
+        return f"{self.issue_id}:correction:{self.created_at}"

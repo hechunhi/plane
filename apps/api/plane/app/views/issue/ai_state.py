@@ -6,6 +6,14 @@
 # 看板卡顶状态行用。一次批量拉可见卡的 ai_state,避免 N+1,且不污染 Plane
 # 热路径 issue-list serializer。详 docs/architecture/derived-issue-state-mvp.md。
 
+# Python imports
+import os
+import logging
+import requests
+
+# Django imports
+from django.utils import timezone
+
 # Third Party imports
 from rest_framework.response import Response
 from rest_framework import status
@@ -13,7 +21,33 @@ from rest_framework import status
 # Module imports
 from .. import BaseAPIView
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueAIState
+from plane.db.models import IssueAIState, IssueAIStateCorrection, Issue
+
+logger = logging.getLogger(__name__)
+# 复用既有 ai-bot 入口(host.docker.internal:8098);去掉 /translate 取根
+_AIBOT = os.environ.get("AIBOT_TRANSLATE_URL", "http://host.docker.internal:8098/translate").rsplit("/translate", 1)[0]
+
+
+def _has_kana(t):
+    return any("぀" <= c <= "ヿ" for c in (t or ""))
+
+
+def _aibot_translate(text, target):
+    try:
+        r = requests.post(f"{_AIBOT}/translate", json={"text": text, "target": target}, timeout=20)
+        if r.ok:
+            return (r.json() or {}).get("text") or ""
+    except Exception:
+        logger.warning("ai-state correct: translate failed (非致命)", exc_info=True)
+    return ""
+
+
+def _trigger_rederive(project_id, issue_id):
+    try:  # fire-and-forget; worker 异步用 human_note 重判
+        requests.post(f"{_AIBOT}/derive-issue-state",
+                      json={"project_id": str(project_id), "issue_id": str(issue_id), "force": True}, timeout=2)
+    except Exception:
+        pass
 
 
 def _serialize(row):
@@ -46,6 +80,10 @@ def _serialize(row):
         "confidence": row.confidence,
         "model_used": row.model_used or None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        # 人手补充/纠正(留痕): 双语补充说明 + 纠正者/时间
+        "human_note": {"zh": row.human_note_zh or "", "ja": row.human_note_ja or row.human_note_zh or ""},
+        "corrected_by": row.corrected_by or None,
+        "corrected_at": row.corrected_at.isoformat() if row.corrected_at else None,
     }
 
 
@@ -72,3 +110,55 @@ class IssueAIStateBatchEndpoint(BaseAPIView):
         for row in qs:
             out[str(row.issue_id)] = _serialize(row)
         return Response(out, status=status.HTTP_200_OK)
+
+
+class IssueAIStateCorrectEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/correct/
+    Body: {note}. 人进详情向 AI 补足背景说明 → 自动双语存储 + 审计留痕 + 触发 AI 重判。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        note = ((request.data or {}).get("note") or "").strip()[:1000]
+        if not note:
+            return Response({"error": "note required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # 多语言自动化: 录入原文 + 另一语言机翻
+        lang = "ja" if _has_kana(note) else "zh"
+        note_ja = note if lang == "ja" else (_aibot_translate(note, "ja") or note)
+        note_zh = note if lang == "zh" else (_aibot_translate(note, "zh") or note)
+        by = (getattr(request.user, "display_name", "") or getattr(request.user, "email", "") or "")[:120]
+
+        row = IssueAIState.all_objects.filter(issue=issue).first()
+        prev_ball = (row.ball if row else "") or ""
+        prev_actor = (row.current_actor if row else "") or ""
+        uid = request.user.id if request.user.is_authenticated else None
+        if row:
+            row.deleted_at = None
+            row.human_note_zh = note_zh
+            row.human_note_ja = note_ja
+            row.corrected_by = by
+            row.corrected_at = timezone.now()
+            row.updated_by_id = uid
+            row.save()
+        else:
+            row = IssueAIState.objects.create(
+                issue=issue, project_id=project_id, workspace_id=issue.workspace_id,
+                human_note_zh=note_zh, human_note_ja=note_ja, corrected_by=by,
+                corrected_at=timezone.now(), created_by_id=uid, updated_by_id=uid)
+
+        # 留痕: append-only 审计行(含当时旧 ball/actor)
+        IssueAIStateCorrection.objects.create(
+            issue=issue, project_id=project_id, workspace_id=issue.workspace_id,
+            note_zh=note_zh, note_ja=note_ja, note_lang=lang,
+            prev_ball=prev_ball, prev_actor=prev_actor,
+            created_by_id=uid, updated_by_id=uid)
+
+        # 触发 AI 用补充信息重判(worker 读 human_note → prompt 最优先考虑)
+        _trigger_rederive(project_id, issue_id)
+
+        fresh = IssueAIState.objects.select_related("issue", "issue__state", "project").get(pk=row.pk)
+        return Response(_serialize(fresh), status=status.HTTP_200_OK)

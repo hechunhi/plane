@@ -30,6 +30,9 @@ export type DerivedIssueState = {
   stale_days: number;
   confidence: number;
   updated_at: string | null;
+  human_note: Bilingual;       // 人工补充说明(双语)
+  corrected_by: string | null; // 最近补充/纠正者
+  corrected_at: string | null;
 };
 
 const STALL_TH = 4;
@@ -154,6 +157,8 @@ function _notify(id: string) { _subs.get(id)?.forEach((f) => f()); }
 function _store(id: string, v: DerivedIssueState | null) { _cache.set(id, v); _cacheTs.set(id, Date.now()); _notify(id); }
 function _fresh(id: string) { return _cacheTs.has(id) && Date.now() - (_cacheTs.get(id) || 0) < _TTL_MS; }
 export function getCachedAIState(id: string): DerivedIssueState | null { return _cache.get(id) ?? null; }
+/** 失效某卡缓存 → 订阅者重拉(人工补充/重判后刷新)。 */
+export function invalidateAIState(id: string) { _cache.delete(id); _cacheTs.delete(id); _notify(id); }
 async function _flush() {
   const slug = _slug; const byProject = new Map(_pending); _pending.clear();
   for (const [projectId, idSet] of byProject) {
