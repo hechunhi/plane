@@ -49,6 +49,7 @@
 - `apps/web/core/layouts/auth-layout/project-wrapper.tsx` — intake-state useSWR 加 `shouldRetryOnError:false`（community 版无 intake，404 无限重试 → API/console 404 风暴真修）
 - `apps/api/plane/app/views/state/base.py` `IntakeStateEndpoint.get` — 无 triage state 时返 **`200 {}` 而非 404**（「没 API 就补 API」：上游设计性 404，前端已优雅吞但浏览器必记 Console/Network；改 200 根除 DevTools intake-state 404 噪音。前端 `intakeStateResponse?.id` 偽 → 正常「无 Intake」无副作用）。**升级冲突点**
 - `apps/web/core/store/state.store.ts` `fetchProjectIntakeState` — try/catch 吞 404/失败（防未捕获 rejection 连锁 #418/#423；与上面后端改互为防御）
+- `apps/web/core/hooks/use-favorite-item-details.tsx` — `entity_data` 可能为 null（收藏指向已删除/失权实体）时 **嵌套解构 `entity_data:{logo_props}` 崩**（`null.logo_props` → 整个侧栏/layout 崩，2026-06-07 hechun 实测）。改安全访问 `favorite?.entity_data?.logo_props`（与同函数 name 行一致）。**上游 bug，非审批/DIS 引入**
 
 **数据一致性**
 - `apps/api/plane/app/views/search/issue.py` — `.distinct()`（工单搜索 dup）

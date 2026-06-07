@@ -25,9 +25,13 @@ import { useAdditionalFavoriteItemDetails } from "@/plane-web/hooks/use-addition
 export const useFavoriteItemDetails = (workspaceSlug: string, favorite: IFavorite) => {
   const {
     entity_identifier: favoriteItemId,
-    entity_data: { logo_props: favoriteItemLogoProps },
     entity_type: favoriteItemEntityType,
   } = favorite;
+  // BARSOUL 2026-06-07 (hechun): entity_data 可能为 null(收藏指向已删除/失权的实体)。
+  // 原嵌套解构 `entity_data: { logo_props }` 在 entity_data=null 时直接崩
+  // (null.logo_props,实测 layout chunk 的 Sr / 整个侧栏布局崩)。改为安全访问,
+  // 与下一行 name 的 `?.` 一致 → 指向失效实体的收藏不再拖垮侧栏。
+  const favoriteItemLogoProps = favorite?.entity_data?.logo_props;
   const favoriteItemName = favorite?.entity_data?.name || favorite?.name;
   // store hooks
   const { getViewById } = useProjectView();
