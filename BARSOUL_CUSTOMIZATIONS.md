@@ -50,6 +50,8 @@
 - `apps/api/plane/app/views/state/base.py` `IntakeStateEndpoint.get` — 无 triage state 时返 **`200 {}` 而非 404**（「没 API 就补 API」：上游设计性 404，前端已优雅吞但浏览器必记 Console/Network；改 200 根除 DevTools intake-state 404 噪音。前端 `intakeStateResponse?.id` 偽 → 正常「无 Intake」无副作用）。**升级冲突点**
 - `apps/web/core/store/state.store.ts` `fetchProjectIntakeState` — try/catch 吞 404/失败（防未捕获 rejection 连锁 #418/#423；与上面后端改互为防御）
 - `apps/web/core/hooks/use-favorite-item-details.tsx` — `entity_data` 可能为 null（收藏指向已删除/失权实体）时 **嵌套解构 `entity_data:{logo_props}` 崩**（`null.logo_props` → 整个侧栏/layout 崩，2026-06-07 hechun 实测）。改安全访问 `favorite?.entity_data?.logo_props`（与同函数 name 行一致）。**上游 bug，非审批/DIS 引入**
+- `apps/web/core/components/issues/issue-detail/issue-activity/activity/actions/helpers/issue-link.tsx` — 关联/父/链接活动指向**已删除** issue/project 时 `project_detail`/`issue_detail` 运行时为 null（类型谎称非空），L32-33/48 无守卫 deref → 崩整个活动流。加 `?.`（同文件 L37/L50 已守卫，这几行漏）。**防御性扫描发现的同类上游 bug**
+- **根因备忘**：上游把 `favorite.entity_data`、`activity.{project,issue,actor}_detail` 等类型标注成**非空**但 API 运行时返 null → tsc 抓不到这类崩。彻底治理可把这些类型改 `| null` 强制全 reader 加守卫（大改，需 tsc 验，暂缓）
 
 **数据一致性**
 - `apps/api/plane/app/views/search/issue.py` — `.distinct()`（工单搜索 dup）

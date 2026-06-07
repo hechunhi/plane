@@ -29,8 +29,12 @@ export function IssueLink(props: TIssueLink) {
     workspaceSlug: activity.workspace_detail?.slug,
     projectId: activity.project,
     issueId: activity.issue,
-    projectIdentifier: activity.project_detail.identifier,
-    sequenceId: activity.issue_detail.sequence_id,
+    // BARSOUL 2026-06-07 (hechun): 关联/父/链接 活动指向的 issue/project 可被独立
+    // 删除 → project_detail/issue_detail 运行时为 null(类型谎称非空)。本文件他处
+    // 已守卫(L37「已删除」、L50 `?.`),这两行漏了 → null.identifier 崩整个活动流。
+    // generateWorkItemLink 接受 undefined,安全。
+    projectIdentifier: activity.project_detail?.identifier,
+    sequenceId: activity.issue_detail?.sequence_id,
   });
   return (
     <Tooltip
@@ -45,7 +49,7 @@ export function IssueLink(props: TIssueLink) {
         className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
       >
         {activity.issue_detail
-          ? `${activity.project_detail.identifier}-${activity.issue_detail.sequence_id}`
+          ? `${activity.project_detail?.identifier}-${activity.issue_detail.sequence_id}`
           : "Work items"}{" "}
         <span className="font-regular">{activity.issue_detail?.name}</span>
       </a>
