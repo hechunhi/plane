@@ -628,6 +628,82 @@ def _cloud_translate(text, src, tgt, context=""):
     return ""
 
 
+# ── BARSOUL 2026-06-06 (hechun): Plane 原生发起审批代理 ────────────────────────
+# 前端表单(浏览器, Plane session 认证)→ 本端点(同源 Django, 服务端解析
+# actor=request.user.id, 绝不信前端裸报 §X.3)→ ai-bot(X-Cards-Token 内部信任)
+# → create_approval → Temporal。审批的展示/裁决走 issue 内 barsoulCard, 不推飞书。
+# 浏览器永不持内部 token。与即点即译同型(host.docker.internal + requests)。
+_AIBOT_BASE = os.environ.get("AIBOT_URL", "http://host.docker.internal:8098").rstrip("/")
+_CARDS_INTERNAL_TOKEN = os.environ.get("CARDS_INTERNAL_TOKEN", "").strip()
+
+
+class IssueAIApprovalEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-approval/
+    Body: {action:"compose"|"invoke", approver_ids?, mode?, subject?, detail?, text?, lang?}
+    认证代理: 浏览器永不持内部 token; actor 由 Plane session 服务端解析。
+      action=compose → 爱酱按 issue 上下文预填 subject/detail(给表单回填)。
+      action=invoke  → 发起审批(create_approval → Temporal; 裁决走 barsoulCard)。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
+    def post(self, request, slug, project_id, issue_id):
+        if not _CARDS_INTERNAL_TOKEN:
+            return Response({"error": "ai-bot bridge not configured"},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        data = request.data or {}
+        action = (data.get("action") or "").strip().lower()
+        headers = {"X-Cards-Token": _CARDS_INTERNAL_TOKEN}
+        if action == "compose":
+            body = {
+                "project_id": str(project_id), "issue_id": str(issue_id),
+                "workspace_slug": slug,
+                "text": (data.get("text") or "").strip()[:2000],
+                "lang": (data.get("lang") or "ja").strip()[:5],
+            }
+            ep = "/ai/compose-approval"
+        elif action == "analyze":
+            body = {
+                "project_id": str(project_id), "issue_id": str(issue_id),
+                "workspace_slug": slug,
+                "text": (data.get("text") or "").strip()[:2000],
+                "lang": (data.get("lang") or "ja").strip()[:5],
+            }
+            ep = "/ai/analyze-approval"
+        elif action == "invoke":
+            approver_ids = data.get("approver_ids") or []
+            if not isinstance(approver_ids, list) or not approver_ids:
+                return Response({"error": "approver_ids required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            actor_name = (getattr(request.user, "display_name", "")
+                          or getattr(request.user, "first_name", "")
+                          or str(getattr(request.user, "email", "") or "")).strip()
+            body = {
+                "actor_id": str(request.user.id),    # ★ 服务端解析, 不信前端
+                "actor_name": actor_name,
+                "approver_ids": [str(a) for a in approver_ids][:10],
+                "subject": (data.get("subject") or "").strip()[:200],
+                "detail": (data.get("detail") or "").strip()[:4000],
+                "text": (data.get("text") or "").strip()[:4000],
+                "mode": (data.get("mode") or "").strip().upper()[:12],
+                "project_id": str(project_id), "issue_id": str(issue_id),
+                "workspace_slug": slug,
+            }
+            ep = "/ai/invoke"
+        else:
+            return Response({"error": "action must be analyze|compose|invoke"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            r = _req.post(_AIBOT_BASE + ep, json=body, headers=headers, timeout=60)
+            j = r.json()
+        except Exception as e:
+            logger.exception("ai-approval proxy failed")
+            return Response({"error": f"ai-bot unreachable: {type(e).__name__}"},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        if r.status_code != 200 or not isinstance(j, dict) or not j.get("ok"):
+            msg = (j.get("msg") if isinstance(j, dict) else None) or "ai-bot error"
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(j)
+
+
 class CommentTranslateOnDemandEndpoint(BaseAPIView):
     """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/comments/{cid}/translate/
     Body: {target_lang: "zh"|"ja"}

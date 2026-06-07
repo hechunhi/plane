@@ -64,6 +64,16 @@
 - `apps/web/styles/globals.css` — 末尾 3 段 `display:none`：① sidebar 底部 h-12 栏 ② 顶部 promo a.bg-layer-2 ③ `a[href*="/settings/billing"]`
 - `apps/web/core/components/workspace/sidebar/help-section/root.tsx` — 帮助「?」菜单只留「键盘快捷键」+ 版本号
 
+**爱酱发起审批入口（评论框去污染, 2026-06-06）**
+- `apps/api/plane/app/views/issue/comment.py` — 新增 `IssueAIApprovalEndpoint`（认证代理 → ai-bot `/ai/invoke`|`/ai/compose-approval`，X-Cards-Token，actor=request.user.id 服务端解析）
+- `apps/api/plane/app/views/__init__.py` — 导出 `IssueAIApprovalEndpoint`
+- `apps/api/plane/app/urls/issue.py` — import + path `.../issues/<iid>/ai-approval/`
+- `apps/web/core/components/comments/comment-create.tsx` — 挂载 `<AichanApprovalButton>`（projectId 存在时，评论框上方）
+- `apps/web/core/components/comments/aichan-approval-button.tsx` — **新建**（非 upstream，不冲突）爱酱图标 + ModalCore 表单（主题/详情/审批人/模式）→ ai-approval 代理；全 i18n
+- `packages/i18n/src/locales/{en,ja,zh-CN,zh-TW}/translations.ts` — 新增 `aichan_approval` namespace（27 keys，四语 parity，无 missing-key lint 须手核）
+- env（`compose.local.yml` api + `plane.env`）: `CARDS_INTERNAL_TOKEN` + `AIBOT_URL`（后端→ai-bot 内部信任）
+- 配套（非 fork source）: ai-bot `server.py` `/ai/invoke`+`/ai/compose-approval`；`approval.py` `LARK_REACHABLE=set()`（审批裁决去飞书，走 issue 内 barsoulCard）
+
 ---
 
 ## §B. 不在 fork source 内的 BARSOUL 定制（不冲突，但属全景）

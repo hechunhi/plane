@@ -8,11 +8,14 @@
 
 # Python imports
 import os
+import json
 import logging
 import requests
 
 # Django imports
 from django.utils import timezone
+from django.db.models import Q
+from django.core.serializers.json import DjangoJSONEncoder
 
 # Third Party imports
 from rest_framework.response import Response
@@ -21,7 +24,9 @@ from rest_framework import status
 # Module imports
 from .. import BaseAPIView
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueAIState, IssueAIStateCorrection, Issue
+from plane.db.models import IssueAIState, IssueAIStateCorrection, Issue, IssueComment
+from plane.bgtasks.issue_activities_task import issue_activity
+from plane.utils.host import base_host
 
 logger = logging.getLogger(__name__)
 # 复用既有 ai-bot 入口(host.docker.internal:8098);去掉 /translate 取根
@@ -50,6 +55,31 @@ def _trigger_rederive(project_id, issue_id):
                       json={"project_id": str(project_id), "issue_id": str(issue_id), "force": True}, timeout=2)
     except Exception:
         pass
+
+
+def _post_audit_comment(request, issue, project_id, note, by):
+    """把人手的「向 AI 补充/纠正」原样发成 issue 评论 → **在任务时间线可见、可追溯**。
+    这是「留痕」真正给人看的落点(派生表 + 审计表是给程序/AI 的,人看不到)。
+    以补充者本人身份发(本人会话);对方语言由评论区自动翻译。失败非致命。"""
+    try:
+        safe = (note or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+        html = (f"<p>📝 <b>AIへの補足・履歴 / AI 补充说明(留痕)</b>"
+                f"{(' — ' + by) if by else ''}</p><p>{safe}</p>")
+        uid = request.user.id if request.user.is_authenticated else None
+        IssueComment.objects.create(
+            workspace_id=issue.workspace_id, project_id=project_id, issue=issue,
+            actor=(request.user if request.user.is_authenticated else None),
+            comment_html=html, comment_stripped=(note or ""), access="INTERNAL",
+            created_by_id=uid, updated_by_id=uid)
+        issue_activity.delay(
+            type="comment.activity.created",
+            requested_data=json.dumps({"comment_html": html, "comment_stripped": note}, cls=DjangoJSONEncoder),
+            actor_id=str(uid) if uid else None,
+            issue_id=str(issue.id), project_id=str(project_id),
+            current_instance=None, epoch=int(timezone.now().timestamp()),
+            notification=True, origin=base_host(request=request, is_app=True))
+    except Exception:
+        logger.warning("ai-state correct: 留痕评论发布失败 (非致命)", exc_info=True)
 
 
 def _serialize(row):
@@ -86,6 +116,11 @@ def _serialize(row):
         "human_note": {"zh": row.human_note_zh or "", "ja": row.human_note_ja or row.human_note_zh or ""},
         "corrected_by": row.corrected_by or None,
         "corrected_at": row.corrected_at.isoformat() if row.corrected_at else None,
+        # 信息完整性/留痕缺口: 状态与材料矛盾/不足 → 要求人补充
+        "needs_info": bool(row.needs_info),
+        "info_gap": {"zh": row.info_gap_zh or "", "ja": row.info_gap_ja or row.info_gap_zh or ""},
+        # 补充框架(AI 理解 + 待澄清点;告诉补充人该写什么,按阅览者语言展示)
+        "info_framework": {"zh": row.info_framework_zh or "", "ja": row.info_framework_ja or row.info_framework_zh or ""},
     }
 
 
@@ -97,10 +132,12 @@ class IssueAIStateBatchEndpoint(BaseAPIView):
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def get(self, request, slug, project_id):
         raw = (request.query_params.get("issues") or "").strip()
-        # 仅活跃卡(Todo/Doing)返派生态 → Done/Cancelled 卡(残留旧行)不显示 AI 行
+        # 活跃卡(Todo/Doing)正常返派生态;**外加** needs_info=True 的卡(含已完成/取消):
+        #   状态变更缺留痕,需要人补说明 → 必须能被看到/被追,直到补全。
+        # 其余 Done/Cancelled(留痕完整)不返 → 不显示陈旧 AI 行。
         qs = IssueAIState.objects.filter(
+            Q(issue__state__group__in=["unstarted", "started"]) | Q(needs_info=True),
             workspace__slug=slug, project_id=project_id,
-            issue__state__group__in=["unstarted", "started"],
         ).select_related("issue", "issue__state", "project")
         if raw:
             ids = [x for x in (s.strip() for s in raw.split(",")) if x][:300]
@@ -152,12 +189,15 @@ class IssueAIStateCorrectEndpoint(BaseAPIView):
                 human_note_zh=note_zh, human_note_ja=note_ja, corrected_by=by,
                 corrected_at=timezone.now(), created_by_id=uid, updated_by_id=uid)
 
-        # 留痕: append-only 审计行(含当时旧 ball/actor)
+        # 留痕①(程序/AI 可追溯): append-only 审计行(含当时旧 ball/actor)
         IssueAIStateCorrection.objects.create(
             issue=issue, project_id=project_id, workspace_id=issue.workspace_id,
             note_zh=note_zh, note_ja=note_ja, note_lang=lang,
             prev_ball=prev_ball, prev_actor=prev_actor,
             created_by_id=uid, updated_by_id=uid)
+
+        # 留痕②(人看得到): 发成 issue 评论 → 出现在任务时间线,可被任何人审阅追溯
+        _post_audit_comment(request, issue, project_id, note, by)
 
         # 触发 AI 用补充信息重判(worker 读 human_note → prompt 最优先考虑)
         _trigger_rederive(project_id, issue_id)

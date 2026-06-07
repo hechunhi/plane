@@ -96,11 +96,25 @@ export function AICurrentStateBody({ s, zh, projectId, onSource }: { s: DerivedI
   const stallRed = s.stale_days >= 2;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-      {lowConf && (
+      {/* 留痕缺口:状态与材料矛盾/不足 → 醒目要求补充(信息完整性)。优先于低置信提示。 */}
+      {s.needs_info && (
+        <div style={{ fontSize: 11.5, color: "#92560a", background: "#fdf3e2", border: "1px solid #f0d9a8", borderRadius: 6, padding: "7px 9px", display: "flex", gap: 7 }}>
+          <Ico d={ICON.alert} size={13} sw={2} color="#d97706" />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700 }}>{zh ? "需要补充信息(留痕)" : "補足が必要です(履歴保存)"}</div>
+            <div style={{ fontWeight: 500, color: "#8a6d2b", marginTop: 2, lineHeight: 1.45 }}>
+              {pick(s.info_gap, zh) || (zh ? "AI 无法从卡片判断状态变更原因,请补充说明以保证信息完整。" : "状態変更の理由をカードから判断できません。情報の完全性のため補足してください。")}
+            </div>
+          </div>
+        </div>
+      )}
+      {lowConf && !s.needs_info && (
         <div style={{ fontSize: 11, fontWeight: 600, color: "#92700a", background: "#fdf6dd", border: "1px solid #ecd98a", borderRadius: 6, padding: "5px 8px", display: "flex", alignItems: "center", gap: 5 }}>
           <Ico d={ICON.alert} size={12} sw={2} color="#b8860b" />{zh ? "AI 推断不确定,建议人工确认" : "AI の推定が不確実です。確認を推奨"}
         </div>
       )}
+      {/* 仅当有真实球时渲染状态行/字段;needs_info-only(如已完成卡)只显示上方补充提示 */}
+      {s.ball && (<>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%", fontSize: 11, fontWeight: 600, background: bv.bg, border: "1px solid " + bv.border, color: bv.text, borderRadius: 4, padding: "1px 7px" }}>
           <Ico d={bv.icon} size={11} sw={1.8} color={bv.text} />
@@ -126,6 +140,7 @@ export function AICurrentStateBody({ s, zh, projectId, onSource }: { s: DerivedI
           {s.actor_name || "—"}{s.unassigned && <span style={{ color: "#b45309", fontWeight: 600 }}>（{zh ? "待指派" : "担当未定"}）</span>}
         </span>
       </Field>
+      </>)}
       {(s.source.quote || reason) && (
         <div style={{ borderTop: "1px dashed #ebedf0", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: ".05em" }}>{zh ? "AI 推断依据" : "AI推定の根拠"}</div>
@@ -162,7 +177,7 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
   if (issueDetail.peekIssue) return null;
   if (!active) return null;
   const s = getCachedAIState(active.issueId);
-  if (!s || s.state === "UNKNOWN" || !s.ball) return null;
+  if (!s || (!s.needs_info && (s.state === "UNKNOWN" || !s.ball))) return null;
 
   // item 6/7: 方位由控制器 elementFromPoint 选(不盖其他卡片);此处据 side 算坐标
   const rect = active.el.getBoundingClientRect();

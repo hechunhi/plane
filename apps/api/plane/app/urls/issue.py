@@ -12,6 +12,7 @@ from plane.app.views import (
     IssueAttachmentEndpoint,
     CommentReactionViewSet,
     CommentTranslateOnDemandEndpoint,
+    IssueAIApprovalEndpoint,
     IssueAIStateBatchEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
@@ -180,6 +181,12 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/comments/<uuid:comment_id>/translate/",
         CommentTranslateOnDemandEndpoint.as_view(),
         name="project-issue-comment-translate",
+    ),
+    # BARSOUL 2026-06-06: Plane 原生发起审批(爱酱图标/表单 → 认证代理 → ai-bot → Temporal)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-approval/",
+        IssueAIApprovalEndpoint.as_view(),
+        name="project-issue-ai-approval",
     ),
     ## End IssueComments
     # BARSOUL: 派生卡片当前态 (DIS) 批量读取(看板卡顶状态行, cookie auth, project member)

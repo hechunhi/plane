@@ -3,7 +3,7 @@
  * v7: 人进详情可向 AI 补足背景/纠正(自动多语言 + 留痕),提交后 AI 据此重判。
  */
 import { observer } from "mobx-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useIssueAIState, useZh, pick, invalidateAIState, Ico, ICON } from "./ai-state-line";
@@ -24,6 +24,12 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
+  // 留痕缺口:AI 判不出状态变更原因 → 自动展开补充表单(强提醒,可手动关闭)
+  useEffect(() => {
+    if (s?.needs_info && !(s?.human_note?.zh || s?.human_note?.ja) && !done) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s?.needs_info]);
+
   if (!s) return null;
 
   const wrap = "mt-2 rounded-lg border p-2.5";
@@ -42,7 +48,9 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
       });
       if (r.ok) {
         setText(""); setOpen(false); setDone(true);
-        setTimeout(() => invalidateAIState(issueId), 12000); // 给 AI 重判时间后刷新
+        // AI 重判走 cloud Claude(~30s)。多档延时刷新覆盖重判落地窗口,
+        // 否则「要補足」在 DB 清了但前端(尤其作业台)还挂着旧态(BS-24 现象)。
+        [3000, 18000, 40000].forEach((ms) => setTimeout(() => { try { invalidateAIState(issueId); } catch { /* noop */ } }, ms));
       }
     } catch {
       /* noop */
@@ -67,6 +75,15 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
       )}
       {open ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {/* v12 补充框架:needs_info 时,AI 结合本卡给出「该写什么」的引导(按阅览者语言) */}
+          {s.needs_info && pick(s.info_framework, zh) && (
+            <div style={{ fontSize: 11.5, color: "#5b5340", background: "#fdf8ec", border: "1px solid #f0e3c2", borderRadius: 6, padding: "8px 10px", whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#b07d12", fontWeight: 700, marginBottom: 4 }}>
+                <Ico d={ICON.sparkle} size={12} color="#d99a1e" />{zh ? "补充指引" : "補足ガイド"}
+              </div>
+              {pick(s.info_framework, zh)}
+            </div>
+          )}
           <textarea
             value={text} onChange={(e) => setText(e.target.value)} rows={3} autoFocus
             placeholder={zh ? "补充评论里没有、AI 看不到的背景,或纠正判断(例:已在电话里口头确认,无需催办)。自动多语言、留痕。" : "コメントに出ていない・AIが把握できない背景の補足、または判断の訂正(例:電話で口頭確認済み、催促不要)。自動翻訳・履歴保存。"}

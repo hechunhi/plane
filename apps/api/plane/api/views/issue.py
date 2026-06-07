@@ -1912,6 +1912,12 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
             source_quote=(body.get("source_quote") or "")[:400],
             model_used=(body.get("model_used") or "")[:40],
             source_hash=(body.get("source_hash") or "")[:64],
+            # 信息完整性/留痕缺口(AI 派生,每次重判覆盖)
+            needs_info=bool(body.get("needs_info")),
+            info_gap_zh=(body.get("info_gap_zh") or "")[:300],
+            info_gap_ja=(body.get("info_gap_ja") or "")[:300],
+            info_framework_zh=(body.get("info_framework_zh") or "")[:800],
+            info_framework_ja=(body.get("info_framework_ja") or "")[:800],
             updated_by_id=request.user.id if request.user.is_authenticated else None,
         )
 

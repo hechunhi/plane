@@ -887,6 +887,14 @@ class IssueAIState(ProjectBaseModel):
     human_note_ja = models.CharField(max_length=1000, blank=True, default="")
     corrected_by = models.CharField(max_length=120, blank=True, default="")
     corrected_at = models.DateTimeField(null=True, blank=True)
+    # 信息完整性/留痕缺口: 状态与材料明显矛盾或材料不足以解释当前状态 → 要求人补充。
+    # (例: 卡被标记完成但无完成说明 → AI 无从解释 → 提醒补一句收尾以完整留痕)
+    needs_info = models.BooleanField(default=False, db_index=True)
+    info_gap_zh = models.CharField(max_length=300, blank=True, default="")
+    info_gap_ja = models.CharField(max_length=300, blank=True, default="")
+    # 补充框架(needs_info 时,结合本卡情况告诉补充人该写什么;双语,按阅览者语言展示)
+    info_framework_zh = models.TextField(blank=True, default="")
+    info_framework_ja = models.TextField(blank=True, default="")
 
     class Meta:
         verbose_name = "Issue AI State"

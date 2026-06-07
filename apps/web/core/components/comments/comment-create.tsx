@@ -14,6 +14,8 @@ import type { TIssueComment, TCommentsOperations } from "@plane/types";
 import { cn, isCommentEmpty } from "@plane/utils";
 // components
 import { LiteTextEditor } from "@/components/editor/lite-text";
+// BARSOUL 2026-06-06: 爱酱发起审批入口(评论框旁图标 → 表单, 替代评论区 @爱酱去污染)
+import { AichanApprovalButton } from "./aichan-approval-button";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 // services
@@ -106,6 +108,12 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
           handleSubmit(onSubmit)(e);
       }}
     >
+      {/* BARSOUL: 爱酱发起审批(issue 级 → 需 projectId);评论框去污染入口 */}
+      {projectId && (
+        <div className="flex items-center justify-end px-2 pt-1">
+          <AichanApprovalButton workspaceSlug={workspaceSlug} projectId={projectId} issueId={entityId} />
+        </div>
+      )}
       <Controller
         name="access"
         control={control}

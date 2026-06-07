@@ -14,6 +14,7 @@ export type TPendingApprovalItem = {
   issue_id: string | null;
   project_id: string | null;
   mode: "ALL" | "ANY" | "SEQUENTIAL";
+  subject?: string;
   role: "pending_approver" | "queued_approver";
 };
 

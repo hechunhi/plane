@@ -139,7 +139,7 @@ from .issue.attachment import (
     IssueAttachmentV2Endpoint,
 )
 
-from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint
+from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueAIApprovalEndpoint
 
 from .issue.ai_state import (
     IssueAIStateBatchEndpoint,

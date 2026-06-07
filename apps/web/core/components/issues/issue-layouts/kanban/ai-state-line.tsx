@@ -33,6 +33,9 @@ export type DerivedIssueState = {
   human_note: Bilingual;       // 人工补充说明(双语)
   corrected_by: string | null; // 最近补充/纠正者
   corrected_at: string | null;
+  needs_info: boolean;         // 信息完整性/留痕缺口:状态与材料矛盾/不足 → 要求人补充
+  info_gap: Bilingual;         // 缺什么/请补什么(双语)
+  info_framework: Bilingual;   // 补充框架(AI 理解 + 待澄清点;告诉补充人该写什么)
 };
 
 const STALL_TH = 4;
@@ -161,8 +164,13 @@ function _notify(id: string) { _subs.get(id)?.forEach((f) => f()); }
 function _store(id: string, v: DerivedIssueState | null) { _cache.set(id, v); _cacheTs.set(id, Date.now()); _notify(id); }
 function _fresh(id: string) { return _cacheTs.has(id) && Date.now() - (_cacheTs.get(id) || 0) < _TTL_MS; }
 export function getCachedAIState(id: string): DerivedIssueState | null { return _cache.get(id) ?? null; }
-/** 失效某卡缓存 → 订阅者重拉(人工补充/重判后刷新)。 */
-export function invalidateAIState(id: string) { _cache.delete(id); _cacheTs.delete(id); _notify(id); }
+// 全局「DIS 数据可能变了」事件 → 作业台(digest)等聚合视图据此重拉(它有自己的取数,
+// 不走 per-id 缓存,所以单靠 _notify(id) 刷不到它)。
+const _disChangeSubs = new Set<() => void>();
+export function onAIStateChange(fn: () => void): () => void { _disChangeSubs.add(fn); return () => { _disChangeSubs.delete(fn); }; }
+function _emitDISChange() { _disChangeSubs.forEach((f) => { try { f(); } catch { /* noop */ } }); }
+/** 失效某卡缓存 → 订阅者重拉(人工补充/重判后刷新)。同时广播全局变更给聚合视图。 */
+export function invalidateAIState(id: string) { _cache.delete(id); _cacheTs.delete(id); _notify(id); _emitDISChange(); }
 async function _flush() {
   const slug = _slug; const byProject = new Map(_pending); _pending.clear();
   for (const [projectId, idSet] of byProject) {
@@ -281,6 +289,23 @@ export function AICardBar({ issueId, projectId }: { issueId: string; projectId: 
   const sep = { marginTop: 8, paddingTop: 7, borderTop: "1px solid #f0f1f3" } as const;
   const row = "flex items-center gap-1.5 min-w-0 cursor-pointer rounded transition-colors group-hover/kanban-block:bg-[rgba(0,0,0,0.03)]";
   const spark = <span style={{ marginLeft: "auto", flex: "none", color: "#c0b6f0" }}><Ico d={ICON.sparkle} size={11} sw={1.6} /></span>;
+
+  // 留痕缺口(最高优先):状态与材料矛盾/不足 → 醒目「要補足」,提醒补充以完整留痕
+  if (s.needs_info) {
+    const gap = pick(s.info_gap, zh);
+    return (
+      <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3, color: "#b06d09" }}
+        title={gap || (zh ? "状态变更原因不明,请补充说明(留痕)" : "状態変更の理由が不明、補足してください(履歴)")}>
+        <Ico d={ICON.alert} size={12} sw={2} color="#d97706" />
+        <span style={{ fontWeight: 700, flex: "none" }}>{zh ? "要补充" : "要補足"}</span>
+        <span style={{ color: "#e3c98f", flex: "none" }}>·</span>
+        <span style={{ color: "#8a6d2b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+          {gap || (zh ? "请补充说明(留痕)" : "補足してください(履歴)")}
+        </span>
+        {spark}
+      </div>
+    );
+  }
 
   // 空状态兜底(minor b): UNKNOWN / 无 ball → 谦逊提示, 不给笃定结论
   if (s.state === "UNKNOWN" || !s.ball) {

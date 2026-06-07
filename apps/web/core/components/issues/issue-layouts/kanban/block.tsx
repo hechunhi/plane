@@ -321,7 +321,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
         // BARSOUL DIS v3: 整卡 hover → 全局 AI 当前态浮层(仅当该卡有派生态时)
         onMouseEnter={(e) => {
           const st = issue?.id ? getCachedAIState(issue.id) : null;
-          if (st && st.ball && st.state !== "UNKNOWN" && issue?.project_id) {
+          if (st && ((st.ball && st.state !== "UNKNOWN") || st.needs_info) && issue?.project_id) {
             aiPopover.show(issue.id, issue.project_id, e.currentTarget, {
               seq: issue.sequence_id ?? null,
               identifier: projectIdentifier ?? "",
