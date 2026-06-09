@@ -78,6 +78,7 @@ export function EmojiPicker(props: TCustomEmojiPicker) {
               searchDisabled={searchDisabled}
             />
           ),
+          className: "overflow-hidden",
         },
         {
           key: "icon",
@@ -90,11 +91,13 @@ export function EmojiPicker(props: TCustomEmojiPicker) {
               iconType={iconType}
             />
           ),
+          className: "h-80 overflow-hidden overflow-y-auto",
         },
       ].map((tab) => ({
         key: tab.key,
         label: tab.label,
         content: tab.content,
+        className: tab.className,
       })),
     [defaultIconColor, searchDisabled, searchPlaceholder, iconType, handleEmojiChange, handleIconChange]
   );
@@ -143,7 +146,7 @@ export function EmojiPicker(props: TCustomEmojiPicker) {
             ))}
           </Tabs.List>
           {tabs.map((tab) => (
-            <Tabs.Panel key={tab.key} value={tab.key} className="h-80 overflow-hidden overflow-y-auto">
+            <Tabs.Panel key={tab.key} value={tab.key} className={tab.className}>
               {tab.content}
             </Tabs.Panel>
           ))}

@@ -77,6 +77,17 @@
 - env（`compose.local.yml` api + `plane.env`）: `CARDS_INTERNAL_TOKEN` + `AIBOT_URL`（后端→ai-bot 内部信任）
 - 配套（非 fork source）: ai-bot `server.py` `/ai/invoke`+`/ai/compose-approval`；`approval.py` `LARK_REACHABLE=set()`（审批裁决去飞书，走 issue 内 barsoulCard）
 
+**全站统一 emoji 选择器 → emoji-mart（升级唯一共享内核 EmojiRoot, 2026-06-07）**
+- 全站 13 个 picker 入口（7 icon/logo + 6 reaction, 含 apps/space）都渲染同一个 `EmojiRoot`。把它**内核从 frimousse 换成 emoji-mart**，一处改、13 处全升级。内置: 最近使用/底部分类导航/搜索/肤色/暗色/多语言 chrome。
+- 依赖: `packages/propel/package.json` +`@emoji-mart/data`+`@emoji-mart/react`+`emoji-mart` **-frimousse**；`apps/web/package.json` **-emoji-picker-react**（死依赖）。**改依赖后必重新生成并提交根 `pnpm-lock.yaml`**（两个 Dockerfile `--frozen-lockfile`，否则构建硬失败）。host 无 pnpm → 用 docker `node:20`+corepack 跑 `pnpm install --lockfile-only` 重生锁文件（不写 host node_modules）。
+- `…/emoji-icon-picker/emoji/emoji.tsx`（**核心重写**）: `"use client"` + emoji-mart `<Picker>`；**保持 `onChange(emoji.native)` 契约**（下游 emojiToString + 13 caller 零改动）；`data={async()=>import("@emoji-mart/data")}` **懒加载**（~1.6MB 独立 chunk，严禁静态 import）；`dynamicWidth`/`navPosition=bottom`/`maxFrequentRows=2`/`previewPosition=none`/`skinTonePosition=search`。
+- `…/emoji-icon-picker/emoji/emoji-i18n.ts`（**新文件**）: 自带 en/ja/zh chrome i18n（**完整对象 → 不触发 emoji-mart 的 CDN/jsdelivr，纯本地离线**）；运行时探 locale(`localStorage.userLanguage`/`<html lang>`)+theme(`data-theme` 含 dark)。**关键词搜索仍英文**（@emoji-mart/data 限制，同旧 frimousse，非回归）。
+- `emoji-picker.tsx`（icon, 双 tab）: emoji tab 去外层 `h-80` 滚动（emoji-mart 自管）、icon tab 保留（per-tab className）。`emoji-reaction-picker.tsx`: 去 h-80 包裹 + 加 panel `onMouseDown/onClick/onKeyDown` 守卫（emoji-mart 搜索键不外泄 + 不塌 peek 面板, Escape 关）。
+- `apps/web/styles/globals.css` + `apps/space/styles/globals.css`: `em-emoji-picker { --font-family:inherit; --border-radius:8px; width:100% }`（CSS 变量穿透 shadow DOM；仅此自定义元素命中）。
+- **回收**了上一版临时「最近」层（被 emoji-mart 原生 Frequent 取代）: 删 `apps/web/core/hooks/use-recent-reactions.ts`、`quickReactions`/`handleQuick`/quick-row、两个评论文件的 recent 接线（display.tsx 顺带删未用的 `stringToEmoji` import，否则 oxlint `--deny-warnings` 卡 pre-commit）。
+- **构建**: propel 同喂 web+space → **两个镜像都重建**（plane-frontend + plane-space, tag barsoul-1.3.0）。`docker compose build` 是 no-op。
+- **tsc 备注**: `npx tsc -p apps/web/tsconfig.json` 单独跑 exit 1 且无诊断（缺 react-router typegen），别信其"clean"；真闸门是 `docker build` 的 `react-router build`。
+
 ---
 
 ## §B. 不在 fork source 内的 BARSOUL 定制（不冲突，但属全景）

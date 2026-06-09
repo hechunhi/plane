@@ -76,3 +76,12 @@
     0 0 4px --alpha(var(--background-color-accent-primary) / 40%) !important;
   will-change: transform, opacity;
 }
+
+/* BARSOUL 2026-06-07: 统一 emoji 选择器内核 emoji-mart(<em-emoji-picker>)向 Plane 靠拢。
+   CSS 变量穿透 shadow DOM;明暗主题由 EmojiRoot 的 theme prop 处理。仅此自定义元素命中。 */
+em-emoji-picker {
+  --font-family: inherit;
+  --border-radius: 8px;
+  width: 100%;
+  max-width: 100%;
+}

@@ -292,3 +292,12 @@ a[href*="/settings/billing"] {
     animation: none;
   }
 }
+
+/* BARSOUL 2026-06-07: 全站统一 emoji 选择器内核 emoji-mart(<em-emoji-picker>)向 Plane 靠拢。
+   CSS 变量穿透其 shadow DOM;明暗主题本身由 EmojiRoot 的 theme prop 处理。仅此自定义元素命中。 */
+em-emoji-picker {
+  --font-family: inherit;
+  --border-radius: 8px;
+  width: 100%;
+  max-width: 100%;
+}

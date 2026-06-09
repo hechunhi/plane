@@ -75,14 +75,19 @@ export function EmojiReactionPicker(props: EmojiReactionPickerProps) {
         align={finalAlign}
         sideOffset={8}
         data-prevent-outside-click="true"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // emoji-mart の検索入力キーが親(peek/エディタのショートカット)へ漏れない様に。
+          // Escape はピッカーを閉じる。
+          if (e.key === "Escape") {
+            handleToggle(false);
+            return;
+          }
+          e.stopPropagation();
+        }}
       >
-        <div className="h-80 overflow-hidden overflow-y-auto">
-          <EmojiRoot
-            onChange={handleEmojiChange}
-            searchPlaceholder={searchPlaceholder}
-            searchDisabled={searchDisabled}
-          />
-        </div>
+        <EmojiRoot onChange={handleEmojiChange} searchPlaceholder={searchPlaceholder} searchDisabled={searchDisabled} />
       </Popover.Panel>
     </Popover>
   );
