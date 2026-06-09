@@ -19,7 +19,7 @@ urlpatterns = [
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:page_id>/",
-        PageDetailAPIEndpoint.as_view(http_method_names=["delete"]),
+        PageDetailAPIEndpoint.as_view(http_method_names=["delete", "put"]),
         name="api-page-detail",
     ),
 ]

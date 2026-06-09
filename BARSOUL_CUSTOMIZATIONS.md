@@ -100,7 +100,7 @@
 > 用途: ai-bot(愛ちゃん)が「（共有）」カードをナレッジ Page 化 + アーカイブ退避し、
 >       ユーザーの unarchive で自動 undo するための、token-auth(X-Api-Key=愛ちゃん)端点。
 >       CE の v1 公開 API には Pages も issue archive も無いため新設。**升级冲突点**(全新文件优先)
-- `apps/api/plane/api/views/page.py` — **新建** `PageListCreateAPIEndpoint`(POST 建 Project Page, html-only, owned_by=request.user=愛ちゃん, **`parent` 対応→ カテゴリ親ページの子ページとしてネスト**; Page tree は parent_id 駆動=base.py:65 再帰CTE, sub_pages_data は触らず) + `PageDetailAPIEndpoint`(DELETE 撤回用, 所有者限定)。app 层 `PageViewSet.create/destroy` を踏襲、`ProjectLitePermission` 再利用
+- `apps/api/plane/api/views/page.py` — **新建** `PageListCreateAPIEndpoint`(POST 建 Project Page, html-only, owned_by=request.user=愛ちゃん, **`parent` 対応→ カテゴリ親ページの子ページとしてネスト**; Page tree は parent_id 駆動=base.py:65 再帰CTE, sub_pages_data は触らず) + `PageDetailAPIEndpoint`(**DELETE** 削除 + **PUT** description_html 全差し替え[binary=None リセット→ live が html から再 hydrate]、所有者限定)。月次「共有ナレッジ」ログを台帳から再生成→PUT する用途。app 层 `PageViewSet.create/destroy/partial_update` を踏襲、`ProjectLitePermission` 再利用
 - `apps/api/plane/api/urls/page.py` — **新建** 上記 2 端点の url(`.../projects/<pid>/pages/`, `.../pages/<page_id>/`)
 - `apps/api/plane/api/views/issue.py` — 追加 `IssueArchiveUnarchiveAPIEndpoint`(POST=archive / DELETE=unarchive)。app `IssueArchiveViewSet` と異なり **state.group 制約なし**(Backlog の共有カードも archive 可)。issue_activity + realtime webhook_activity は app と同一
 - `apps/api/plane/api/urls/work_item.py` — 追加 `.../work-items/<pk>/archive/`(POST+DELETE) + import

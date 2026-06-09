@@ -102,3 +102,41 @@ class PageDetailAPIEndpoint(BaseAPIView):
         ).update(parent=None)
         page.delete()  # SoftDeleteModel → deleted_at 設定
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def put(self, request, slug, project_id, page_id):
+        """BARSOUL: ページ本文(description_html)を丸ごと差し替え(愛ちゃん所有のみ)。
+        共有ナレッジの月次ログを「愛ちゃんが自分の台帳から毎回再生成 → 全文 PUT」
+        するために使う。description_binary=None にリセットし、live server が
+        新しい html から Yjs を再 hydrate するようにする(編集中の手動編集は
+        上書きされる前提 = 自動維持ページ)。"""
+        try:
+            page = Page.objects.get(
+                pk=page_id, workspace__slug=slug, projects__id=project_id
+            )
+        except Page.DoesNotExist:
+            return Response(
+                {"error": "Page not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        if str(page.owned_by_id) != str(request.user.id):
+            return Response(
+                {"error": "Only the owner can update via this endpoint"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        new_html = request.data.get("description_html")
+        if new_html is None:
+            return Response(
+                {"error": "description_html required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        old_html = page.description_html
+        page.description_html = new_html
+        page.description_binary = None  # live server が html から再 hydrate
+        if "name" in request.data:
+            page.name = request.data.get("name") or page.name
+        page.save(update_fields=["description_html", "description_binary", "name"])
+        page_transaction.delay(
+            new_description_html=new_html,
+            old_description_html=old_html,
+            page_id=str(page.id),
+        )
+        return Response({"id": str(page.id)}, status=status.HTTP_200_OK)
