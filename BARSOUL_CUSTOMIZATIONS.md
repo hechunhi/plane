@@ -96,6 +96,17 @@
 - `apps/web/core/components/issues/attachment/attachment-list-item.tsx` — 点击改派: 可预览→浮层, 否则下载
 - 原理: `/api/assets` cookie 鉴权端点; `<img>`/`<iframe>` 忽略 Content-Disposition 内联渲染（同编辑器内嵌图先例）; svg 经 `<img>` 不执行脚本(安全)
 
+**「（共有）」カード自動仕分け — 外部 API 端点（2026-06-09）**
+> 用途: ai-bot(愛ちゃん)が「（共有）」カードをナレッジ Page 化 + アーカイブ退避し、
+>       ユーザーの unarchive で自動 undo するための、token-auth(X-Api-Key=愛ちゃん)端点。
+>       CE の v1 公開 API には Pages も issue archive も無いため新設。**升级冲突点**(全新文件优先)
+- `apps/api/plane/api/views/page.py` — **新建** `PageListCreateAPIEndpoint`(POST 建 Project Page, html-only, owned_by=request.user=愛ちゃん) + `PageDetailAPIEndpoint`(DELETE 撤回用, 所有者限定)。app 层 `PageViewSet.create/destroy` を踏襲、`ProjectLitePermission` 再利用
+- `apps/api/plane/api/urls/page.py` — **新建** 上記 2 端点の url(`.../projects/<pid>/pages/`, `.../pages/<page_id>/`)
+- `apps/api/plane/api/views/issue.py` — 追加 `IssueArchiveUnarchiveAPIEndpoint`(POST=archive / DELETE=unarchive)。app `IssueArchiveViewSet` と異なり **state.group 制約なし**(Backlog の共有カードも archive 可)。issue_activity + realtime webhook_activity は app と同一
+- `apps/api/plane/api/urls/work_item.py` — 追加 `.../work-items/<pk>/archive/`(POST+DELETE) + import
+- `apps/api/plane/api/views/__init__.py` / `apps/api/plane/api/urls/__init__.py` — 上記 export + url 登録(`page_patterns`)
+- 赤線: SoR 書込はこれら端点 + 愛ちゃん token のみ(ADR-015); permission は既存再利用; plane-mq 不動(ADR-003); ai-bot 側ロジックは `~/llm-tools/ai-bot/server.py` `handle_share_router`(fork 外)
+
 ---
 
 ## §B. 不在 fork source 内的 BARSOUL 定制（不冲突，但属全景）

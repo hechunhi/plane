@@ -2787,3 +2787,97 @@ class IssueRelationListCreateAPIEndpoint(BaseAPIView):
             serializer_class(refetched_relations, many=True).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class IssueArchiveUnarchiveAPIEndpoint(BaseAPIView):
+    """BARSOUL 2026-06-09 (hechun): 外部 API で issue を archive/unarchive
+    (愛ちゃん X-Api-Key)。「（共有）」カードの自動仕分け(ナレッジ化後に板から
+    退避)と、その撤回(= ユーザーが Plane の archived ビューから unarchive する
+    と ai-bot が webhook で検知し自動 undo)に使う。
+
+    app 層 IssueArchiveViewSet と異なり **state.group の制約を課さない**
+    (Backlog の共有カードもそのまま archive 可能にする)。それ以外
+    (issue_activity + realtime webhook_activity)は app 層と同一。
+    POST=archive / DELETE=unarchive。
+    """
+
+    permission_classes = [ProjectEntityPermission]
+
+    def post(self, request, slug, project_id, pk):
+        issue = Issue.issue_objects.get(
+            workspace__slug=slug, project_id=project_id, pk=pk
+        )
+        if issue.archived_at:
+            return Response(
+                {"archived_at": str(issue.archived_at)}, status=status.HTTP_200_OK
+            )
+        issue_activity.delay(
+            type="issue.activity.updated",
+            requested_data=json.dumps(
+                {"archived_at": str(timezone.now().date()), "automation": False}
+            ),
+            actor_id=str(request.user.id),
+            issue_id=str(issue.id),
+            project_id=str(project_id),
+            current_instance=json.dumps(
+                IssueSerializer(issue).data, cls=DjangoJSONEncoder
+            ),
+            epoch=int(timezone.now().timestamp()),
+            notification=True,
+            origin=base_host(request=request, is_app=True),
+        )
+        issue.archived_at = timezone.now().date()
+        issue.save()
+        # BARSOUL realtime: 他窓口の板からも消えるよう webhook を発火(app と同様)
+        webhook_activity.delay(
+            event="issue",
+            verb="updated",
+            field="archived_at",
+            old_value=None,
+            new_value=str(issue.archived_at),
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(issue.id),
+            old_identifier=None,
+            new_identifier=None,
+        )
+        return Response({"archived_at": str(issue.archived_at)}, status=status.HTTP_200_OK)
+
+    def delete(self, request, slug, project_id, pk):
+        issue = Issue.objects.get(
+            workspace__slug=slug,
+            project_id=project_id,
+            archived_at__isnull=False,
+            pk=pk,
+        )
+        issue_activity.delay(
+            type="issue.activity.updated",
+            requested_data=json.dumps({"archived_at": None}),
+            actor_id=str(request.user.id),
+            issue_id=str(issue.id),
+            project_id=str(project_id),
+            current_instance=json.dumps(
+                IssueSerializer(issue).data, cls=DjangoJSONEncoder
+            ),
+            epoch=int(timezone.now().timestamp()),
+            notification=True,
+            origin=base_host(request=request, is_app=True),
+        )
+        issue.archived_at = None
+        issue.save()
+        # BARSOUL realtime: 他窓口の板にカードが復活する
+        webhook_activity.delay(
+            event="issue",
+            verb="updated",
+            field="archived_at",
+            old_value=None,
+            new_value=None,
+            actor_id=str(request.user.id),
+            slug=slug,
+            current_site=base_host(request=request, is_app=True),
+            event_id=str(issue.id),
+            old_identifier=None,
+            new_identifier=None,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -14,6 +14,7 @@ from .user import urlpatterns as user_patterns
 from .work_item import urlpatterns as work_item_patterns
 from .invite import urlpatterns as invite_patterns
 from .sticky import urlpatterns as sticky_patterns
+from .page import urlpatterns as page_patterns  # BARSOUL: 共有自動仕分け用 Page 端点
 
 urlpatterns = [
     *asset_patterns,
@@ -28,4 +29,5 @@ urlpatterns = [
     *work_item_patterns,
     *invite_patterns,
     *sticky_patterns,
+    *page_patterns,
 ]

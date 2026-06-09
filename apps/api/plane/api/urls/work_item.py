@@ -20,6 +20,7 @@ from plane.api.views import (
     WorkspaceIssueAPIEndpoint,
     IssueSearchEndpoint,
     IssueRelationListCreateAPIEndpoint,
+    IssueArchiveUnarchiveAPIEndpoint,
 )
 
 # Deprecated url patterns
@@ -164,6 +165,12 @@ new_url_patterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/work-items/<uuid:issue_id>/relations/",
         IssueRelationListCreateAPIEndpoint.as_view(http_method_names=["get", "post"]),
         name="work-item-relation-list",
+    ),
+    # BARSOUL 2026-06-09: 共有カード自動仕分け用 archive/unarchive(愛ちゃん)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/work-items/<uuid:pk>/archive/",
+        IssueArchiveUnarchiveAPIEndpoint.as_view(http_method_names=["post", "delete"]),
+        name="work-item-archive-unarchive",
     ),
 ]
 
