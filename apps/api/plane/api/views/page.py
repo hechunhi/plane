@@ -51,12 +51,22 @@ class PageListCreateAPIEndpoint(BaseAPIView):
                 page_id=serializer.data["id"],
             )
             page = Page.objects.get(pk=serializer.data["id"])
+            # BARSOUL: ネスト — カテゴリ親ページの下に子ページとしてぶら下げる
+            #   (Page tree は parent_id 駆動 / base.py:65 の再帰 CTE)。親が
+            #   同プロジェクトに存在する場合のみ設定。
+            parent_id = request.data.get("parent")
+            if parent_id and Page.objects.filter(
+                pk=parent_id, workspace__slug=slug, projects__id=project_id
+            ).exists():
+                page.parent_id = parent_id
+                page.save(update_fields=["parent"])
             return Response(
                 {
                     "id": str(page.id),
                     "name": page.name,
                     "project_id": str(project_id),
                     "workspace_slug": slug,
+                    "parent_id": (str(page.parent_id) if page.parent_id else None),
                 },
                 status=status.HTTP_201_CREATED,
             )
