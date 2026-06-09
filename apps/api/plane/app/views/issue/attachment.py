@@ -179,10 +179,13 @@ class IssueAttachmentV2Endpoint(BaseAPIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            # BARSOUL 2026-06-07 (hechun): 支持 ?disposition=inline 内联预览(图片/PDF/文本)。
+            # 默认仍 attachment(保持旧下载行为);仅显式 inline 时内联。权限不变(@allow_permission)。
+            _disp = "inline" if request.GET.get("disposition") == "inline" else "attachment"
             storage = S3Storage(request=request)
             presigned_url = storage.generate_presigned_url(
                 object_name=asset.asset.name,
-                disposition="attachment",
+                disposition=_disp,
                 filename=asset.attributes.get("name"),
             )
             return HttpResponseRedirect(presigned_url)

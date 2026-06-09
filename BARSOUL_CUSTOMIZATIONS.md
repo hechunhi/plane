@@ -88,6 +88,14 @@
 - **构建**: propel 同喂 web+space → **两个镜像都重建**（plane-frontend + plane-space, tag barsoul-1.3.0）。`docker compose build` 是 no-op。
 - **tsc 备注**: `npx tsc -p apps/web/tsconfig.json` 单独跑 exit 1 且无诊断（缺 react-router typegen），别信其"clean"；真闸门是 `docker build` 的 `react-router build`。
 
+**附件内联预览（图片/PDF/文本, 2026-06-07）**
+- `apps/api/plane/app/views/issue/attachment.py` — issue attachment GET 支持 `?disposition=inline`（默认仍 `attachment` 下载, 权限不变）。PDF/文本 iframe 内联需要。**升级冲突点**
+- `packages/types/src/issues/issue_attachment.ts` — `attributes.type?`（mime, 上游漏声明, 预览判定用）
+- `packages/utils/src/attachment.ts` — `getAttachmentPreviewKind(mime, ext)` + `TAttachmentPreviewKind`
+- `apps/web/core/components/issues/attachment/attachment-preview-modal.tsx` — **新建** ModalCore 灯箱（image=`<img>` / pdf·text=`<iframe ?disposition=inline>` + 下载/新标签兜底 + `data-prevent-outside-click`）
+- `apps/web/core/components/issues/attachment/attachment-list-item.tsx` — 点击改派: 可预览→浮层, 否则下载
+- 原理: `/api/assets` cookie 鉴权端点; `<img>`/`<iframe>` 忽略 Content-Disposition 内联渲染（同编辑器内嵌图先例）; svg 经 `<img>` 不执行脚本(安全)
+
 ---
 
 ## §B. 不在 fork source 内的 BARSOUL 定制（不冲突，但属全景）

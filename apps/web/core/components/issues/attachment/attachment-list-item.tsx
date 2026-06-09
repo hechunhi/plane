@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { useState } from "react";
 import { observer } from "mobx-react";
 
 import { useTranslation } from "@plane/i18n";
@@ -13,11 +14,13 @@ import type { TIssueServiceType } from "@plane/types";
 import { EIssueServiceType } from "@plane/types";
 // ui
 import { CustomMenu } from "@plane/ui";
-import { convertBytesToSize, getFileExtension, getFileName, getFileURL, renderFormattedDate } from "@plane/utils";
+import { convertBytesToSize, getAttachmentPreviewKind, getFileExtension, getFileName, getFileURL, renderFormattedDate } from "@plane/utils";
 // components
 //
 import { ButtonAvatars } from "@/components/dropdowns/member/avatar";
 import { getFileIcon } from "@/components/icons";
+// BARSOUL: 附件内联预览浮层
+import { AttachmentPreviewModal } from "./attachment-preview-modal";
 // helpers
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -46,8 +49,10 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
   const fileExtension = getFileExtension(attachment?.attributes.name ?? "");
   const fileIcon = getFileIcon(fileExtension, 18);
   const fileURL = getFileURL(attachment?.asset_url ?? "");
+  const previewKind = getAttachmentPreviewKind(attachment?.attributes.type, fileExtension);
   // hooks
   const { isMobile } = usePlatformOS();
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
   if (!attachment) return <></>;
 
@@ -57,7 +62,9 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          window.open(fileURL, "_blank");
+          // BARSOUL: 可预览(图片/PDF/文本)→ 内联浮层; 否则保持原下载行为
+          if (previewKind) setIsPreviewOpen(true);
+          else window.open(fileURL, "_blank");
         }}
       >
         <div className="group flex h-11 items-center justify-between gap-3 pr-2 pl-9 hover:bg-surface-2">
@@ -101,6 +108,13 @@ export const IssueAttachmentsListItem = observer(function IssueAttachmentsListIt
           </div>
         </div>
       </button>
+      <AttachmentPreviewModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        kind={previewKind}
+        assetUrl={attachment.asset_url}
+        fileName={`${fileName}.${fileExtension}`}
+      />
     </>
   );
 });

@@ -11,6 +11,7 @@ export type TIssueAttachment = {
   attributes: {
     name: string;
     size: number;
+    type?: string; // BARSOUL: mime 类型(运行时后端返回, 上游类型漏声明)→ 附件预览判定用
   };
   asset_url: string;
   issue_id: string;

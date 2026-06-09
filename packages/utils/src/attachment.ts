@@ -36,3 +36,16 @@ export const convertBytesToSize = (bytes: number) => {
 
   return size;
 };
+
+// BARSOUL 2026-06-07 (hechun): 附件内联预览类型判定(mime 优先, 扩展名兜底)。
+// image/* → <img>(含 svg; 经 <img> 加载不执行脚本, 安全);pdf/text → <iframe ?disposition=inline>。
+export type TAttachmentPreviewKind = "image" | "pdf" | "text" | null;
+const _PREVIEW_TEXT_EXT = new Set(["txt", "md", "markdown", "csv", "log", "json", "yml", "yaml", "xml"]);
+export const getAttachmentPreviewKind = (mime?: string, ext?: string): TAttachmentPreviewKind => {
+  const m = (mime || "").toLowerCase();
+  const e = (ext || "").toLowerCase();
+  if (m.startsWith("image/") || ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"].includes(e)) return "image";
+  if (m === "application/pdf" || e === "pdf") return "pdf";
+  if (m.startsWith("text/") || _PREVIEW_TEXT_EXT.has(e)) return "text";
+  return null;
+};
