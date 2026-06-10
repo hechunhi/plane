@@ -688,8 +688,28 @@ class IssueAIApprovalEndpoint(BaseAPIView):
                 "workspace_slug": slug,
             }
             ep = "/ai/invoke"
+        elif action == "decide":
+            # B-2e(2026-06-10): 審査バナーの承認/却下ボタン → apply_decision。
+            # actor は session 解析(可归因 §X.3); 資格照合は ai-bot 側。
+            no = (data.get("no") or "").strip()[:120]
+            decision = (data.get("decision") or "").strip().upper()
+            if not no or decision not in ("OK", "NO"):
+                return Response({"error": "no + decision(OK|NO) required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            actor_name = (getattr(request.user, "display_name", "")
+                          or getattr(request.user, "first_name", "")
+                          or str(getattr(request.user, "email", "") or "")).strip()
+            body = {
+                "actor_id": str(request.user.id),
+                "actor_name": actor_name,
+                "no": no,
+                "decision": decision,
+                "reason": (data.get("reason") or "").strip()[:500],
+                "workspace_slug": slug,
+            }
+            ep = "/ai/decide-approval"
         else:
-            return Response({"error": "action must be analyze|compose|invoke"},
+            return Response({"error": "action must be analyze|compose|invoke|decide"},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             r = _req.post(_AIBOT_BASE + ep, json=body, headers=headers, timeout=60)
@@ -736,6 +756,10 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
         # 再翻訳(self-invalidating, edit hook 不要)。tokenize は決定論的(同 HTML→
         # 同 ⟦N⟧ 順)なので masked 訳文 cache + frontend 都度 detokenize で整合。
         override_text = (request.data or {}).get("text", "")
+        # BARSOUL 2026-06-07 (hechun): force=true → 跳过缓存命中、强制重译并覆盖。
+        # 用于「译文错了(如只剩@提及/塌缩)」时用户主动重翻 —— 否则坏译文 hash 命中后
+        # 永远返回同一份坏结果,无从纠正。
+        o_force = bool((request.data or {}).get("force"))
         if override_text and override_text.strip():
             o_src = (request.data or {}).get("source", "").strip().lower()[:2]
             o_src = o_src if o_src in ("zh", "ja") else (_detect_src(override_text) or "auto")
@@ -745,10 +769,11 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
 
             src_hash = _hashlib.sha256(override_text.encode("utf-8")).hexdigest()
 
-            # ① cache hit: (comment, target_lang) で hash 一致 → 即返(LLM 無し)
+            # ① cache hit: (comment, target_lang) で hash 一致 → 即返(LLM 無し)。
+            #    force=true は cache を読み飛ばし強制再翻訳(下の ② へ落とす)。
             crow = CommentTranslation.all_objects.filter(
                 comment=comment, target_lang=o_tgt).first()
-            if (crow and not crow.deleted_at and crow.text
+            if (not o_force and crow and not crow.deleted_at and crow.text
                     and crow.source_hash == src_hash):
                 return Response({
                     "text": crow.text, "source_lang": crow.source_lang,

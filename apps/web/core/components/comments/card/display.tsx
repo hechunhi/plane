@@ -236,7 +236,7 @@ function CommentTranslatable(props: {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-          body: JSON.stringify({ target_lang: target, text: tokenText, source: src }),
+          body: JSON.stringify({ target_lang: target, text: tokenText, source: src, force }),
         }
       );
       const j = await r.json();
@@ -264,12 +264,16 @@ function CommentTranslatable(props: {
         showTr: isSelf ? `查看${tgtName}译文` : "显示译文",
         from: isSelf ? `机器译文 · ${tgtName}` : `翻译自 ${srcName}`,
         loading: "翻译中…",
+        retr: "重新翻译",
+        retrTip: "译文有误/缺失时重新翻译",
       }
     : {
         showOrig: "原文を表示",
         showTr: isSelf ? `${tgtName}訳を見る` : "訳文を表示",
         from: isSelf ? `機械翻訳 · ${tgtName}` : `${srcName}から翻訳`,
         loading: "翻訳中…",
+        retr: "再翻訳",
+        retrTip: "訳文に誤り/欠落がある場合に再翻訳",
       };
 
   const showingTranslation = !!trHtml && wantTranslation;
@@ -301,6 +305,13 @@ function CommentTranslatable(props: {
             >
               {L.from}
             </span>
+            {/* BARSOUL 2026-06-07 (hechun): 译文错了(只剩@提及/塌缩)时可主动重翻。
+                force=true 跳过后端缓存,强制重新翻译并覆盖坏结果。 */}
+            <span className="opacity-50">·</span>
+            <button type="button" onClick={() => void doFetch(true)} title={L.retrTip}
+              className="text-accent-primary hover:underline">
+              {L.retr}
+            </button>
           </>
         )}
         <span className="flex-1" />

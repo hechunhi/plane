@@ -261,7 +261,11 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
    */
   unreadCountForIssueIds = computedFn((issueIds: string[]): number => {
     void this.unreadNotificationsCount.total_unread_notifications_count;
-    if (!issueIds || issueIds.length === 0 || isEmpty(this.notifications)) return 0;
+    // BARSOUL 2026-06-08 (hechun): sub-group 看板では groupIssueIds が配列でなく
+    // {subGroupId: string[]} の **object** になり、`.length===0` を素通り → new Set(object)
+    // が "not iterable" で看板全体をクラッシュさせていた。Array.isArray で堅牢化
+    // (非配列は未読 0 で穏当に退避、クラッシュさせない)。
+    if (!Array.isArray(issueIds) || issueIds.length === 0 || isEmpty(this.notifications)) return 0;
     const idSet = new Set(issueIds);
     let count = 0;
     for (const n of Object.values(this.notifications || {})) {

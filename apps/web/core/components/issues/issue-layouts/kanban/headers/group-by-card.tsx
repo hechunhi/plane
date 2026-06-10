@@ -63,7 +63,10 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
   // BARSOUL A2: 列の未読合計（red。0 は非表示）。
   // 注: 完了/取消 列の課題でも 復盤/補足 で再活性化することがあるため
   // muted 抑制はしない(2026-05-25 ユーザ反饋で方針修正)。
-  const groupUnread = useGroupUnreadCount(groupIssueIds || []);
+  // sub-group 時 groupIssueIds は {subGroupId: string[]} の object → flat 化(配列以外は退避)。
+  const groupUnread = useGroupUnreadCount(
+    Array.isArray(groupIssueIds) ? groupIssueIds : Object.values((groupIssueIds as any) || {}).flat() as string[]
+  );
   const showGroupUnread = groupUnread > 0;
   const verticalAlignPosition = sub_group_by ? false : collapsedGroups?.group_by.includes(column_id);
   // states
