@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
@@ -306,11 +307,13 @@ function CommentTranslatable(props: {
               {L.from}
             </span>
             {/* BARSOUL 2026-06-07 (hechun): 译文错了(只剩@提及/塌缩)时可主动重翻。
-                force=true 跳过后端缓存,强制重新翻译并覆盖坏结果。 */}
-            <span className="opacity-50">·</span>
+                force=true 跳过后端缓存,强制重新翻译并覆盖坏结果。
+                2026-06-10: 蓝字「重新翻译」与「显示原文」同色易误点 → 弱化成
+                灰色刷新小图标(hover 才提亮, tooltip 说明)。 */}
             <button type="button" onClick={() => void doFetch(true)} title={L.retrTip}
-              className="text-accent-primary hover:underline">
-              {L.retr}
+              aria-label={L.retr}
+              className="grid size-4 place-items-center rounded text-tertiary transition-colors hover:bg-layer-1 hover:text-secondary">
+              <RefreshCw className="size-3" strokeWidth={1.75} />
             </button>
           </>
         )}
