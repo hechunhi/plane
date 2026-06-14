@@ -1754,6 +1754,12 @@ class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
             )
         source_lang = (body.get("source_lang") or "").strip().lower()[:8]
         translated_by = (body.get("translated_by") or "aichan")[:64]
+        # BARSOUL 2026-06-10: source_hash = sha256(comment_html)。on-demand 端点が
+        # 同じ basis でキャッシュ照合する → prewarm(此処)で書いた訳文 HTML を
+        # on-demand が hit できる(再翻訳回避)。comment 編集→html 変化→hash 変化→
+        # 自然 miss 再翻訳。
+        import hashlib as _hl
+        src_hash = _hl.sha256((comment.comment_html or "").encode("utf-8")).hexdigest()
 
         # BARSOUL: SoftDeleteModel 派生 — 既存(削除済含む) を all_objects で逆引き。
         # 削除済を見つけたら deleted_at をクリアして「復活+更新」。
@@ -1767,6 +1773,7 @@ class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
             obj.text = text
             obj.source_lang = source_lang
             obj.translated_by = translated_by
+            obj.source_hash = src_hash
             obj.updated_by_id = request.user.id if request.user.is_authenticated else None
             obj.save()
             created = False
@@ -1779,6 +1786,7 @@ class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
                 text=text,
                 source_lang=source_lang,
                 translated_by=translated_by,
+                source_hash=src_hash,
                 created_by_id=request.user.id if request.user.is_authenticated else None,
                 updated_by_id=request.user.id if request.user.is_authenticated else None,
             )
@@ -1891,6 +1899,21 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
         if actor_kind not in ("person", "external", ""):
             actor_kind = ""
 
+        # DIS 子树 rollup: 代表子 UUID 校验 + 计数安全解析
+        rep_child_id = (body.get("rep_child_id") or "").strip() or None
+        if rep_child_id:
+            try:
+                import uuid as _u
+                rep_child_id = str(_u.UUID(rep_child_id))
+            except Exception:
+                rep_child_id = None
+
+        def _i(k):
+            try:
+                return max(0, int(body.get(k) or 0))
+            except Exception:
+                return 0
+
         fields = dict(
             state=state,
             ball=ball,
@@ -1918,6 +1941,15 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
             info_gap_ja=(body.get("info_gap_ja") or "")[:300],
             info_framework_zh=(body.get("info_framework_zh") or "")[:800],
             info_framework_ja=(body.get("info_framework_ja") or "")[:800],
+            # DIS 子树 rollup(父任务汇总): 决策 code 定, 叙述 gemma; 每次重判覆盖
+            is_parent=bool(body.get("is_parent")),
+            subtree_total=_i("subtree_total"),
+            subtree_active=_i("subtree_active"),
+            subtree_done=_i("subtree_done"),
+            subtree_blocked=_i("subtree_blocked"),
+            subtree_tension_zh=(body.get("subtree_tension_zh") or "")[:300],
+            subtree_tension_ja=(body.get("subtree_tension_ja") or "")[:300],
+            rep_child_id=rep_child_id,
             updated_by_id=request.user.id if request.user.is_authenticated else None,
         )
 
@@ -1956,6 +1988,48 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class IssueSubtreeDISAPIEndpoint(BaseAPIView):
+    """BARSOUL DIS 子树 rollup 取材: 父→直接子卡 + 各子 DIS + snooze + state(一次)。
+    GET /api/v1/workspaces/{slug}/projects/{pid}/issues/{iid}/subtree-dis/
+    ai-bot 拉这个 + 自己 PG 的审批冻结 → code 分类 rollup。**用 Issue.objects 让 snooze/各组子都可见**
+    (绝不用 issue_objects active manager, 否则 snooze 子被过滤掉, rollup 看不到 → 误判)。
+    决策红线在 ai-bot code 侧守; 此处只供数据。"""
+
+    permission_classes = [ProjectLitePermission]
+
+    def get(self, request, slug, project_id, issue_id):
+        children = list(
+            Issue.objects.filter(
+                parent_id=issue_id, workspace__slug=slug, project_id=project_id,
+                archived_at__isnull=True, is_draft=False,
+            ).select_related("state")
+        )
+        states = {
+            str(s.issue_id): s
+            for s in IssueAIState.objects.filter(issue__parent_id=issue_id, project_id=project_id)
+        }
+        out = []
+        for c in children:
+            ai = states.get(str(c.id))
+            out.append({
+                "id": str(c.id), "sequence_id": c.sequence_id, "name": c.name,
+                "state_group": c.state.group if c.state_id else None,
+                "snoozed_until": c.snoozed_until.isoformat() if c.snoozed_until else None,
+                "ai": ({
+                    "state": ai.state, "ball": ai.ball or "",
+                    "current_actor": ai.current_actor or "", "actor_kind": ai.actor_kind or "",
+                    "actor_user_id": str(ai.actor_user_id) if ai.actor_user_id else None,
+                    "next_action": ai.next_action or "", "next_action_ja": ai.next_action_ja or "",
+                    "waiting_on_zh": ai.waiting_on_zh or "", "waiting_on_ja": ai.waiting_on_ja or "",
+                    "due_date": ai.due_date.isoformat() if ai.due_date else None,
+                    "stale_days": ai.stale_days, "confidence": ai.confidence,
+                    "needs_info": bool(ai.needs_info), "unassigned": bool(ai.unassigned),
+                    "updated_at": ai.updated_at.isoformat() if ai.updated_at else None,
+                } if ai else None),
+            })
+        return Response({"children": out, "count": len(out)}, status=status.HTTP_200_OK)
 
 
 class IssueActivityListAPIEndpoint(BaseAPIView):
@@ -2881,3 +2955,80 @@ class IssueArchiveUnarchiveAPIEndpoint(BaseAPIView):
             new_identifier=None,
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class SmartTableBindingUpsertAPIEndpoint(BaseAPIView):
+    """BARSOUL: 反应规则「绑定随边走」执行端点 (ai-bot 专用)。见 smart-table-mvp.md §12。
+    POST /api/v1/workspaces/{slug}/projects/{pid}/issues/{iid}/smart-table-binding/
+    Body: {table: 表名, form?: 表单名, row?: "new"|"same-as-origin", origin_issue_id?}
+    row=same-as-origin → 取 origin 卡绑定的行(同一订单多阶段卡写同一行片)。
+    幂等: 同表已绑只对齐 form/row, 不重复建行(label 事件会反复 fire)。
+    Auth: ProjectLitePermission (X-Api-Key = ai-bot)。绝不写 SoR — 只动 smart_* 自有表。"""
+
+    permission_classes = [ProjectLitePermission]
+
+    def post(self, request, slug, project_id, issue_id):
+        from plane.db.models import SmartForm, SmartRow, SmartTable, SmartTableIssueBinding
+
+        body = request.data or {}
+        table_name = (body.get("table") or "").strip()
+        form_name = (body.get("form") or "").strip()
+        row_strategy = (body.get("row") or "new").strip()
+        origin_id = body.get("origin_issue_id")
+        if not table_name:
+            return Response({"error": "table required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+        t = (SmartTable.objects.filter(workspace__slug=slug, project_id=project_id, name=table_name).first()
+             or SmartTable.objects.filter(workspace__slug=slug, shared_workspace=True, name=table_name).first())
+        if t is None:
+            return Response({"skipped": f"table {table_name} not found"}, status=status.HTTP_200_OK)
+        form = SmartForm.objects.filter(table=t, name=form_name).first() if form_name else None
+        row = None
+        if row_strategy == "same-as-origin":
+            ob = (SmartTableIssueBinding.objects.filter(issue_id=origin_id, table=t)
+                  .select_related("row").first()) if origin_id else None
+            if not ob or not ob.row_id:
+                return Response({"skipped": "origin has no binding row"}, status=status.HTTP_200_OK)
+            row = ob.row
+        uid = request.user.id if request.user and request.user.is_authenticated else None
+        existing = SmartTableIssueBinding.objects.filter(issue=issue).select_related("row").first()
+        if existing and str(existing.table_id) == str(t.id):
+            fields = []
+            if form and str(existing.form_id or "") != str(form.id):
+                existing.form = form
+                fields.append("form")
+            if row is not None and str(existing.row_id or "") != str(row.id):
+                if existing.row_id and existing.row and existing.row.status == "draft":
+                    SmartRow.objects.filter(pk=existing.row_id, status="draft").update(deleted_at=timezone.now())
+                existing.row = row
+                existing.committed = row.status == "committed"
+                fields += ["row", "committed"]
+            if fields:
+                existing.updated_by_id = uid
+                existing.save(update_fields=fields + ["updated_by", "updated_at"])
+            b = existing
+        else:
+            now = timezone.now()
+            if existing:
+                if existing.row_id:
+                    SmartRow.objects.filter(pk=existing.row_id, status="draft").update(deleted_at=now)
+                existing.deleted_at = now
+                existing.save(update_fields=["deleted_at"])
+            if row is None:
+                row = SmartRow.objects.create(
+                    table=t, source_issue=issue, status="draft", cells={},
+                    position=SmartRow.objects.filter(table=t).count(),
+                    project_id=t.project_id, workspace_id=t.workspace_id,
+                    created_by_id=uid, updated_by_id=uid)
+            b = SmartTableIssueBinding.objects.create(
+                issue=issue, table=t, form=form, row=row,
+                committed=(row.status == "committed"),
+                project_id=project_id, workspace_id=issue.workspace_id,
+                created_by_id=uid, updated_by_id=uid)
+        return Response(
+            {"bound": True, "table": t.name, "form": (form.name if form else None),
+             "row_id": str(b.row_id) if b.row_id else None},
+            status=status.HTTP_200_OK)

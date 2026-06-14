@@ -115,46 +115,22 @@ function useAutoTranslatePref(): [boolean, (v: boolean) => void] {
   return [v, set];
 }
 
-// ── 富文本 tokenize/rebuild: 画像/@mention を ⟦N⟧ 占位符化して翻訳 → 復元 ──
-// 翻訳は文字のみ、画像(image-component)/メンション(mention-component)は
-// 原 HTML をそのまま保持 → 訳文も read-only editor で描画 → 画像表示 + @名前解決。
-const RICH_NODE_RE = /<(mention-component|image-component)\b[^>]*><\/\1>/gi;
-const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-function tokenizeHtml(html: string): { text: string; tokens: string[] } {
-  const tokens: string[] = [];
-  const placed = (html || "").replace(RICH_NODE_RE, (m) => {
-    const i = tokens.length;
-    tokens.push(m);
-    return ` ⟦${i}⟧ `;
-  });
-  const text = placed
-    .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&amp;/gi, "&")
-    .replace(/[ \t]+/g, " ")
-    .replace(/ *\n */g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return { text, tokens };
+// ── 富文本翻訳(2026-06-10 hechun): 構造保持はサーバ側(ai-bot translate_html)──
+// 旧実装はここで HTML を平文 tokenize → 訳文を <p> で再構築 → 段落以外(色/見出し/
+// リスト/太字)が全消失していた。新実装はサーバが comment_html の DOM テキスト
+// ノードだけ翻訳し同じ DOM へ書き戻す → 訳文 HTML がそのまま「排版一模一样」。
+// frontend は target_lang を送り、返ってきた訳文 HTML を read-only editor で描画
+// するだけ(tokenize/rebuild 不要)。src 判定用に平文だけ DOM から取り出す。
+function htmlToPlain(html: string): string {
+  if (typeof window === "undefined") return (html || "").replace(/<[^>]+>/g, " ");
+  try {
+    const d = new DOMParser().parseFromString(html || "", "text/html");
+    return (d.body.textContent || "").trim();
+  } catch {
+    return (html || "").replace(/<[^>]+>/g, " ");
+  }
 }
 
-function rebuildHtml(translated: string, tokens: string[]): string {
-  const paras = translated.split(/\n+/).map((s) => s.trim()).filter(Boolean);
-  const out = paras.map((p) => {
-    const sole = p.match(/^⟦(\d+)⟧$/);
-    if (sole) {
-      const tok = tokens[Number(sole[1])];
-      if (tok && /^<image-component/i.test(tok)) return tok; // ブロック画像は <p> で包まない
-    }
-    const body = escapeHtml(p).replace(/⟦(\d+)⟧/g, (_m, i) => tokens[Number(i)] ?? "");
-    return `<p class="editor-paragraph-block">${body}</p>`;
-  });
-  return out.join("") || "<p></p>";
-}
-
-const stripTokens = (s: string) => s.replace(/⟦\d+⟧/g, "");
 const otherLang = (l: "zh" | "ja"): "zh" | "ja" => (l === "zh" ? "ja" : "zh");
 
 // 行内「自動翻訳」トグル(popover 廃止 — 定位ライブラリ不要 = 絶対壊れない)。
@@ -198,12 +174,9 @@ function CommentTranslatable(props: {
   const viewer: "zh" | "ja" = currentLocale === "ja" ? "ja" : "zh";
   const trEditorRef = useRef<EditorRefApi>(null);
 
-  // comment_html を tokenize(画像/@mention を占位符化)
-  const { text: tokenText, tokens } = useMemo(
-    () => tokenizeHtml(comment?.comment_html || ""),
-    [comment?.comment_html]
-  );
-  const plainText = stripTokens(tokenText);
+  // src 判定用の平文(DOM textContent)。翻訳本体はサーバが comment_html を
+  // 構造保持で訳す → frontend は target_lang を送り訳文 HTML を描画するだけ。
+  const plainText = useMemo(() => htmlToPlain(comment?.comment_html || ""), [comment?.comment_html]);
   const src = detectSrc(plainText);
   // 翻訳 UI を出せる条件(自言語でも「プレビュー」として出す)。
   // 2026-06-06: 爱酱(AI)含め全コメント対象 — actor で除外しない(hechun)。
@@ -237,19 +210,20 @@ function CommentTranslatable(props: {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-          body: JSON.stringify({ target_lang: target, text: tokenText, source: src, force }),
+          // text 無し → サーバが comment_html を構造保持翻訳し訳文 HTML を返す。
+          body: JSON.stringify({ target_lang: target, source: src, force }),
         }
       );
       const j = await r.json();
       // 生エラー文("translation failed")は出さず、穏やかな再試行可能メッセージに。
       if (!r.ok) setErrorMsg(viewer === "zh" ? "翻译暂时不可用" : "翻訳が一時的に失敗しました");
-      else setTrHtml(rebuildHtml(j.text || "", tokens));
+      else setTrHtml(j.text || ""); // 構造保持 HTML をそのまま描画
     } catch {
       setErrorMsg(viewer === "zh" ? "网络错误，请重试" : "ネットワークエラー、再試行してください");
     } finally {
       setLoading(false);
     }
-  }, [workspaceSlug, projectId, issueId, comment.id, target, tokenText, src, tokens, viewer]);
+  }, [workspaceSlug, projectId, issueId, comment.id, target, src, viewer]);
 
   useEffect(() => {
     if (wantTranslation && !trHtml && !fetchedRef.current) doFetch();

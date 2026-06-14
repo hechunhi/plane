@@ -760,6 +760,71 @@ class CommentTranslateOnDemandEndpoint(BaseAPIView):
         # 用于「译文错了(如只剩@提及/塌缩)」时用户主动重翻 —— 否则坏译文 hash 命中后
         # 永远返回同一份坏结果,无从纠正。
         o_force = bool((request.data or {}).get("force"))
+
+        # ── BARSOUL 2026-06-10 (hechun): 富文本「排版一模一样」翻訳(主路)──
+        # frontend は target_lang のみ送る(text 無し)。サーバが comment_html を
+        # 読み、ai-bot /translate {html} で **構造保持翻訳**(段落/色/見出し/リスト/
+        # 画像/@mention を一切壊さずテキストだけ訳す)→ 訳文 HTML を cache。
+        # cache key = sha256(comment_html)。prewarm(translations upsert)も同じ
+        # comment_html hash でキー → cache 一致(prewarm hit で即返)。
+        if not (override_text and override_text.strip()):
+            o_tgt = target_lang[:2]
+            chtml = comment.comment_html or ""
+            if not chtml.strip():
+                return Response({"text": "", "by": "noop:empty", "skip": True})
+            o_src = _detect_src(_strip(chtml)) or "auto"
+            if o_src == o_tgt:
+                return Response({"text": "", "by": "noop:same-lang", "skip": True})
+            src_hash = _hashlib.sha256(chtml.encode("utf-8")).hexdigest()
+            crow = CommentTranslation.all_objects.filter(
+                comment=comment, target_lang=o_tgt).first()
+            if (not o_force and crow and not crow.deleted_at and crow.text
+                    and crow.source_hash == src_hash):
+                return Response({"text": crow.text, "source_lang": crow.source_lang,
+                                 "by": crow.translated_by, "cached": True})
+            _ctx = ""
+            try:
+                _iss = Issue.objects.filter(pk=issue_id).only("name").first()
+                if _iss and _iss.name:
+                    _ctx = _iss.name
+            except Exception:
+                pass
+            tr_html = ""
+            try:
+                _rr = _req.post(
+                    _AIBOT_BASE + "/translate",
+                    json={"html": chtml, "source": o_src, "target": o_tgt, "ctx": _ctx},
+                    timeout=60)
+                if _rr.ok:
+                    _jj = _rr.json()
+                    if _jj.get("ok"):
+                        tr_html = _jj.get("html") or ""
+            except Exception:
+                logger.exception("ai-bot translate_html failed (非致命)")
+            if not tr_html:
+                return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
+            _by = "ondemand:structure"
+            try:
+                if crow:
+                    crow.text = tr_html
+                    crow.source_hash = src_hash
+                    crow.source_lang = o_src if o_src != "auto" else crow.source_lang
+                    crow.translated_by = _by
+                    crow.deleted_at = None
+                    crow.updated_by_id = request.user.id
+                    crow.save()
+                else:
+                    CommentTranslation.objects.create(
+                        comment=comment, target_lang=o_tgt,
+                        project_id=project_id, workspace_id=comment.workspace_id,
+                        text=tr_html, source_lang=o_src, source_hash=src_hash,
+                        translated_by=_by,
+                        created_by_id=request.user.id, updated_by_id=request.user.id)
+            except Exception:
+                logger.exception("rich translate cache upsert failed (非致命)")
+            return Response({"text": tr_html, "source_lang": o_src,
+                             "by": _by, "cached": False})
+
         if override_text and override_text.strip():
             o_src = (request.data or {}).get("source", "").strip().lower()[:2]
             o_src = o_src if o_src in ("zh", "ja") else (_detect_src(override_text) or "auto")
