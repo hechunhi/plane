@@ -13,6 +13,9 @@ import { EnterKeyExtension } from "@/extensions";
 import type { EditorRefApi, ILiteTextEditorProps } from "@/types";
 
 function LiteTextEditor(props: ILiteTextEditorProps) {
+  // BARSOUL(2026-06-14 用户拍板): 评论框**不挂 bubble menu** — 改为底部常驻工具条丰富
+  // 功能(含颜色)。bubble menu 浮层挂 body 与详情面板 outside-click/定位溢出连环踩坑;
+  // 常驻条在面板 DOM 内、无浮层,稳定得多。回原版(无 children)。
   const { onEnterKeyPress, disabledExtensions, extensions: externalExtensions = [] } = props;
 
   const extensions = useMemo(() => {

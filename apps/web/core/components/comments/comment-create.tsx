@@ -15,7 +15,6 @@ import { cn, isCommentEmpty } from "@plane/utils";
 // components
 import { LiteTextEditor } from "@/components/editor/lite-text";
 // BARSOUL 2026-06-06: 爱酱发起审批入口(评论框旁图标 → 表单, 替代评论区 @爱酱去污染)
-import { AichanApprovalButton } from "./aichan-approval-button";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
 // services
@@ -50,6 +49,16 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   const workspaceStore = useWorkspace();
   // derived values
   const workspaceId = workspaceStore.getWorkspaceBySlug(workspaceSlug)?.id as string;
+  // BARSOUL B-7 草稿自动保存: 未发送内容按 issue 存 localStorage, 切卡/刷新/误关不丢, 回来接着写。
+  const draftKey = `barsoul-comment-draft:${entityId}`;
+  const [initialDraft] = useState(() => {
+    try {
+      const d = localStorage.getItem(draftKey);
+      return d && !isCommentEmpty(d) ? d : "<p></p>";
+    } catch {
+      return "<p></p>";
+    }
+  });
   // form info
   const {
     handleSubmit,
@@ -59,7 +68,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     reset,
   } = useForm<Partial<TIssueComment>>({
     defaultValues: {
-      comment_html: "<p></p>",
+      comment_html: initialDraft,
     },
   });
 
@@ -67,6 +76,12 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     try {
       const comment = await activityOperations.createComment(formData);
       if (comment?.id) onSubmitCallback?.(comment.id);
+      // B-7: 发送成功 → 清草稿(否则下次进来又恢复已发出的内容)
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        /* localStorage 不可用时忽略 */
+      }
       if (uploadedAssetIds.length > 0) {
         if (projectId) {
           await fileService.updateBulkProjectAssetsUploadStatus(workspaceSlug, projectId.toString(), entityId, {
@@ -92,9 +107,12 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   const commentHTML = watch("comment_html");
   const isEmpty = isCommentEmpty(commentHTML ?? undefined);
 
+  // BARSOUL(2026-06-15): z-[4]→z-[20] — 评论框整体提到上方头像(z-[4])之上,
+  // 否则工具栏 T 下拉(向上弹)被头像盖住。sticky 评论框本就该浮在内容之上。
+  // (注: JSX 注释不能放在标签属性之间, 否则 esbuild 报空表达式 — 故移到 return 上方)
   return (
     <div
-      className={cn("sticky bottom-0 z-[4] bg-surface-1 sm:static")}
+      className={cn("sticky bottom-0 z-[20] bg-surface-1 sm:static")}
       onKeyDown={(e) => {
         if (
           e.key === "Enter" &&
@@ -108,12 +126,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
           handleSubmit(onSubmit)(e);
       }}
     >
-      {/* BARSOUL: 爱酱发起审批(issue 级 → 需 projectId);评论框去污染入口 */}
-      {projectId && (
-        <div className="flex items-center justify-end px-2 pt-1">
-          <AichanApprovalButton workspaceSlug={workspaceSlug} projectId={projectId} issueId={entityId} />
-        </div>
-      )}
+      {/* BARSOUL B-2p v2: 発起審査ボタンは快捷动作行(IssueDetailWidgetActionButtons)へ移設 — 動作入口の統一(用户点名) */}
       <Controller
         name="access"
         control={control}
@@ -126,7 +139,6 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                 editable
                 workspaceId={workspaceId}
                 id={"add_comment_" + entityId}
-                value={"<p></p>"}
                 workspaceSlug={workspaceSlug}
                 projectId={projectId}
                 onEnterKeyPress={(e) => {
@@ -137,7 +149,16 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                 ref={editorRef}
                 initialValue={value ?? "<p></p>"}
                 containerClassName="min-h-min"
-                onChange={(comment_json, comment_html) => onChange(comment_html)}
+                onChange={(comment_json, comment_html) => {
+                  onChange(comment_html);
+                  // B-7 草稿: 非空存, 空则清(避免残留空草稿)
+                  try {
+                    if (comment_html && !isCommentEmpty(comment_html)) localStorage.setItem(draftKey, comment_html);
+                    else localStorage.removeItem(draftKey);
+                  } catch {
+                    /* localStorage 不可用时忽略 */
+                  }
+                }}
                 accessSpecifier={accessValue ?? EIssueCommentAccessSpecifier.INTERNAL}
                 handleAccessChange={onAccessChange}
                 isSubmitting={isSubmitting}

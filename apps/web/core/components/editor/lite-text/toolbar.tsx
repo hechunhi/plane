@@ -4,11 +4,12 @@
  * See the LICENSE file for details.
  */
 
-import React, { useEffect, useState, useCallback } from "react";
-import type { LucideIcon } from "lucide-react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { Ban, ChevronDown, Link2, Type, type LucideIcon } from "lucide-react";
 
 import { EIssueCommentAccessSpecifier } from "@plane/constants";
 // editor
+import { COLORS_LIST } from "@plane/editor";
 import type { EditorRefApi } from "@plane/editor";
 // i18n
 import { useTranslation } from "@plane/i18n";
@@ -57,6 +58,191 @@ const COMMENT_ACCESS_SPECIFIERS: TCommentAccessType[] = [
 
 const toolbarItems = TOOLBAR_ITEMS.lite;
 
+// BARSOUL(2026-06-15): ColorDropdown 已并入 TextStyleDropdown(颜色收进 T 下拉, 用户点名)。
+
+// BARSOUL: 文本样式下拉(T)的段落选项 — 正文/标题1-3, 对齐 bubble menu 的 NodeSelector。
+const NODE_OPTIONS: { key: "text" | "h1" | "h2" | "h3"; zh: string; ja: string }[] = [
+  { key: "text", zh: "正文", ja: "本文" },
+  { key: "h1", zh: "大标题", ja: "大見出し" },
+  { key: "h2", zh: "中标题", ja: "中見出し" },
+  { key: "h3", zh: "小标题", ja: "小見出し" },
+];
+// BARSOUL(2026-06-15 用户点名「颜色收进 T 下拉」): T = 文本样式 + 颜色 统一下拉。
+// 段落样式(正文/标题) + 文字色 + 背景色 一处收敛, 不再单独的颜色按钮(放最后/icon 看不懂)。
+function TextStyleDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
+  const { currentLocale } = useTranslation();
+  const ja = currentLocale === "ja";
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const applyNode = (key: "text" | "h1" | "h2" | "h3") => {
+    // 分支让 itemKey 字面量化(避免联合在 executeMenuItemCommand 泛型上 mismatch)
+    if (key === "text") editorRef?.executeMenuItemCommand({ itemKey: "text" });
+    else if (key === "h1") editorRef?.executeMenuItemCommand({ itemKey: "h1" });
+    else if (key === "h2") editorRef?.executeMenuItemCommand({ itemKey: "h2" });
+    else editorRef?.executeMenuItemCommand({ itemKey: "h3" });
+    setOpen(false);
+  };
+  const applyColor = (kind: "text" | "bg", color: string | undefined) => {
+    if (kind === "text") editorRef?.executeMenuItemCommand({ itemKey: "text-color", color });
+    else editorRef?.executeMenuItemCommand({ itemKey: "background-color", color });
+    setOpen(false);
+  };
+  return (
+    <div ref={ref} className="relative flex items-stretch">
+      <Tooltip tooltipContent={ja ? "文字スタイルと色" : "文本样式与颜色"}>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className={cn("flex items-center gap-0.5 rounded-xs px-1 text-placeholder hover:bg-layer-1", {
+            "bg-layer-1 text-primary": open,
+          })}
+        >
+          <Type className="h-3.5 w-3.5" strokeWidth={2.5} />
+          <ChevronDown className="h-3 w-3" />
+        </button>
+      </Tooltip>
+      {open && (
+        <div className="absolute bottom-full left-0 z-20 mb-1 w-max min-w-44 space-y-2 rounded-md border-[0.5px] border-strong bg-surface-1 p-2 shadow-raised-200">
+          <div className="space-y-0.5">
+            <p className="px-1 text-10 font-semibold uppercase tracking-wide text-placeholder">
+              {ja ? "段落スタイル" : "段落样式"}
+            </p>
+            {NODE_OPTIONS.map((n) => (
+              <button
+                key={n.key}
+                type="button"
+                onClick={() => applyNode(n.key)}
+                className="block w-full rounded-sm px-2 py-1 text-left text-13 text-secondary hover:bg-layer-1"
+              >
+                {ja ? n.ja : n.zh}
+              </button>
+            ))}
+          </div>
+          <div className="h-px bg-subtle" />
+          <div className="space-y-1">
+            <p className="px-1 text-10 font-semibold uppercase tracking-wide text-placeholder">文字色</p>
+            <div className="flex items-center gap-1.5">
+              {COLORS_LIST.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  title={c.label}
+                  onClick={() => applyColor("text", c.key)}
+                  className="size-6 flex-shrink-0 rounded-sm border-[0.5px] border-strong-1 transition-opacity hover:opacity-60"
+                  style={{ backgroundColor: c.textColor }}
+                />
+              ))}
+              <button
+                type="button"
+                title={ja ? "クリア" : "清除"}
+                onClick={() => applyColor("text", undefined)}
+                className="grid size-6 flex-shrink-0 place-items-center rounded-sm border-[0.5px] border-strong-1 text-tertiary hover:bg-layer-1"
+              >
+                <Ban className="size-4" />
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <p className="px-1 text-10 font-semibold uppercase tracking-wide text-placeholder">背景色</p>
+            <div className="flex items-center gap-1.5">
+              {COLORS_LIST.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  title={c.label}
+                  onClick={() => applyColor("bg", c.key)}
+                  className="size-6 flex-shrink-0 rounded-sm border-[0.5px] border-strong-1 transition-opacity hover:opacity-60"
+                  style={{ backgroundColor: c.backgroundColor }}
+                />
+              ))}
+              <button
+                type="button"
+                title={ja ? "クリア" : "清除"}
+                onClick={() => applyColor("bg", undefined)}
+                className="grid size-6 flex-shrink-0 place-items-center rounded-sm border-[0.5px] border-strong-1 text-tertiary hover:bg-layer-1"
+              >
+                <Ban className="size-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// BARSOUL(2026-06-14): 链接下拉 — URL 输入, 对齐 bubble menu 的 LinkSelector。
+function LinkDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
+  const { currentLocale } = useTranslation();
+  const ja = currentLocale === "ja";
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const apply = () => {
+    const u = url.trim();
+    if (!u) return;
+    editorRef?.executeMenuItemCommand({ itemKey: "link", url: u });
+    setUrl("");
+    setOpen(false);
+  };
+  return (
+    <div ref={ref} className="relative flex items-stretch">
+      <Tooltip tooltipContent={ja ? "リンク" : "链接"}>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className={cn("grid aspect-square place-items-center rounded-xs p-0.5 text-placeholder hover:bg-layer-1", {
+            "bg-layer-1 text-primary": open,
+          })}
+        >
+          <Link2 className="h-3.5 w-3.5" strokeWidth={2.5} />
+        </button>
+      </Tooltip>
+      {open && (
+        <div className="absolute bottom-full right-0 z-20 mb-1 flex w-56 items-center gap-1 rounded-md border-[0.5px] border-strong bg-surface-1 p-1.5 shadow-raised-200">
+          <input
+            autoFocus
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                apply();
+              }
+              if (e.key === "Escape") setOpen(false);
+            }}
+            placeholder={ja ? "URL を貼り付け" : "粘贴链接 URL"}
+            className="h-7 flex-1 rounded-sm border border-subtle bg-surface-1 px-2 text-12 text-primary outline-none placeholder:text-placeholder focus:border-accent-strong"
+          />
+          <button
+            type="button"
+            onClick={apply}
+            className="shrink-0 rounded-sm bg-accent-primary px-2 py-1 text-12 font-medium text-white hover:bg-accent-primary-hover"
+          >
+            {ja ? "確定" : "确认"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function IssueCommentToolbar(props: Props) {
   const { t } = useTranslation();
   const {
@@ -103,7 +289,7 @@ export function IssueCommentToolbar(props: Props) {
   const isSubmitButtonDisabled = isCommentEmpty || !isEditorReadyToDiscard;
 
   return (
-    <div className="flex h-9 w-full items-stretch gap-1.5 overflow-x-scroll bg-surface-2">
+    <div className="flex w-full items-start gap-1.5 bg-surface-2">
       {showAccessSpecifier && (
         <div className="flex flex-shrink-0 items-stretch gap-0.5 rounded-sm border-[0.5px] border-subtle p-1">
           {COMMENT_ACCESS_SPECIFIERS.map((access) => {
@@ -130,15 +316,14 @@ export function IssueCommentToolbar(props: Props) {
           })}
         </div>
       )}
-      <div className="flex w-full items-stretch justify-between gap-2 rounded-sm border-[0.5px] border-subtle p-1">
-        <div className="flex items-stretch">
-          {Object.keys(toolbarItems).map((key, index) => (
-            <div
-              key={key}
-              className={cn("flex items-stretch gap-0.5 border-r border-subtle px-2.5", {
-                "pl-0": index === 0,
-              })}
-            >
+      <div className="flex w-full items-start justify-between gap-2 rounded-sm border-[0.5px] border-subtle p-1">
+        {/* BARSOUL(2026-06-15): 两排换行显示全部命令; 分组用间距(gap-x-2)而非 border-r
+            竖线 — 换行时竖线会悬空显乱。组内 gap-0.5。 */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {/* 文本样式(正文/标题)下拉 — 置最前 */}
+          <TextStyleDropdown editorRef={editorRef} />
+          {Object.keys(toolbarItems).map((key) => (
+            <div key={key} className="flex items-center gap-0.5">
               {toolbarItems[key].map((item) => {
                 const isItemActive = activeStates[item.renderKey];
 
@@ -174,6 +359,10 @@ export function IssueCommentToolbar(props: Props) {
               })}
             </div>
           ))}
+          {/* BARSOUL(2026-06-14): 链接 + 颜色 — 补齐 bubble menu 里缺的功能 */}
+          <div className="flex items-stretch gap-0.5 pl-2.5">
+            <LinkDropdown editorRef={editorRef} />
+          </div>
         </div>
         {showSubmitButton && (
           <div className="sticky right-1">

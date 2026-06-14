@@ -132,7 +132,16 @@ export function EditorBubbleMenu(props: Props) {
     tippyOptions: {
       moveTransition: "transform 0.15s ease-out",
       duration: [300, 0],
-      zIndex: 9,
+      // BARSOUL B-11: appendTo body 撤销 — 它引出 关面板/偷选区/破坏下拉 三连副作用
+      // (浮层移出编辑器 DOM → 面板 outside-click 误判 + mousedown 偷选区)。改回原版
+      // (浮层留在编辑器内 = 描述编辑器同款工作配置), 仅提高 zIndex 防被 peek 盖;
+      // 不被 overflow 裁靠去掉编辑区的 overflow(见 lite-text wrapper)。
+      zIndex: 100,
+      // BARSOUL B-15: 文字靠右选中时, 工具栏居中选区会超出视口右侧 → 右侧按钮够不到。
+      // popper preventOverflow 开 altAxis(交叉轴=水平)把浮层移回视口内; padding 留边。
+      popperOptions: {
+        modifiers: [{ name: "preventOverflow", options: { altAxis: true, padding: 8 } }],
+      },
       onShow: () => {
         if (editor.storage.link) {
           editor.storage.link.isBubbleMenuOpen = true;
