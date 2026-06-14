@@ -231,6 +231,10 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
         # Comment Description
         if entity_type == FileAsset.EntityTypeContext.COMMENT_DESCRIPTION:
             return {"comment_id": entity_id}
+
+        # BARSOUL: 智能表图片单元格 — 归属 project(entity_identifier=project_id), 不绑特定实体
+        if entity_type == FileAsset.EntityTypeContext.SMART_TABLE_CELL:
+            return {"project_id": entity_id}
         return {}
 
     def asset_delete(self, asset_id):

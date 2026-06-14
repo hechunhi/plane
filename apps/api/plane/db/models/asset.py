@@ -41,6 +41,7 @@ class FileAsset(BaseModel):
         PROJECT_COVER = "PROJECT_COVER"
         DRAFT_ISSUE_ATTACHMENT = "DRAFT_ISSUE_ATTACHMENT"
         DRAFT_ISSUE_DESCRIPTION = "DRAFT_ISSUE_DESCRIPTION"
+        SMART_TABLE_CELL = "SMART_TABLE_CELL"  # BARSOUL: 智能表图片单元格(归属 project, 不绑特定实体)
 
     attributes = models.JSONField(default=dict)
     asset = models.FileField(upload_to=get_upload_path, max_length=800)
@@ -94,6 +95,9 @@ class FileAsset(BaseModel):
             self.EntityTypeContext.COMMENT_DESCRIPTION,
             self.EntityTypeContext.PAGE_DESCRIPTION,
             self.EntityTypeContext.DRAFT_ISSUE_DESCRIPTION,
+            # BARSOUL B-2o(2026-06-10): 智能表图片格(§11)。漏在此处 → 创建响应
+            # asset_url=None → 前端 if(u) 静默吞 → 「上传成功却永不回填」无报错惨案。
+            self.EntityTypeContext.SMART_TABLE_CELL,
         ]:
             return f"/api/assets/v2/workspaces/{self.workspace.slug}/projects/{self.project_id}/{self.id}/"
 
