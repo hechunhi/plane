@@ -44,6 +44,7 @@ import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { ApproverTitle } from "@/components/issues/approver-title";
+import { ParentBreadcrumb } from "@/components/issues/parent-breadcrumb";
 // BARSOUL IUTEYA-9: Pin/収藏 ボタン
 import { PinButton } from "@/components/issues/pin-button";
 import { useProjectState } from "@/hooks/store/use-project-state";
@@ -150,6 +151,8 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         </div>
       </div>
 
+      {/* BARSOUL B-2m: 子卡の帰属面包屑(↳ 親卡名) — 平铺でも迷子にならない */}
+      <ParentBreadcrumb parentId={issue.parent_id} />
       <Tooltip tooltipContent={issue.name} isMobile={isMobile} renderByDefault={false}>
         {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
             タイポ言語)。赤縁取り(親 card border) と合わせて 3 信号同時提示. */}
@@ -330,6 +333,9 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           }
         }}
         onMouseLeave={() => aiPopover.hide()}
+        // BARSOUL(用户 2026-06-14): 右键菜单弹出时一律隐藏 hover 卡(DIS 浮层), 否则在靠右的卡上会压住右键菜单。
+        // capture 阶段(根→目标)→ 早于 ContextMenu 挂在卡上的原生监听, 即使它 stopPropagation 也必触发。
+        onContextMenuCapture={() => aiPopover.hide()}
         onDragStart={() => {
           if (isDragAllowed) setIsCurrentBlockDragging(true);
           else {

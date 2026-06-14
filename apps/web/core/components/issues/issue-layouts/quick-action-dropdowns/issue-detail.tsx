@@ -13,7 +13,7 @@ import { Ellipsis } from "lucide-react";
 import { ARCHIVABLE_STATE_GROUPS, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { TIssue } from "@plane/types";
 import { EIssuesStoreType } from "@plane/types";
-import { ContextMenu, CustomMenu } from "@plane/ui";
+import { ContextMenu, CustomMenu, type TContextMenuItem } from "@plane/ui";
 import { cn } from "@plane/utils";
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -30,6 +30,7 @@ import type { IQuickActionProps } from "../list/list-view-types";
 import type { MenuItemFactoryProps } from "./helper";
 import { useWorkItemDetailMenuItems } from "./helper";
 import { IconButton } from "@plane/propel/icon-button";
+import { RecurringRuleEditor } from "@/components/recurring/recurring-editor";
 
 type TWorkItemDetailQuickActionProps = IQuickActionProps & {
   toggleEditIssueModal?: (value: boolean) => void;
@@ -66,6 +67,7 @@ export const WorkItemDetailQuickActions = observer(function WorkItemDetailQuickA
   const [deleteIssueModal, setDeleteIssueModal] = useState(false);
   const [archiveIssueModal, setArchiveIssueModal] = useState(false);
   const [duplicateWorkItemModal, setDuplicateWorkItemModal] = useState(false);
+  const [recurrizeModal, setRecurrizeModal] = useState(false); // BARSOUL 定期化
   // store hooks
   const { allowPermissions } = useUserPermissions();
   const { issuesFilter } = useIssues(EIssuesStoreType.PROJECT);
@@ -146,6 +148,7 @@ export const WorkItemDetailQuickActions = observer(function WorkItemDetailQuickA
     handleArchive: customArchiveAction,
     handleRestore: customRestoreAction,
     storeType: EIssuesStoreType.PROJECT,
+    onRecurrize: () => setRecurrizeModal(true), // BARSOUL 定期化
   };
 
   //   const MENU_ITEMS = useWorkItemDetailMenuItems(menuItemProps);
@@ -237,6 +240,17 @@ export const WorkItemDetailQuickActions = observer(function WorkItemDetailQuickA
         />
       )}
 
+      {/* BARSOUL この作業を定期化(右键/⋯メニューから) */}
+      {recurrizeModal && issue.project_id && workspaceSlug && (
+        <RecurringRuleEditor
+          ws={workspaceSlug.toString()}
+          pid={issue.project_id}
+          seed={{ name: issue.name, assignee_id: issue.assignee_ids?.[0] ?? null }}
+          onClose={() => setRecurrizeModal(false)}
+          onSaved={() => setRecurrizeModal(false)}
+        />
+      )}
+
       <ContextMenu parentRef={parentRef} items={CONTEXT_MENU_ITEMS} />
       <CustomMenu
         ellipsis
@@ -279,7 +293,7 @@ export const WorkItemDetailQuickActions = observer(function WorkItemDetailQuickA
                   item.className
                 )}
               >
-                {item.nestedMenuItems.map((nestedItem) => (
+                {item.nestedMenuItems.map((nestedItem: TContextMenuItem) => (
                   <CustomMenu.MenuItem
                     key={nestedItem.key}
                     onClick={() => {

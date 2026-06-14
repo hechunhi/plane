@@ -63,6 +63,9 @@ def get_default_display_filters():
         "group_by": None,
         "order_by": "-created_at",
         "type": None,
+        # BARSOUL B-2k→B-2m(2026-06-10): 曾默认收起子工作项(防站卡平铺迷失),
+        # 用户实测后否决「完全看不见也不行」→ 回滚为显示;迷失问题改由
+        # 看板卡上的**所属流程面包屑**(↳ 父卡名)解决 — 看得见 + 知归属。
         "sub_issue": True,
         "show_empty_groups": True,
         "layout": "list",
@@ -91,6 +94,8 @@ def get_default_display_properties():
 # TODO: Handle identifiers for Bulk Inserts - nk
 class IssueManager(SoftDeletionManager):
     def get_queryset(self):
+        from django.utils import timezone as _tz
+
         return (
             super()
             .get_queryset()
@@ -98,6 +103,9 @@ class IssueManager(SoftDeletionManager):
             .exclude(archived_at__isnull=False)
             .exclude(project__archived_at__isnull=False)
             .exclude(is_draft=True)
+            # BARSOUL スヌーズ: 未来 snooze 中のカードを active 视图から隠す(过期は条件 false→自动复活;
+            # null は __gt が NULL→not true→残る, 全存量卡不受影响)。详情は .objects なので隠れても開ける。
+            .exclude(snoozed_until__gt=_tz.now())
         )
 
 
@@ -165,6 +173,13 @@ class Issue(ProjectBaseModel):
         related_name="issue_type",
         null=True,
         blank=True,
+    )
+    # BARSOUL フォローアップ・スヌーズ(Linear 风): snoozed_until > now のカードは issue_objects から隠れる
+    # (active 视图全过滤)→ 期日に自动复活(过滤翻转)+ Beat が 1 回ベル(snoozed_by へ, 零评论)。
+    # nullable → null 时与现状完全一致(全存量卡不受影响)。详情 retrieve は .objects 使用なので隠れても直链で開ける。
+    snoozed_until = models.DateTimeField(null=True, blank=True)
+    snoozed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="snoozed_issues"
     )
 
     issue_objects = IssueManager()

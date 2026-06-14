@@ -12,7 +12,7 @@ import { useParams } from "next/navigation";
 import { ARCHIVABLE_STATE_GROUPS, EUserPermissions, EUserPermissionsLevel } from "@plane/constants";
 import type { TIssue } from "@plane/types";
 import { EIssuesStoreType } from "@plane/types";
-import { ContextMenu, CustomMenu } from "@plane/ui";
+import { ContextMenu, CustomMenu, type TContextMenuItem } from "@plane/ui";
 import { cn } from "@plane/utils";
 // hooks
 import { useIssues } from "@/hooks/store/use-issues";
@@ -191,7 +191,7 @@ export const CycleIssueQuickActions = observer(function CycleIssueQuickActions(p
                   item.className
                 )}
               >
-                {item.nestedMenuItems.map((nestedItem) => (
+                {item.nestedMenuItems.map((nestedItem: TContextMenuItem) => (
                   <CustomMenu.MenuItem
                     key={nestedItem.key}
                     onClick={() => {

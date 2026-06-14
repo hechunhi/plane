@@ -48,6 +48,11 @@ app.conf.beat_schedule = {
         "task": "plane.bgtasks.issue_automation_task.archive_and_close_old_issues",
         "schedule": crontab(hour=1, minute=0),  # UTC 01:00
     },
+    # BARSOUL: 定期タスク 每日扫描(到期前生成卡 / 顺延)。UTC 22:00 = JST 07:00, 上班前就绪。
+    "barsoul-recurring-sweep": {
+        "task": "plane.bgtasks.recurring_task.recurring_sweep",
+        "schedule": crontab(hour=22, minute=0),
+    },
     "check-every-day-to-delete_exporter_history": {
         "task": "plane.bgtasks.exporter_expired_task.delete_old_s3_link",
         "schedule": crontab(hour=1, minute=30),  # UTC 01:30
