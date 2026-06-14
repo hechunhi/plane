@@ -910,6 +910,17 @@ class IssueAIState(ProjectBaseModel):
     # 补充框架(needs_info 时,结合本卡情况告诉补充人该写什么;双语,按阅览者语言展示)
     info_framework_zh = models.TextField(blank=True, default="")
     info_framework_ja = models.TextField(blank=True, default="")
+    # BARSOUL DIS 子树 rollup(父任务汇总子任务态): 决策全 code(球/分类/收尾/计数 + join approval/snooze SoR),
+    # 叙述 gemma(reasoning/tension, schema 隔离不碰球)。ball/actor/next_action 等复用上面字段(code 定)。
+    is_parent = models.BooleanField(default=False, db_index=True)  # 有子任务 → 本行是 rollup 结果
+    subtree_total = models.PositiveSmallIntegerField(default=0)
+    subtree_active = models.PositiveSmallIntegerField(default=0)
+    subtree_done = models.PositiveSmallIntegerField(default=0)
+    subtree_blocked = models.PositiveSmallIntegerField(default=0)  # 冻结(审批中)+ 高停滞 子数(红点信号)
+    rep_child = models.ForeignKey(  # 代表子(球所在的活跃子)→ 卡顶可点跳
+        Issue, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    subtree_tension_zh = models.CharField(max_length=300, blank=True, default="")  # gemma 点名的口径矛盾
+    subtree_tension_ja = models.CharField(max_length=300, blank=True, default="")
 
     class Meta:
         verbose_name = "Issue AI State"

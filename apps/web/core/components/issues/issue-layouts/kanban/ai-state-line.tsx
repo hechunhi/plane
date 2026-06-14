@@ -36,6 +36,16 @@ export type DerivedIssueState = {
   needs_info: boolean;         // 信息完整性/留痕缺口:状态与材料矛盾/不足 → 要求人补充
   info_gap: Bilingual;         // 缺什么/请补什么(双语)
   info_framework: Bilingual;   // 补充框架(AI 理解 + 待澄清点;告诉补充人该写什么)
+  // BARSOUL DIS 子树 rollup:有直接子卡的父任务才有 family(否则 null/缺)。
+  // 计数/球/下一步全由 ai-bot code 确定性汇总;tension=gemma 点名的子卡口径矛盾。
+  family?: {
+    total: number;   // 直接子卡总数
+    active: number;  // 可推进(非完成/非 snooze/非冻结)
+    done: number;    // 完成 + 取消
+    blocked: number; // 冻结(审批待ち)+ 高停滞 → 红点信号
+    tension: Bilingual;
+    rep_child: { id: string; sequence_id: number; name: string } | null; // 代表子(球所在的活跃子,可点跳)
+  } | null;
 };
 
 const STALL_TH = 4;
@@ -112,6 +122,7 @@ export const ICON = {
   bell: ["M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9", "M13.73 21a2 2 0 0 1-3.46 0"],
   users: ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
   close: ["M18 6L6 18", "M6 6l12 12"],
+  subtree: ["M21 12h-8", "M21 6H8", "M21 18h-8", "M3 6v4c0 1.1.9 2 2 2h3", "M3 10v6c0 1.1.9 2 2 2h3"],
 };
 
 export function AvatarBadge({ name, size = 18 }: { name: string; size?: number }) {
@@ -279,6 +290,27 @@ export function useActivePopover(): ActivePop {
 }
 
 // ── 卡片摘要条(item 3,5)──────────────────────────────────────────────────
+// BARSOUL DIS 子树:父任务进度 chip。**冷灰**(进度非行动信号 → 不抢琥珀);blocked>0
+// 挂红点(用户设计语言「红点信号」= 审批待ち/停滞子,需留意)。tabular-nums 防数字跳动。
+function FamilyChip({ fam, zh }: { fam: NonNullable<DerivedIssueState["family"]>; zh: boolean }) {
+  const title =
+    (zh ? `子任务 ${fam.done}/${fam.total} 完成` : `子タスク ${fam.done}/${fam.total} 完了`) +
+    (fam.active ? (zh ? ` · ${fam.active} 进行中` : ` · ${fam.active} 進行中`) : "") +
+    (fam.blocked ? (zh ? ` · ${fam.blocked} 待审/停滞` : ` · ${fam.blocked} 要確認`) : "");
+  return (
+    <span title={title} style={{ flex: "none", position: "relative", display: "inline-flex", alignItems: "center", gap: 3,
+      fontSize: 10.5, fontWeight: 600, color: "#5b6168", background: "#f1f2f4",
+      border: "1px solid #e4e6e9", borderRadius: 4, padding: "0 5px" }}>
+      <Ico d={ICON.subtree} size={10} sw={1.7} color="#8a9099" />
+      <span style={{ fontVariantNumeric: "tabular-nums" }}>{fam.done}/{fam.total}</span>
+      {fam.blocked > 0 && (
+        <span aria-hidden style={{ position: "absolute", top: -3, right: -3, width: 7, height: 7,
+          borderRadius: "50%", background: "#dc2626", border: "1.5px solid #fff" }} />
+      )}
+    </span>
+  );
+}
+
 export function AICardBar({ issueId, projectId }: { issueId: string; projectId: string | null | undefined }) {
   const { workspaceSlug } = useParams();
   const zh = useZh();
@@ -303,6 +335,26 @@ export function AICardBar({ issueId, projectId }: { issueId: string; projectId: 
           {gap || (zh ? "请补充说明(留痕)" : "補足してください(履歴)")}
         </span>
         {spark}
+      </div>
+    );
+  }
+
+  // BARSOUL DIS 子树:父任务(有 family)→ 状态行 = 父球/下一步(code 汇总)+ 末尾冷灰进度 chip。
+  // **置于 UNKNOWN 兜底之前**:全冻结/全暂缓父 ball="" 仍要显示子树态, 不可被「信息不足」吞掉。
+  if (s.family && s.family.total > 0) {
+    const fam = s.family;
+    const bv = s.ball ? ballView(s, zh, currentUser?.id) : null;
+    const next = pick(s.next_action, zh);
+    return (
+      <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3 }}>
+        {bv ? <Ico d={bv.icon} size={12} sw={1.8} color={bv.dot} />
+            : <Ico d={ICON.subtree} size={12} sw={1.7} color="#9499a0" />}
+        {bv && <span style={{ fontWeight: 600, color: bv.text, flex: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 96 }}>{bv.label}</span>}
+        {next ? (<>
+          <span style={{ color: "#c8cace", flex: "none" }}>·</span>
+          <span style={{ color: "#52555b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{next}</span>
+        </>) : <span style={{ flex: 1, minWidth: 0 }} />}
+        <FamilyChip fam={fam} zh={zh} />
       </div>
     );
   }

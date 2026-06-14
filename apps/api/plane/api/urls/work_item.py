@@ -13,6 +13,8 @@ from plane.api.views import (
     IssueCommentDetailAPIEndpoint,
     CommentTranslationUpsertAPIEndpoint,
     IssueAIStateUpsertAPIEndpoint,
+    IssueSubtreeDISAPIEndpoint,
+    SmartTableBindingUpsertAPIEndpoint,
     IssueActivityListAPIEndpoint,
     IssueActivityDetailAPIEndpoint,
     IssueAttachmentListCreateAPIEndpoint,
@@ -76,6 +78,18 @@ old_url_patterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/",
         IssueAIStateUpsertAPIEndpoint.as_view(http_method_names=["get", "post"]),
         name="issue-ai-state",
+    ),
+    # BARSOUL DIS 子树 rollup: 父→直接子卡+各子 DIS 取材 (ai-bot 拉, code 分类)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/subtree-dis/",
+        IssueSubtreeDISAPIEndpoint.as_view(http_method_names=["get"]),
+        name="issue-subtree-dis",
+    ),
+    # BARSOUL: 反应规则「绑定随边走」(smart-table §12, ai-bot 执行侧)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/smart-table-binding/",
+        SmartTableBindingUpsertAPIEndpoint.as_view(http_method_names=["post"]),
+        name="issue-smart-table-binding-v1",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/activities/",

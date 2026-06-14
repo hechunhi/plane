@@ -121,6 +121,14 @@ def _serialize(row):
         "info_gap": {"zh": row.info_gap_zh or "", "ja": row.info_gap_ja or row.info_gap_zh or ""},
         # 补充框架(AI 理解 + 待澄清点;告诉补充人该写什么,按阅览者语言展示)
         "info_framework": {"zh": row.info_framework_zh or "", "ja": row.info_framework_ja or row.info_framework_zh or ""},
+        # DIS 子树 rollup(父任务汇总): 仅有子任务时下发; 决策(ball/actor/next 在上面字段, code 定)+ 子树计数/代表子/矛盾
+        "family": ({
+            "total": row.subtree_total, "active": row.subtree_active,
+            "done": row.subtree_done, "blocked": row.subtree_blocked,
+            "tension": {"zh": row.subtree_tension_zh or "", "ja": row.subtree_tension_ja or row.subtree_tension_zh or ""},
+            "rep_child": ({"id": str(row.rep_child_id), "sequence_id": row.rep_child.sequence_id,
+                           "name": row.rep_child.name} if row.rep_child_id and row.rep_child else None),
+        } if row.is_parent else None),
     }
 
 
@@ -138,7 +146,7 @@ class IssueAIStateBatchEndpoint(BaseAPIView):
         qs = IssueAIState.objects.filter(
             Q(issue__state__group__in=["unstarted", "started"]) | Q(needs_info=True),
             workspace__slug=slug, project_id=project_id,
-        ).select_related("issue", "issue__state", "project")
+        ).select_related("issue", "issue__state", "project", "rep_child")  # rep_child: 子树 rollup 防 N+1
         if raw:
             ids = [x for x in (s.strip() for s in raw.split(",")) if x][:300]
             qs = qs.filter(issue_id__in=ids)

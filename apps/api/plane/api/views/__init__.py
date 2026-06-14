@@ -26,6 +26,8 @@ from .issue import (
     IssueCommentDetailAPIEndpoint,
     CommentTranslationUpsertAPIEndpoint,
     IssueAIStateUpsertAPIEndpoint,
+    IssueSubtreeDISAPIEndpoint,
+    SmartTableBindingUpsertAPIEndpoint,
     IssueActivityListAPIEndpoint,
     IssueActivityDetailAPIEndpoint,
     IssueAttachmentListCreateAPIEndpoint,

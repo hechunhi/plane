@@ -27,6 +27,20 @@ function Field({ label, icon, children }: { label: string; icon: string[]; child
   );
 }
 
+// DIS 子树:分桶小标签。cool=冷灰(进行/进度,不抢琥珀);red=待审/停滞(红点同源);done=静绿。
+function Tag({ tone, children }: { tone: "cool" | "red" | "done"; children: ReactNode }) {
+  const m = {
+    cool: { bg: "#f1f2f4", bd: "#e4e6e9", fg: "#5b6168" },
+    red: { bg: "#fdeaea", bd: "#f3c4c4", fg: "#c0392b" },
+    done: { bg: "#eef6f0", bd: "#d4e8da", fg: "#4a7c59" },
+  }[tone];
+  return (
+    <span style={{ fontSize: 10.5, fontWeight: 600, color: m.fg, background: m.bg,
+      border: `1px solid ${m.bd}`, borderRadius: 4, padding: "0 6px", flex: "none",
+      fontVariantNumeric: "tabular-nums" }}>{children}</span>
+  );
+}
+
 // 引用依据片段的按需翻译(与评论区同款:即点即译 + 模块级缓存)。
 // 仅当「引用语言 ≠ 阅览语言」时露出「翻译/翻訳」入口;走 ai-state/translate/ → ai-bot。
 const _qtCache = new Map<string, string>();
@@ -81,7 +95,7 @@ function TransQuote({ quote, author, zh, slug, projectId, issueId }: {
 }
 
 /** 浮层 与 详情内嵌块 共享的内容(球/告警/下一步/行动人/推断依据)。ball 由 caller 保证非空。 */
-export function AICurrentStateBody({ s, zh, projectId, onSource }: { s: DerivedIssueState; zh: boolean; projectId: string; onSource?: () => void }) {
+export function AICurrentStateBody({ s, zh, projectId, onSource, onOpenChild }: { s: DerivedIssueState; zh: boolean; projectId: string; onSource?: () => void; onOpenChild?: (childId: string) => void }) {
   const { workspaceSlug } = useParams();
   const slug = workspaceSlug?.toString() || "";
   const { data: currentUser } = useUser();
@@ -141,6 +155,41 @@ export function AICurrentStateBody({ s, zh, projectId, onSource }: { s: DerivedI
         </span>
       </Field>
       </>)}
+      {/* DIS 子树:子任务进度(冷灰进度条)+ 分桶 + 代表子回链 + 口径矛盾(gemma)。父任务才有 family。 */}
+      {s.family && s.family.total > 0 && (
+        <div style={{ borderTop: "1px dashed #ebedf0", paddingTop: 8, display: "flex", flexDirection: "column", gap: 7 }}>
+          <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: ".05em", display: "flex", alignItems: "center", gap: 4 }}>
+            <Ico d={ICON.subtree} size={11} color="#9ca3af" />{zh ? "子任务进度" : "子タスク進捗"}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ flex: 1, height: 6, background: "#eef0f2", borderRadius: 3, overflow: "hidden", minWidth: 0 }}>
+              <div style={{ width: `${Math.round((s.family.done / Math.max(1, s.family.total)) * 100)}%`, height: "100%", background: "#9aa1aa", borderRadius: 3 }} />
+            </div>
+            <span style={{ fontSize: 11.5, fontWeight: 600, color: "#5b6168", fontVariantNumeric: "tabular-nums", flex: "none" }}>{s.family.done}/{s.family.total}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {s.family.active > 0 && <Tag tone="cool">{zh ? `${s.family.active} 进行中` : `${s.family.active} 進行中`}</Tag>}
+            {s.family.blocked > 0 && <Tag tone="red">{zh ? `${s.family.blocked} 待审/停滞` : `${s.family.blocked} 要確認`}</Tag>}
+            {s.family.done > 0 && <Tag tone="done">{zh ? `${s.family.done} 完成` : `${s.family.done} 完了`}</Tag>}
+          </div>
+          {s.family.rep_child && (
+            <div onClick={() => s.family?.rep_child && onOpenChild?.(s.family.rep_child.id)}
+              title={zh ? "球所在的子任务" : "ボールのある子タスク"}
+              style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0,
+                cursor: onOpenChild ? "pointer" : "default", fontSize: 11.5, color: "#3b6fb0" }}>
+              <Ico d={ICON.arrowRight} size={11} color="#7a8da0" />
+              <span style={{ flex: "none", color: "#8a9099", fontVariantNumeric: "tabular-nums" }}>#{s.family.rep_child.sequence_id}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{s.family.rep_child.name}</span>
+            </div>
+          )}
+          {pick(s.family.tension, zh) && (
+            <div style={{ fontSize: 11, color: "#92560a", background: "#fdf3e2", border: "1px solid #f0d9a8", borderRadius: 6, padding: "5px 8px", display: "flex", gap: 6 }}>
+              <Ico d={ICON.alert} size={12} sw={2} color="#d97706" />
+              <span style={{ lineHeight: 1.4 }}>{pick(s.family.tension, zh)}</span>
+            </div>
+          )}
+        </div>
+      )}
       {(s.source.quote || reason) && (
         <div style={{ borderTop: "1px dashed #ebedf0", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 10, color: "#9ca3af", letterSpacing: ".05em" }}>{zh ? "AI 推断依据" : "AI推定の根拠"}</div>
@@ -216,7 +265,8 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         )}
       </div>
       <div style={{ padding: "10px 11px", overflow: "auto" }}>
-        <AICurrentStateBody s={s} zh={zh} projectId={active.projectId} onSource={openCard} />
+        <AICurrentStateBody s={s} zh={zh} projectId={active.projectId} onSource={openCard}
+          onOpenChild={(cid) => { issueDetail.setPeekIssue({ workspaceSlug: slug, projectId: active.projectId, issueId: cid }); aiPopover.hide(); }} />
       </div>
       {/* v9 行动操作:催促/改担当(确认闸门)/再分析 */}
       <div style={{ padding: "8px 11px", borderTop: "1px solid #f0f1f3", background: "#fbfbfc", flex: "none" }}>

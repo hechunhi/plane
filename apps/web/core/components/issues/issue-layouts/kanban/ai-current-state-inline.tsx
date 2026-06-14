@@ -144,7 +144,8 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({ iss
           <span title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: conf.c }}>{(zh ? "置信度 " : "確度 ") + conf.t}</span>
         )}
       </div>
-      <AICurrentStateBody s={s} zh={zh} projectId={projectId} onSource={jumpComment} />
+      <AICurrentStateBody s={s} zh={zh} projectId={projectId} onSource={jumpComment}
+        onOpenChild={(cid) => issueDetail.setPeekIssue({ workspaceSlug: slug, projectId, issueId: cid })} />
       <div style={{ marginTop: 9, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <button type="button" onClick={jumpComment} style={{ height: 26, padding: "0 10px", border: "1px solid #e3e5e9", borderRadius: 6, background: "#fff", color: "#33363c", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}>
           <Ico d={ICON.message} size={12} color="#7c5cff" />{zh ? "跳到最新评论" : "最新コメントへ移動"}
