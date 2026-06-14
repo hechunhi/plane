@@ -1,0 +1,89 @@
+# BARSOUL: 智能表 / 项目数据库 路由. 见 docs/architecture/smart-table-mvp.md.
+from django.urls import path
+
+from plane.app.views import (
+    SmartTableListEndpoint,
+    SmartTableDetailEndpoint,
+    SmartColumnEndpoint,
+    SmartFormEndpoint,
+    SmartRowEndpoint,
+    SmartTableMyViewEndpoint,
+    SmartTableDepsEndpoint,
+    SmartTableTranslateEndpoint,
+    IssueSmartTableBindingEndpoint,
+    IssueSmartBindingCandidatesEndpoint,
+    IssueSmartSubtreeRowsEndpoint,
+)
+
+urlpatterns = [
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/",
+        SmartTableListEndpoint.as_view(),
+        name="smart-tables",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/",
+        SmartTableDetailEndpoint.as_view(),
+        name="smart-table-detail",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/columns/",
+        SmartColumnEndpoint.as_view(),
+        name="smart-table-columns",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/columns/<uuid:column_id>/",
+        SmartColumnEndpoint.as_view(),
+        name="smart-table-column",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/translate/",
+        SmartTableTranslateEndpoint.as_view(),
+        name="smart-table-translate",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/deps/",
+        SmartTableDepsEndpoint.as_view(),
+        name="smart-table-deps",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/my-view/",
+        SmartTableMyViewEndpoint.as_view(),
+        name="smart-table-my-view",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/forms/",
+        SmartFormEndpoint.as_view(),
+        name="smart-table-forms",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/forms/<uuid:form_id>/",
+        SmartFormEndpoint.as_view(),
+        name="smart-table-form",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/rows/",
+        SmartRowEndpoint.as_view(),
+        name="smart-table-rows",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/rows/<uuid:row_id>/",
+        SmartRowEndpoint.as_view(),
+        name="smart-table-row",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/smart-table-binding/",
+        IssueSmartTableBindingEndpoint.as_view(),
+        name="issue-smart-table-binding",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/smart-table-binding/candidates/",
+        IssueSmartBindingCandidatesEndpoint.as_view(),
+        name="issue-smart-binding-candidates",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/smart-subtree-rows/",
+        IssueSmartSubtreeRowsEndpoint.as_view(),
+        name="issue-smart-subtree-rows",
+    ),
+]

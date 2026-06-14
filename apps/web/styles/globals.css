@@ -301,3 +301,46 @@ em-emoji-picker {
   width: 100%;
   max-width: 100%;
 }
+
+/* BARSOUL 智能表 2026-06-11: glide-data-grid 内部滚动容器(.dvn-scroller)拿回滚动条。
+   Plane 在 tailwind-config 全局 ::-webkit-scrollbar{display:none},glide 自建 DOM 挂不上
+   .horizontal-scrollbar 工具类 → 列/行超出时滚动条被全局规则杀光:零 affordance,
+   且普通鼠标横向无任何滚动手段(超出列等于不可达)。仅命中 .smart-glide-scroll 内的
+   glide scroller;样式对齐 Plane 滚动条 token(明暗自适应)。 */
+.smart-glide-scroll .dvn-scroller::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+  height: 10px;
+}
+.smart-glide-scroll .dvn-scroller::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 9999px;
+}
+.smart-glide-scroll .dvn-scroller::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-color: var(--scrollbar-thumb);
+}
+.smart-glide-scroll .dvn-scroller::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+.smart-glide-scroll .dvn-scroller::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-active);
+}
+.smart-glide-scroll .dvn-scroller::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* BARSOUL 智能表: 空格+拖动平移 — 手型光标盖过 glide 的 cell cursor(use-space-pan.ts 切换类) */
+.smart-glide-pan .dvn-scroller,
+.smart-glide-pan canvas {
+  cursor: grab !important;
+}
+.smart-glide-panning .dvn-scroller,
+.smart-glide-panning canvas {
+  cursor: grabbing !important;
+}
+.smart-glide-panning {
+  user-select: none;
+}
