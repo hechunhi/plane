@@ -21,10 +21,12 @@ type Props = {
   issueServiceType?: TIssueServiceType;
   projectId: string;
   workspaceSlug: string;
+  // BARSOUL B-2n v4: 兄弟树场景标题覆盖(子卡上「子工作项」语义错位 →「所属任务树」)
+  titleOverride?: string;
 };
 
 export const SubIssuesCollapsibleTitle = observer(function SubIssuesCollapsibleTitle(props: Props) {
-  const { isOpen, parentIssueId, disabled, issueServiceType = EIssueServiceType.ISSUES, projectId } = props;
+  const { isOpen, parentIssueId, disabled, issueServiceType = EIssueServiceType.ISSUES, projectId, titleOverride } = props;
   // translation
   const { t } = useTranslation();
   // store hooks
@@ -45,7 +47,7 @@ export const SubIssuesCollapsibleTitle = observer(function SubIssuesCollapsibleT
   return (
     <CollapsibleButton
       isOpen={isOpen}
-      title={`${issueServiceType === EIssueServiceType.EPICS ? t("issue.label", { count: 1 }) : t("common.sub_work_items")}`}
+      title={titleOverride ?? `${issueServiceType === EIssueServiceType.EPICS ? t("issue.label", { count: 1 }) : t("common.sub_work_items")}`}
       indicatorElement={
         <div className="flex items-center gap-1.5 text-13 text-tertiary">
           <CircularProgressIndicator size={18} percentage={percentage} strokeWidth={3} />

@@ -87,7 +87,8 @@ export const ProjectLayoutRoot = observer(function ProjectLayoutRoot() {
       >
         {({ filter: projectWorkItemsFilter }) => (
           <div className="relative flex h-full w-full flex-col overflow-hidden">
-            {projectWorkItemsFilter && (
+            {/* BARSOUL: digest/数据表 等自定义视图不需要 issues 过滤工具条(避免双层/死控件) */}
+            {aiView === "board" && projectWorkItemsFilter && (
               <WorkItemFiltersRow
                 filter={projectWorkItemsFilter}
                 trackerElements={{

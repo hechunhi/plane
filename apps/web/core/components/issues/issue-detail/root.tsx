@@ -262,8 +262,11 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
             />
           </div>
           <div
-            className="fixed right-0 z-[5] h-full w-full min-w-[300px] border-l border-subtle bg-surface-1 sm:w-1/2 md:relative md:w-1/4 lg:min-w-80 xl:min-w-96"
-            style={issueDetailSidebarCollapsed ? { right: `-${window?.innerWidth || 0}px` } : {}}
+            // BARSOUL(2026-06-15 用户点名): 右侧属性栏不再 fixed 覆盖主内容 — 改 relative
+            // 在 flex 内并排挤(shrink-0 保证不被主内容压没), 任何宽度都不遮挡主容器。
+            // 折叠态改 display:none(原 right:-100vw 仅对 fixed 有效)。
+            className="relative z-[5] h-full w-2/5 shrink-0 border-l border-subtle bg-surface-1 sm:w-1/3 md:w-1/4 lg:min-w-80 xl:min-w-96"
+            style={issueDetailSidebarCollapsed ? { display: "none" } : {}}
           >
             <IssueDetailsSidebar
               workspaceSlug={workspaceSlug}

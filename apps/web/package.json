@@ -25,6 +25,7 @@
     "@fontsource/ibm-plex-mono": "5.2.7",
     "@fontsource/material-symbols-rounded": "5.2.30",
     "@glideapps/glide-data-grid": "^6.0.3",
+    "@glideapps/glide-data-grid-cells": "^6.0.3",
     "@headlessui/react": "^1.7.19",
     "@plane/constants": "workspace:*",
     "@plane/editor": "workspace:*",

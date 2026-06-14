@@ -17,9 +17,8 @@ export function AIBoardControls() {
     const active = view === id;
     return (
       <button type="button" onClick={() => setAiView(id)}
-        className="inline-flex h-[26px] items-center gap-1.5 rounded-md border-0 px-2.5 text-xs font-semibold"
-        style={{ background: active ? "#fff" : "transparent", color: active ? "#1f2328" : "#71757c", boxShadow: active ? "0 1px 2px rgba(16,24,40,0.1)" : "none", cursor: "pointer", fontFamily: "inherit" }}>
-        <Ico d={icon} size={14} sw={1.8} color={id === "digest" ? (active ? "#7c5cff" : "#a3a7ad") : "currentColor"} />{label}
+        className={"inline-flex h-[26px] cursor-pointer items-center gap-1.5 rounded-md border-0 px-2.5 text-xs font-semibold " + (active ? "bg-surface-1 text-primary shadow-raised-100" : "bg-transparent text-secondary hover:text-primary")}>
+        <Ico d={icon} size={14} sw={1.8} color="currentColor" />{label}
       </button>
     );
   };
@@ -32,7 +31,7 @@ export function AIBoardControls() {
 
   return (
     <div className="hidden items-center gap-2 md:flex">
-      <div className="inline-flex items-center gap-0.5 rounded-lg p-0.5" style={{ background: "#eef0f2" }}>
+      <div className="inline-flex items-center gap-0.5 rounded-lg bg-layer-1 p-0.5">
         <Tab id="board" icon={ICON.columns} label={L.board} />
         <Tab id="digest" icon={ICON.sparkle} label={L.digest} />
       </div>

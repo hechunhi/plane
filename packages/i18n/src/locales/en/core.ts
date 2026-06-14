@@ -19,6 +19,7 @@ export default {
     cycles: "Cycles",
     modules: "Modules",
     intake: "Intake",
+    recurring: "Recurring",
     drafts: "Drafts",
     favorites: "Favorites",
     pro: "Pro",

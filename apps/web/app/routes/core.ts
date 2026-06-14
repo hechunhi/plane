@@ -209,6 +209,20 @@ export const coreRoutes: RouteConfigEntry[] = [
               "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/pages/(list)/page.tsx"
             ),
           ]),
+          // Tables List (BARSOUL 智能表 / 项目数据库)
+          layout("./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/tables/(list)/layout.tsx", [
+            route(
+              ":workspaceSlug/projects/:projectId/tables",
+              "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/tables/(list)/page.tsx"
+            ),
+          ]),
+          // Recurring tasks (BARSOUL 定期タスク / 周期任务)
+          layout("./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/recurring/(list)/layout.tsx", [
+            route(
+              ":workspaceSlug/projects/:projectId/recurring",
+              "./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/recurring/(list)/page.tsx"
+            ),
+          ]),
           // Intake list
           layout("./(all)/[workspaceSlug]/(projects)/projects/(detail)/[projectId]/intake/layout.tsx", [
             route(

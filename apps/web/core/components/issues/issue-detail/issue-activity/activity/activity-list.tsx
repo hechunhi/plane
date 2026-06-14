@@ -32,6 +32,7 @@ import {
   IssueAttachmentActivity,
   IssueArchivedAtActivity,
   IssueInboxActivity,
+  IssueFlowInterveneActivity,
 } from "./actions";
 
 type TIssueActivityItem = {
@@ -92,6 +93,8 @@ export const IssueActivityItem = observer(function IssueActivityItem(props: TIss
     case "intake":
     case "inbox":
       return <IssueInboxActivity {...componentDefaultProps} />;
+    case "flow_intervene": // BARSOUL B-3e: 流程干预审计 — 原生 activity 行(非评论, 零通知)
+      return <IssueFlowInterveneActivity {...componentDefaultProps} />;
     case "type":
       return <IssueTypeActivity {...componentDefaultProps} />;
     default:

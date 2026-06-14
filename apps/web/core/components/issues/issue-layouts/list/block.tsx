@@ -22,6 +22,7 @@ import { cn, generateWorkItemLink } from "@plane/utils";
 // components
 import { MultipleSelectEntityAction } from "@/components/core/multiple-select";
 import { IssueProperties } from "@/components/issues/issue-layouts/properties";
+import { ParentBreadcrumb } from "@/components/issues/parent-breadcrumb";
 // helpers
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
@@ -371,6 +372,8 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                 />
               </p>
             </Tooltip>
+            {/* BARSOUL B-2m: 子卡の帰属面包屑(行内尾注) */}
+            <ParentBreadcrumb parentId={issue.parent_id} inline />
             {isEpic && displayProperties && (
               <WithDisplayPropertiesHOC
                 displayProperties={displayProperties}

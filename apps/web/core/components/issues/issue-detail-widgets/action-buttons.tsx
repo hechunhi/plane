@@ -10,8 +10,11 @@ import { useTranslation } from "@plane/i18n";
 import { LinkIcon, ViewsIcon, RelationPropertyIcon } from "@plane/propel/icons";
 // plane imports
 import type { TIssueServiceType, TWorkItemWidgets } from "@plane/types";
+import { EIssueServiceType } from "@plane/types";
 // plane web imports
 import { WorkItemAdditionalWidgetActionButtons } from "@/plane-web/components/issues/issue-detail-widgets/action-buttons";
+// BARSOUL B-2p v2: 任务动作统一进快捷动作行; B-5b: 审批并入发起流程下拉(仅审批=最短流程)
+import { StartFlowButton } from "@/components/smart-table/start-flow-button";
 // local imports
 import { IssueAttachmentActionButton } from "./attachments";
 import { IssueLinksActionButton } from "./links";
@@ -100,6 +103,12 @@ export function IssueDetailWidgetActionButtons(props: Props) {
         workItemId={issueId}
         workspaceSlug={workspaceSlug}
       />
+      {/* BARSOUL B-2p v2(用户点名: 任务相关动作统一进本行); B-5b: 単一入口 —
+          下拉=已发布蓝图(顶层卡)+仅审批(全卡), 審査=最短のフロー */}
+      {issueServiceType === EIssueServiceType.ISSUES && !disabled && (
+        <StartFlowButton issueId={issueId} disabled={disabled} />
+      )}
+      {/* BARSOUL 定期化 / あとで通知 は卡片右键・⋯メニューに移設(用户: 独立ボタンは雑然) — 此处不再放按钮 */}
     </div>
   );
 }

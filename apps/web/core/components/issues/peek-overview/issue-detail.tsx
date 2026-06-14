@@ -15,6 +15,10 @@ import { getTextContent } from "@plane/utils";
 // components
 import { DescriptionVersionsRoot } from "@/components/core/description-versions";
 import { DescriptionInput } from "@/components/editor/rich-text/description-input";
+import { ApprovalHistory, FrozenBanner } from "@/components/issues/issue-detail/frozen-banner";
+// BARSOUL B-4c(2026-06-15 移到主区): 子树台账汇总(横表) — peek 主区比窄属性 sidebar 宽
+import { SmartTableSubtreeRollup } from "@/components/smart-table/smart-table-subtree-rollup";
+import { IssueFlowContext } from "@/components/issues/issue-detail/issue-flow-context";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
@@ -135,6 +139,15 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
 
       {/* BARSOUL DIS v4: 详情内嵌 AI 当前态(标题下方,代替 hover 浮层) */}
       {issue.project_id && <AICurrentStateInline issueId={issue.id} projectId={issue.project_id} />}
+      {/* B-2h: 審査の状態層(バナー+記録) — AI 当前態と同区画(標題下)。両ツリー必須(B-2f 事故参照) */}
+      <FrozenBanner issueId={issueId} />
+      {/* B-2j: 流程上下文条(站卡の迷子防止) — 両ツリー必須
+          (B-2n v3: 兄弟樹は原生「子工作項」widget が親を根に描画) */}
+      <IssueFlowContext issueId={issueId} />
+      <ApprovalHistory issueId={issueId} />
+
+      {/* BARSOUL B-4c(移到主区): 子树台账汇总 — peek 主区宽, 横表不被窄属性 sidebar 截 */}
+      <SmartTableSubtreeRollup issueId={issueId} />
 
       <DescriptionInput
         issueSequenceId={issue.sequence_id}

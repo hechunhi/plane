@@ -11,6 +11,7 @@ import { useParams, usePathname } from "next/navigation";
 import { EUserPermissionsLevel, EUserPermissions } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import { CycleIcon, IntakeIcon, ModuleIcon, PageIcon, ViewsIcon, WorkItemsIcon } from "@plane/propel/icons";
+import { Table2, Repeat } from "lucide-react";
 import type { EUserProjectRoles } from "@plane/types";
 // plane ui
 // components
@@ -133,6 +134,27 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
         access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
         shouldRender: project?.inbox_view ?? false,
         sortOrder: 6,
+      },
+      {
+        i18n_key: "sidebar.tables",
+        key: "tables",
+        name: "Tables",
+        href: `/${workspaceSlug}/projects/${projectId}/tables`,
+        icon: Table2,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 7,
+      },
+      {
+        // BARSOUL 定期タスク / 周期任务(IUTEYA-15): 独立一级 feature, 挨着数据表
+        i18n_key: "sidebar.recurring",
+        key: "recurring",
+        name: "Recurring",
+        href: `/${workspaceSlug}/projects/${projectId}/recurring`,
+        icon: Repeat,
+        access: [EUserPermissions.ADMIN, EUserPermissions.MEMBER, EUserPermissions.GUEST],
+        shouldRender: true,
+        sortOrder: 8,
       },
     ],
     [project]

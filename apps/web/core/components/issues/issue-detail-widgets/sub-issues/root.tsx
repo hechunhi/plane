@@ -21,10 +21,12 @@ type Props = {
   issueId: string;
   disabled?: boolean;
   issueServiceType: TIssueServiceType;
+  // BARSOUL B-2n v3: 子卡上以父为根渲染兄弟树时, 标题「子工作项」语义错位 → 可覆盖
+  titleOverride?: string;
 };
 
 export const SubIssuesCollapsible = observer(function SubIssuesCollapsible(props: Props) {
-  const { workspaceSlug, projectId, issueId, disabled = false, issueServiceType } = props;
+  const { workspaceSlug, projectId, issueId, disabled = false, issueServiceType, titleOverride } = props;
   // store hooks
   const { openWidgets, toggleOpenWidget } = useIssueDetail(issueServiceType);
   // derived values
@@ -41,6 +43,7 @@ export const SubIssuesCollapsible = observer(function SubIssuesCollapsible(props
           disabled={disabled}
           projectId={projectId}
           workspaceSlug={workspaceSlug}
+          titleOverride={titleOverride}
         />
       }
       buttonClassName="w-full"

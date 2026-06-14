@@ -22,6 +22,9 @@ from .webhook import urlpatterns as webhook_urls
 from .workspace import urlpatterns as workspace_urls
 from .timezone import urlpatterns as timezone_urls
 from .exporter import urlpatterns as exporter_urls
+from .smart_table import urlpatterns as smart_table_urls
+from .blueprint import urlpatterns as blueprint_urls
+from .recurring import urlpatterns as recurring_urls
 
 urlpatterns = [
     *analytic_urls,
@@ -44,4 +47,7 @@ urlpatterns = [
     *webhook_urls,
     *timezone_urls,
     *exporter_urls,
+    *smart_table_urls,
+    *blueprint_urls,
+    *recurring_urls,
 ]

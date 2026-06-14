@@ -19,6 +19,8 @@ export default {
     cycles: "週期",
     modules: "模組",
     intake: "接收",
+    recurring: "定期タスク",
+    tables: "資料表",
     drafts: "草稿",
     favorites: "收藏",
     pro: "專業版",

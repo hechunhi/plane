@@ -19,6 +19,8 @@ export default {
     cycles: "サイクル",
     modules: "モジュール",
     intake: "インテーク",
+    recurring: "定期タスク",
+    tables: "テーブル",
     drafts: "下書き",
     favorites: "お気に入り",
     pro: "プロ",

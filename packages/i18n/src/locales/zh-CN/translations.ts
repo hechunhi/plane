@@ -19,6 +19,8 @@ export default {
     cycles: "周期",
     modules: "模块",
     intake: "收集",
+    recurring: "定期任务",
+    tables: "数据表",
     drafts: "草稿",
     favorites: "收藏",
     pro: "专业版",

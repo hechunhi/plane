@@ -148,6 +148,36 @@ from .issue.ai_state import (
     IssueAIStateRederiveEndpoint,
 )
 
+from .smart_table import (
+    SmartTableListEndpoint,
+    SmartTableDetailEndpoint,
+    SmartColumnEndpoint,
+    SmartFormEndpoint,
+    SmartRowEndpoint,
+    SmartTableMyViewEndpoint,
+    SmartTableDepsEndpoint,
+    SmartTableTranslateEndpoint,
+    IssueSmartTableBindingEndpoint,
+    IssueSmartBindingCandidatesEndpoint,
+    IssueSmartSubtreeRowsEndpoint,
+)
+from .blueprint import (
+    BlueprintListEndpoint,
+    BlueprintDetailEndpoint,
+    BlueprintPublishEndpoint,
+    BlueprintInstancesEndpoint,
+    BlueprintInstantiateEndpoint,
+    IssueBlueprintInstanceEndpoint,
+    IssueFlowInterveneEndpoint,
+)
+from .recurring import (
+    RecurringRuleListEndpoint,
+    RecurringRuleDetailEndpoint,
+    RecurringRuleActionEndpoint,
+    IssueRecurringContextEndpoint,
+    IssueSnoozeEndpoint,
+)
+
 from .issue.label import LabelViewSet, BulkCreateIssueLabelsEndpoint
 
 from .issue.link import IssueLinkViewSet

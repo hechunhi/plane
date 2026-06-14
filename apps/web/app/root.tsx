@@ -93,6 +93,11 @@ export function Layout({ children }: { children: ReactNode }) {
         <ThemeProvider themes={["light", "dark", "light-contrast", "dark-contrast", "custom"]} defaultTheme="system">
           {children}
         </ThemeProvider>
+        {/* BARSOUL: glide-data-grid overlay editor 挂载点(写死找 #portal; 缺 → 智能表 text/date 等格子编辑器打不开)。
+            data-prevent-outside-click: peek の mousedown 外点判定が浮層クリックを「面板外」と誤認して
+            peek を閉じる(=編集不能に見える)のを防ぐ(Plane 既有約定, use-peek-overview-outside-click 参照)。
+            style は glide 公式要件: fixed(0,0) 基準が無いと浮層が文書末尾へ流れ「見えないのに入力は届く」怪現象になる。 */}
+        <div id="portal" data-prevent-outside-click style={{ position: "fixed", left: 0, top: 0, zIndex: 9999 }} />
         <Scripts />
         {!!isSessionRecorderEnabled && process.env.VITE_SESSION_RECORDER_KEY && (
           <Script id="clarity-tracking">

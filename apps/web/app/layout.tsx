@@ -86,6 +86,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <main className="relative h-full w-full overflow-hidden">{children}</main>
           </div>
         </AppProvider>
+        {/* BARSOUL: glide-data-grid overlay editor 挂载点(写死找 #portal; 缺 → 智能表 text/date 等格子编辑器打不开)。
+            data-prevent-outside-click: peek の外点判定が浮層操作で誤発火し peek を閉じるのを防ぐ。
+            style は glide 公式要件: fixed(0,0) 基準が無いと浮層が文書末尾へ流れ「見えないのに入力は届く」。 */}
+        <div id="portal" data-prevent-outside-click style={{ position: "fixed", left: 0, top: 0, zIndex: 9999 }} />
       </body>
       {!!isSessionRecorderEnabled && process.env.VITE_SESSION_RECORDER_KEY && (
         <Script id="clarity-tracking">

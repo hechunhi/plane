@@ -49,6 +49,21 @@ from .issue import (
     IssueVersion,
     IssueDescriptionVersion,
 )
+from .smart_table import (
+    IssueKeiriFacts,
+    SmartColumn,
+    SmartForm,
+    SmartRow,
+    SmartTable,
+    SmartTableIssueBinding,
+    SmartTableUserView,
+)
+from .blueprint import (
+    Blueprint,
+    BlueprintInstance,
+    BlueprintVersion,
+)
+from .recurring import RecurringRule
 from .module import Module, ModuleIssue, ModuleLink, ModuleMember, ModuleUserProperties
 from .notification import EmailNotificationLog, Notification, UserNotificationPreference
 from .page import Page, PageLabel, PageLog, ProjectPage, PageVersion

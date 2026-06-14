@@ -35,9 +35,13 @@ import { IssueTitleInput } from "../title-input";
 // BARSOUL DIS v4: 详情内嵌 AI 当前态区块
 import { AICurrentStateInline } from "@/components/issues/issue-layouts/kanban/ai-current-state-inline";
 // BARSOUL ADR-029: 凍結カード banner(役割別)
-import { FrozenBanner } from "./frozen-banner";
+import { ApprovalHistory, FrozenBanner } from "./frozen-banner";
+import { IssueFlowContext } from "./issue-flow-context";
+import { RecurringContextBar, SnoozeBar } from "@/components/recurring/recurring-card";
 import { IssueActivity } from "./issue-activity";
 import { KeiriOrderWidget } from "./keiri-order-widget";
+// BARSOUL B-4c(2026-06-15 移到主区): 子树台账汇总(横表) — 主内容区宽, 不被窄属性 sidebar 截
+import { SmartTableSubtreeRollup } from "@/components/smart-table/smart-table-subtree-rollup";
 import { IssueParentDetail } from "./parent";
 import { IssueReaction } from "./reactions";
 import type { TIssueOperations } from "./root";
@@ -98,8 +102,6 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
   return (
     <>
       <div className="space-y-4 rounded-lg">
-        {/* ADR-029: 凍結カード状態 banner — 役割別文言と進捗 */}
-        <FrozenBanner issueId={issueId} />
         {issue.parent_id && (
           <IssueParentDetail
             workspaceSlug={workspaceSlug}
@@ -141,6 +143,16 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
 
         {/* BARSOUL DIS v4: 详情内嵌 AI 当前态(标题下方,代替 hover 浮层) */}
         {issue.project_id && <AICurrentStateInline issueId={issue.id} projectId={issue.project_id} />}
+        {/* B-2h: 審査の状態層 — AI 当前態と同区画(標題下)。ページ物理最上部は視覚的に不自然のため移設 */}
+        <FrozenBanner issueId={issueId} />
+        {/* B-2j: 流程上下文条 — 站卡単独打开時の「我在哪/做什么/做完会怎样」
+            (B-2n v3: 兄弟樹は原生「子工作項」widget が親を根に描画 — collapsibles 参照) */}
+        <IssueFlowContext issueId={issueId} />
+        {/* BARSOUL 定期タスク: 该卡是某规则的当前实例 → 顶部上下文条回链规则(非实例则不渲染) */}
+        {issue.project_id && <RecurringContextBar issueId={issueId} projectId={issue.project_id} />}
+        {/* BARSOUL フォローアップ・スヌーズ: スヌーズ中なら期日+解除を表示(非 snooze は不渲染) */}
+        {issue.project_id && <SnoozeBar issueId={issueId} projectId={issue.project_id} />}
+        <ApprovalHistory issueId={issueId} />
 
         <DescriptionInput
           issueSequenceId={issue.sequence_id}
@@ -208,6 +220,9 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
 
       {/* BARSOUL C1: keiri 受注ステータス＋単票リンク */}
       <KeiriOrderWidget workspaceSlug={workspaceSlug} issueId={issueId} />
+
+      {/* BARSOUL B-4c(移到主区): 子树台账汇总 — 主内容区宽, 横表不被窄属性 sidebar 截 */}
+      <SmartTableSubtreeRollup issueId={issueId} />
 
       {windowSize[0] < 768 && (
         <PeekOverviewProperties
