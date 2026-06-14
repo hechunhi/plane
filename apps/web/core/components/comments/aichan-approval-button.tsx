@@ -24,7 +24,16 @@ import { Avatar, EModalPosition, EModalWidth, Input, Loader, ModalCore, TabList,
 // components
 import { MemberDropdown } from "@/components/dropdowns/member/dropdown";
 
-type Props = { workspaceSlug: string; projectId: string; issueId: string };
+// B-2p v2: variant="widget" = 快捷动作行风格触发器(用户点名动作按钮统一进该行)
+// B-5b: variant="controlled" = 触发器外置(发起流程下拉的「仅审批」项),open/onClose 受控
+type Props = {
+  workspaceSlug: string;
+  projectId: string;
+  issueId: string;
+  variant?: "icon" | "widget" | "controlled";
+  open?: boolean;
+  onClose?: () => void;
+};
 type Mode = "ANY" | "ALL" | "SEQUENTIAL";
 
 // 爱酱 sparkle(inline SVG, 不依赖图标包 → 零升级耦合/零 import 风险)
@@ -67,11 +76,20 @@ async function callAiApproval(
 }
 
 export const AichanApprovalButton = observer(function AichanApprovalButton(props: Props) {
-  const { workspaceSlug, projectId, issueId } = props;
+  const { workspaceSlug, projectId, issueId, variant = "icon" } = props;
   const { t, currentLocale } = useTranslation();
   const lang = currentLocale === "ja" ? "ja" : "zh";
 
-  const [open, setOpen] = useState(false);
+  // B-5b: controlled 変体は open を外(発起流程下拉)が持つ — modal が下拉の
+  // unmount に巻き込まれない。それ以外は従来の内部 state。
+  const isControlled = variant === "controlled";
+  const [openState, setOpenState] = useState(false);
+  const open = isControlled ? !!props.open : openState;
+  const setOpen = (v: boolean) => {
+    if (isControlled) {
+      if (!v) props.onClose?.();
+    } else setOpenState(v);
+  };
   const [instruction, setInstruction] = useState("");
   const [subject, setSubject] = useState("");
   const [detail, setDetail] = useState("");
@@ -221,6 +239,15 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
 
   return (
     <>
+      {isControlled ? null : variant === "widget" ? (
+        // B-2p v2: 快捷动作行风格(对齐 IssueDetailWidgetButton = propel Button secondary lg)
+        <div onClick={() => setOpen(true)}>
+          <Button variant="secondary" size="lg">
+            <Sparkle className="size-4" />
+            <span className="text-body-xs-medium">{t("aichan_approval.button_tooltip")}</span>
+          </Button>
+        </div>
+      ) : (
       <Tooltip tooltipContent={t("aichan_approval.button_tooltip")}>
         <button
           type="button"
@@ -231,6 +258,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
           <Sparkle className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
+      )}
 
       <ModalCore
         isOpen={open}

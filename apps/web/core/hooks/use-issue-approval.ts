@@ -27,13 +27,23 @@ export type TApprover = {
   order: number;
 };
 
+export type TApprovalHistoryRow = {
+  no: string;
+  subject: string;
+  status: string; // 通过 | 却下 | 撤回
+  approvers: string[];
+  finalized_at: string | null;
+};
+
 export type TIssueApprovalData = {
   frozen: boolean;
   no?: string;
+  subject?: string;
   status?: string;
   mode?: "ALL" | "ANY" | "SEQUENTIAL";
   initiator?: { id: string; name: string };
   approvers?: TApprover[];
+  history?: TApprovalHistoryRow[]; // B-2f: 終結済審査(評論流水廃止 → UI 表示面)
 };
 
 export type TFrozenRole =
@@ -45,9 +55,25 @@ export type TFrozenRole =
 
 export const issueApprovalSWRKey = (issueId: string) => `ISSUE_APPROVAL:${issueId}`;
 
-const fetchIssueApproval = async (issueId: string): Promise<TIssueApprovalData> => {
+// B-5a: 審査軽カード名の尾碼 = FNV-1a(No) 6hex(Go 側 shortNo と同一アルゴリズム)。
+// 同父複数審査の取り違い防止(parent fallback は created_at DESC LIMIT 1 のため)。
+export const approvalShortNo = (no: string): string => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < no.length; i++) {
+    h ^= no.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return (h & 0xffffff).toString(16).padStart(6, "0");
+};
+
+const TODO_CARD_PREFIX = "審査: "; // approval workflow CreateTodoCard と同期
+
+const fetchIssueApproval = async (issueId: string, parentId?: string): Promise<TIssueApprovalData> => {
   try {
-    const r = await fetch(`/__approval/by-issue/${issueId}`, { credentials: "same-origin" });
+    // B-5a: 審査軽カードは label 無し&PG レコードは親(被審査カード)に紐付く
+    // → ?parent= で ai-bot が親で再検索(軽カード上でその場裁決可能に)。
+    const qs = parentId ? `?parent=${parentId}` : "";
+    const r = await fetch(`/__approval/by-issue/${issueId}${qs}`, { credentials: "same-origin" });
     if (!r.ok) return { frozen: false };
     return (await r.json()) as TIssueApprovalData;
   } catch {
@@ -66,15 +92,21 @@ export const useIssueApproval = (issueId: string | undefined) => {
   // ===== ① label-based frozen 判定 (SoR, 即時, 0 API 呼出) =====
   const issue = issueId ? getIssueById(issueId) : undefined;
   const labelIds = issue?.label_ids || [];
-  const frozen = labelIds.some((lid) => {
+  const labelFrozen = labelIds.some((lid) => {
     const l = getLabelById(lid);
     return l && FROZEN_LABEL_NAMES.includes(l.name);
   });
 
-  // ===== ② role 付加情報 (best-effort, frozen 時のみ fetch) =====
+  // ===== ② role 付加情報 + 審査履歴 (best-effort) =====
+  // B-2f: 評論流水廃止 → 履歴も本 endpoint が表示面。frozen でなくても
+  // issue を開けば fetch(本地 PG 1 クエリ + SWR 30s dedupe で安価)。
+  // B-5a: parent fallback は審査軽カード(名前が「審査: 」前缀)のみ発動 —
+  // 兄弟站カード全部にバナーが湧くのを防ぐ(挙動は旧来と完全互換)。
+  const todoParentId =
+    issue?.name?.startsWith(TODO_CARD_PREFIX) && issue?.parent_id ? issue.parent_id : undefined;
   const { data: roleInfo, mutate } = useSWR<TIssueApprovalData>(
-    frozen && issueId ? issueApprovalSWRKey(issueId) : null,
-    issueId ? () => fetchIssueApproval(issueId) : null,
+    issueId ? `${issueApprovalSWRKey(issueId)}:${todoParentId ?? ""}` : null,
+    issueId ? () => fetchIssueApproval(issueId, todoParentId) : null,
     {
       dedupingInterval: 30_000,
       revalidateOnFocus: true,
@@ -82,6 +114,12 @@ export const useIssueApproval = (issueId: string | undefined) => {
       refreshInterval: 5 * 60_000,
     }
   );
+
+  // B-5a: 軽カード上の frozen = データ命中(label は親に在る)。尾碼 #hash6 で
+  // 「この軽カードの審査」かを照合(同父複数審査の取り違い防止)。
+  const viaParent = !labelFrozen && !!todoParentId && !!roleInfo?.frozen;
+  const todoMatch = viaParent && !!roleInfo?.no && !!issue?.name?.endsWith(`#${approvalShortNo(roleInfo.no)}`);
+  const frozen = labelFrozen || (viaParent && todoMatch);
 
   // ===== ③ myRole 派生 — endpoint があれば精細, 無ければ bystander 安全側 =====
   let myRole: TFrozenRole = "none";
@@ -105,12 +143,13 @@ export const useIssueApproval = (issueId: string | undefined) => {
   }
 
   return {
-    /** 標籤の有無に基づく確定的判定. SoR. */
+    /** 標籤の有無に基づく確定的判定(B-5a: 軽カードはデータ命中+尾碼照合). */
     frozen,
     /** 役割(endpoint 由来; 未読込/失敗時は bystander). */
     myRole,
-    /** 詳細情報(無しでも frozen 有効). banner/tooltip 用. */
-    approval: roleInfo,
+    /** 詳細情報(無しでも frozen 有効). banner/tooltip 用.
+     *  B-5a: parent fallback 命中だが尾碼不一致(=別の審査)はデータを出さない. */
+    approval: viaParent && !todoMatch ? undefined : roleInfo,
     isMyTurn: myRole === "pending_approver",
     refresh: mutate,
   };
