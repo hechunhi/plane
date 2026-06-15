@@ -146,6 +146,11 @@ class IssueAIStateBatchEndpoint(BaseAPIView):
         qs = IssueAIState.objects.filter(
             Q(issue__state__group__in=["unstarted", "started"]) | Q(needs_info=True),
             workspace__slug=slug, project_id=project_id,
+            # BARSOUL 2026-06-15 (hechun bug): 已删除卡的派生态 row 仍残留(issue 软删
+            # 不级联到 issue_ai_states)→ 「待我处理」digest 显示幽灵卡(两边不同步)。
+            # select_related 是裸 JOIN, 软删 issue 仍命中 → 必须显式排除。これで
+            # 現在/将来の削除卡 全部不再出现(读时过滤=数据不写=守 ADR-003)。
+            issue__deleted_at__isnull=True,
         ).select_related("issue", "issue__state", "project", "rep_child")  # rep_child: 子树 rollup 防 N+1
         if raw:
             ids = [x for x in (s.strip() for s in raw.split(",")) if x][:300]
