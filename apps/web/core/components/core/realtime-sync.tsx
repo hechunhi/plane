@@ -36,10 +36,13 @@ const NOTIF_REFETCH_DEBOUNCE_MS = 500;
 
 export const RealtimeSync = () => {
   const { workspaceSlug } = useParams();
-  const { refreshBadgeNotifications } = useWorkspaceNotifications();
+  const { refreshBadgeNotifications, getUnreadNotificationsCount } = useWorkspaceNotifications();
   const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // SSE 健康度: 最後にイベント/openを受信した時刻. 3 分以上静默 → degraded.
   const lastEventAt = useRef<number>(Date.now());
+  // BARSOUL 2026-06-18: safety 間隔での直前未読スナップショット。
+  // カウントが変わっていない限り 300 件全量 fetch をスキップする(digest 最適化)。
+  const lastUnreadSnapshot = useRef<{ total: number; mention: number } | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
@@ -63,6 +66,43 @@ export const RealtimeSync = () => {
           /* notif refresh 失敗は SSE 主路を阻害しない */
         }
       }, NOTIF_REFETCH_DEBOUNCE_MS);
+    };
+
+    // BARSOUL 2026-06-18: digest 最適化 — safety 間隔専用の軽量チェック。
+    // SSE 由来の refreshNotifications は毎回全量フェッチ(変化確実)のまま。
+    // safety timer のみ count 先チェック → 差分あれば全量フェッチに落とす。
+    const safetySync = async () => {
+      const ws = (workspaceSlug || "").toString();
+      if (!ws) return;
+      try {
+        const result = await getUnreadNotificationsCount(ws);
+        if (!result) {
+          // count エンドポイント失敗 → フォールバックで全量フェッチ
+          void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
+          void refreshBadgeNotifications(ws);
+          return;
+        }
+        const prev = lastUnreadSnapshot.current;
+        const changed =
+          !prev ||
+          prev.total !== result.total_unread_notifications_count ||
+          prev.mention !== result.mention_unread_notifications_count;
+        lastUnreadSnapshot.current = {
+          total: result.total_unread_notifications_count,
+          mention: result.mention_unread_notifications_count,
+        };
+        if (changed) {
+          // カウントが変わった → 全量フェッチで unreadByIssueId も更新
+          void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
+          void refreshBadgeNotifications(ws);
+        }
+        // !changed: getUnreadNotificationsCount が MobX 更新済み → count badge OK
+        // unreadByIssueId は変化なし → 300 件フェッチ不要
+      } catch {
+        // 何らかの例外 → 安全側(全量フェッチ)にフォールバック
+        void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
+        void refreshBadgeNotifications(ws);
+      }
     };
 
     let es: EventSource | null = null;
@@ -93,9 +133,7 @@ export const RealtimeSync = () => {
         // comments 配列 = コメント変更のあった issue id。開いてる
         //   詳細/peek パネルのみが反応(看板には一切波及しない)。
         if (Array.isArray(d.comments)) {
-          commentIssueIds = (d.comments as unknown[]).filter(
-            (x): x is string => typeof x === "string" && x.length > 0
-          );
+          commentIssueIds = (d.comments as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0);
         }
       } catch {
         return;
@@ -142,24 +180,41 @@ export const RealtimeSync = () => {
       //   が起きたら notification store を再取得 → 🔔 赤点 + カード未読
       //   ハイライトをリアルタイム化(従来 polling のみ).
       if (hasIssueSignal || commentIssueIds.length > 0) {
-        try { refreshNotifications(); } catch { /* noop */ }
+        try {
+          refreshNotifications();
+        } catch {
+          /* noop */
+        }
       }
       // BARSOUL ADR-029: 凍結カード状態同期. 変動した issue 毎に
       // ISSUE_APPROVAL SWR key を失効 → useIssueApproval re-fetch
       // → カード視覚(役割別)が SSE 秒級で切替わる.
-      const affectedIssues = new Set<string>([
-        ...(ids || []),
-        ...commentIssueIds,
-      ]);
+      const affectedIssues = new Set<string>([...(ids || []), ...commentIssueIds]);
       affectedIssues.forEach((iid) => {
-        try { void mutate(`ISSUE_APPROVAL:${iid}`); } catch { /* noop */ }
+        try {
+          void mutate(`ISSUE_APPROVAL:${iid}`);
+        } catch {
+          /* noop */
+        }
       });
       // BARSOUL DIS: 评论/卡片变更很可能触发 AI 异步重判(debounce 4s + LLM)。
       //   延时失效该 issue 的 ai-state 缓存 → 看板/详情的「AI 当前态」在重判
       //   落地后自动刷新(近实时,无需手刷)。两档延时覆盖重判耗时窗口。
       affectedIssues.forEach((iid) => {
-        setTimeout(() => { try { invalidateAIState(iid); } catch { /* noop */ } }, 8000);
-        setTimeout(() => { try { invalidateAIState(iid); } catch { /* noop */ } }, 22000);
+        setTimeout(() => {
+          try {
+            invalidateAIState(iid);
+          } catch {
+            /* noop */
+          }
+        }, 8000);
+        setTimeout(() => {
+          try {
+            invalidateAIState(iid);
+          } catch {
+            /* noop */
+          }
+        }, 22000);
       });
     };
 
@@ -186,7 +241,8 @@ export const RealtimeSync = () => {
       es.addEventListener("op", onPeerOp as EventListener);
       // 接続/再接続成功。初回以外(=再接続)は接続断の隙間で取りこぼした
       // 変更がありうるので全ボードを一回 resync(鲁棒性の要)。
-      es.onopen = () => {
+      es.addEventListener("open", () => {
+        lastEventAt.current = Date.now();
         if (firstOpen) {
           firstOpen = false;
           return;
@@ -196,18 +252,15 @@ export const RealtimeSync = () => {
         } catch {
           /* fail-safe */
         }
-      };
-      // error は EventSource 自動再接続に任せる. onerror で refresh を打つと
-      // 一時的なネット揺れ(プロキシ idle drop 等)で雪崩発射する → 抑える.
+      });
+      // error は EventSource 自動再接続に任せる. addEventListener("error") で
+      // refresh を打つと一時的なネット揺れで雪崩発射する → 抑える.
       // 真に "切れた" 状態は safety interval(下記の degraded mode)で 30s に
       // 切替わって補捉される.
-      es.onerror = () => {
+      es.addEventListener("error", () => {
         if (closed && es) es.close();
-        // 自動再接続後の onopen で lastEventAt が更新 → healthy 復帰
-      };
-      es.onopen = () => {
-        lastEventAt.current = Date.now();
-      };
+        // 自動再接続後の open イベントで lastEventAt が更新 → healthy 復帰
+      });
     } catch {
       /* EventSource 生成失敗 → 退化(今日の挙動) */
     }
@@ -224,10 +277,7 @@ export const RealtimeSync = () => {
     const isSSEHealthy = (): boolean => {
       if (!es || es.readyState !== 1 /* OPEN */) return false;
       // tab visible でも長期静默なら proxy 黙殺の可能性 (degraded)
-      if (
-        document.visibilityState === "visible" &&
-        Date.now() - lastEventAt.current > SSE_STALE_THRESHOLD_MS
-      ) {
+      if (document.visibilityState === "visible" && Date.now() - lastEventAt.current > SSE_STALE_THRESHOLD_MS) {
         return false;
       }
       return true;
@@ -241,7 +291,7 @@ export const RealtimeSync = () => {
         // tab 不可見 → 刷っても見えない. SWR revalidateOnFocus が tab 復帰時
         //   に拾うので skip して負荷ゼロ. 復帰時の visibilitychange でも拾う.
         if (document.visibilityState === "visible") {
-          refreshNotifications();
+          void safetySync();
         }
         scheduleSafety(); // 自己再スケジュール → state 変化に追従
       }, interval);
@@ -285,7 +335,7 @@ export const RealtimeSync = () => {
     };
     // workspaceSlug を deps に含めることで ws 切替時に notification refetch
     // を新 ws 向けに走らせる(EventSource 自体は同源同 path で張り直し不要).
-  }, [workspaceSlug, refreshBadgeNotifications]);
+  }, [workspaceSlug, refreshBadgeNotifications, getUnreadNotificationsCount]);
 
   return null;
 };
