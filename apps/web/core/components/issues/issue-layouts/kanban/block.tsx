@@ -11,7 +11,8 @@ import { draggable, dropTargetForElements } from "@atlaskit/pragmatic-drag-and-d
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 // plane helpers
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, AlarmClock } from "lucide-react";
+import useSWR from "swr";
 import { useOutsideClickDetector } from "@plane/hooks";
 // types
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
@@ -37,6 +38,7 @@ import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/iss
 import {
   useIssueUnreadCount,
   useIssueUnreadKind,
+  useIssueUnreadHasReminder,
   isMutedState,
 } from "@/components/notifications/issue-unread-badge";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
@@ -83,42 +85,61 @@ interface IssueDetailsBlockProps {
   isEpic?: boolean;
 }
 
+const _stopMouseEvent = (e: React.MouseEvent) => {
+  e.stopPropagation();
+  e.preventDefault();
+};
+const _stopKeyEvent = (e: React.KeyboardEvent) => {
+  e.stopPropagation();
+};
+
 const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
   props: IssueDetailsBlockProps & { hasUnread?: boolean; isMentionUnread?: boolean }
 ) {
   const {
-    cardRef, issue, updateIssue, quickActions, isReadOnly, displayProperties, isEpic = false,
-    hasUnread = false, isMentionUnread = false,
+    cardRef,
+    issue,
+    updateIssue,
+    quickActions,
+    isReadOnly,
+    displayProperties,
+    isEpic = false,
+    hasUnread = false,
   } = props;
   // refs
-  const menuActionRef = useRef<HTMLDivElement | null>(null);
+  const menuActionRef = useRef<HTMLButtonElement | null>(null);
   // states
   const [isMenuActive, setIsMenuActive] = useState(false);
   // hooks
   const { isMobile } = usePlatformOS();
+  // BARSOUL 2026-06-16: 提醒态以 SNOOZE SWR 缓存为准(设/解除即时反应, 消除"消除不掉"),
+  // 缓存空(未开过卡)时回退列表给的 issue.remind_at(初次刷新看板用)。
+  const { data: _snz } = useSWR<{ set?: boolean; at?: string; note?: string }>(
+    issue?.id ? `SNOOZE:${issue.id}` : null,
+    null,
+    { revalidateOnFocus: false }
+  );
+  const remindAt = _snz ? (_snz.set ? _snz.at : null) : (issue?.remind_at ?? null);
+  const remindNote = _snz ? (_snz.note ?? "") : (issue?.remind_note ?? "");
   // BARSOUL ADR-029 続: pending_approver はタイトル交互フェードで強提示.
   const { frozen: _kbDetailFrozen, myRole: _kbDetailRole } = useIssueApproval(issue?.id);
   const isPendingApprover = _kbDetailFrozen && _kbDetailRole === "pending_approver";
 
   const customActionButton = (
-    <div
+    <button
       ref={menuActionRef}
+      type="button"
       className={`flex h-full w-full cursor-pointer items-center rounded-sm p-1 text-placeholder hover:bg-layer-1 ${
         isMenuActive ? "bg-layer-1 text-primary" : "text-secondary"
       }`}
       onClick={() => setIsMenuActive(!isMenuActive)}
     >
       <MoreHorizontal className="h-3.5 w-3.5" />
-    </div>
+    </button>
   );
 
   // derived values
   const subIssueCount = issue?.sub_issues_count ?? 0;
-
-  const handleEventPropagation = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-  };
 
   useOutsideClickDetector(menuActionRef, () => setIsMenuActive(false));
 
@@ -137,11 +158,13 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         {/* BARSOUL IUTEYA-9: ★ pin button (pinned→常時表示金色,未→hover ☆) */}
         <PinButton issueId={issue.id} projectId={issue.project_id} variant="card" />
         <div
+          role="presentation"
           className={cn("absolute -top-1 right-0", {
             "hidden group-hover/kanban-block:block": !isMobile,
             "!block": isMenuActive,
           })}
-          onClick={handleEventPropagation}
+          onClick={_stopMouseEvent}
+          onKeyDown={_stopKeyEvent}
         >
           {quickActions({
             issue,
@@ -164,6 +187,26 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
           <ApproverTitle title={issue.name ?? ""} active={isPendingApprover} />
         </div>
       </Tooltip>
+
+      {/* BARSOUL 2026-06-16: 提醒行 — 时刻 + 备忘直接显示在看板卡上(配合右上角紫色呼吸点+紫边框)。 */}
+      {remindAt && (
+        <div className="flex items-center gap-1 pt-0.5 text-[11px] leading-tight" style={{ color: "#7c5cff" }}>
+          <AlarmClock style={{ width: 12, height: 12, flexShrink: 0 }} />
+          <span style={{ fontWeight: 500, flexShrink: 0 }}>
+            {new Date(remindAt).toLocaleString("ja-JP", {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+          {remindNote && (
+            <span className="truncate" style={{ color: "#9296a0" }}>
+              · {remindNote}
+            </span>
+          )}
+        </div>
+      )}
 
       <IssueProperties
         className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary"
@@ -246,8 +289,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
 
   // BARSOUL ADR-029: 凍結カード状態 (役割別 UX). frozen 時は拖拽禁止.
   const { frozen: isFrozen, myRole: frozenRole } = useIssueApproval(issue?.id);
-  const isDragAllowed =
-    canDragIssuesInCurrentGrouping && !issue?.tempId && canEditIssueProperties && !isFrozen;
+  const isDragAllowed = canDragIssuesInCurrentGrouping && !issue?.tempId && canEditIssueProperties && !isFrozen;
   const projectIdentifier = getProjectIdentifierById(issue?.project_id);
   // BARSOUL: 未読更新があればカードに左端アクセントバー＋薄い底色を付与
   // （通知中心の未読行と同じ accent-primary 視覚言語。一覧で一目判別）。
@@ -258,6 +300,8 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
   const _kbKind = useIssueUnreadKind(issue?.id);
   const hasUnread = !_kbMuted && useIssueUnreadCount(issue?.id) > 0;
   const isMentionUnread = hasUnread && _kbKind === "mention";
+  const isReminderUnread = !_kbMuted && useIssueUnreadHasReminder(issue?.id);
+  const hasNonReminderUnread = hasUnread && _kbKind !== "reminder";
 
   const workItemLink = generateWorkItemLink({
     workspaceSlug,
@@ -310,7 +354,15 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
         },
       })
     );
-  }, [cardRef?.current, issue?.id, isDragAllowed, canDropOverIssue, setIsCurrentBlockDragging, setIsDraggingOverBlock]);
+  }, [
+    cardRef?.current,
+    issue?.id,
+    isDragAllowed,
+    canDropOverIssue,
+    setIsCurrentBlockDragging,
+    setIsDraggingOverBlock,
+    setIsKanbanDragging,
+  ]);
 
   if (!issue) return null;
 
@@ -362,10 +414,15 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
             //   ・通常未読: 1px 赤 solid border + 微弱 box-shadow ring
             //   ・@mention: 1.5px 赤 + ring 強め + pulse(行動要求)
             //   bg 染色は廃止 (子供っぽい)、bullet + 太字 title は子側で。
-            hasUnread && !isMentionUnread &&
-              "!border-[var(--bg-danger-primary)] hover:!border-[var(--bg-danger-primary)] shadow-[0_0_0_1px_var(--bg-danger-primary)]",
+            hasNonReminderUnread &&
+              !isMentionUnread &&
+              !isReminderUnread &&
+              "!border-[var(--bg-danger-primary)] shadow-[0_0_0_1px_var(--bg-danger-primary)] hover:!border-[var(--bg-danger-primary)]",
             isMentionUnread &&
-              "!border-[var(--bg-danger-primary)] !border-[1.5px] hover:!border-[var(--bg-danger-primary)] shadow-[0_0_0_2px_var(--bg-danger-primary)]",
+              !isReminderUnread &&
+              "!border-[1.5px] !border-[var(--bg-danger-primary)] shadow-[0_0_0_2px_var(--bg-danger-primary)] hover:!border-[var(--bg-danger-primary)]",
+            // BARSOUL: 提醒中は紫境界線が排他優先(赤/mention を上書きする)。
+            isReminderUnread && !isFrozen && "!border-[#a78bfa] shadow-[0_0_0_1px_#a78bfa] hover:!border-[#a78bfa]",
             { "z-[100] bg-layer-1": isCurrentBlockDragging },
             // BARSOUL ADR-029: 凍結カード(審査中) — 役割別視覚.
             //   pending_approver (要対応): 橙左バー4px + 8% 橙底色 + 微脈動
@@ -375,22 +432,22 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
             // BARSOUL 色語(2026-05-25): 赤=未読(情報到達)、橙/琥珀=待行動
             // (審批 pending)、灰=傍観。pending_approver は赤から橙へ移行
             // して "新消息" 信号(red dot)と "要対応" 信号(amber bar)を分離。
-            isFrozen && frozenRole === "pending_approver" && {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:rounded-l-lg before:bg-[#ea580c] before:content-[''] before:animate-pulse after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#ea580c]/[0.08] after:content-['']":
-                true,
-            },
-            isFrozen && frozenRole === "initiator" && {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706] before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#d97706]/[0.05] after:content-['']":
-                true,
-            },
-            isFrozen && frozenRole === "queued_approver" && {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706]/70 before:content-['']":
-                true,
-            },
-            isFrozen && frozenRole === "bystander" && {
-              "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:rounded-l-lg before:bg-[#94a3b8] before:content-['']":
-                true,
-            },
+            isFrozen &&
+              frozenRole === "pending_approver" && {
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:animate-pulse before:rounded-l-lg before:bg-[#ea580c] before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#ea580c]/[0.08] after:content-['']": true,
+              },
+            isFrozen &&
+              frozenRole === "initiator" && {
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706] before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#d97706]/[0.05] after:content-['']": true,
+              },
+            isFrozen &&
+              frozenRole === "queued_approver" && {
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706]/70 before:content-['']": true,
+              },
+            isFrozen &&
+              frozenRole === "bystander" && {
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:rounded-l-lg before:bg-[#94a3b8] before:content-['']": true,
+              },
             // frozen 時に hover:cursor-pointer を抑制(クリックは peek 開けるが
             // ドラッグ不可を視覚的に示す)
             isFrozen && "hover:cursor-not-allowed"
@@ -402,10 +459,10 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
               ? frozenRole === "pending_approver"
                 ? "🔔 あなたの審査待ち — クリックして決定/詳細"
                 : frozenRole === "queued_approver"
-                ? "⏳ 順次審査 — 前の人が承認後にあなたの番"
-                : frozenRole === "initiator"
-                ? "📋 あなたが発起した審査が進行中 — クリックで状況"
-                : "🔒 他人が審査中 — 操作不可"
+                  ? "⏳ 順次審査 — 前の人が承認後にあなたの番"
+                  : frozenRole === "initiator"
+                    ? "📋 あなたが発起した審査が進行中 — クリックで状況"
+                    : "🔒 他人が審査中 — 操作不可"
               : undefined
           }
         >
@@ -413,15 +470,23 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
               赤縁取り + 太字 + 呼吸アニメ三位一体で "生きてる" 通知感.
               静的 dot だと "汚れ" だが、呼吸アニメ付きだと "意図的な信号" に
               読み替えられる(LINE / Twitter の live indicator 同様). */}
-          {hasUnread && (
+          {hasNonReminderUnread && !isReminderUnread && (
             <span
               aria-label={isMentionUnread ? "mention unread" : "unread"}
-              className="barsoul-unread-breath pointer-events-none absolute right-2 top-2 z-10 rounded-full"
+              className="barsoul-unread-breath pointer-events-none absolute top-2 right-2 z-10 rounded-full"
               style={{
                 width: isMentionUnread ? 10 : 8,
                 height: isMentionUnread ? 10 : 8,
                 background: "var(--bg-danger-primary)",
               }}
+            />
+          )}
+          {/* BARSOUL: 提醒未読紫呼吸点(右上). 提醒中は赤 dot を排除するため常に right:8。 */}
+          {isReminderUnread && (
+            <span
+              aria-label="reminder unread"
+              className="barsoul-remind-breath pointer-events-none absolute top-2 z-10 rounded-full"
+              style={{ width: 8, height: 8, right: 8, background: "#7c5cff" }}
             />
           )}
           <RenderIfVisible

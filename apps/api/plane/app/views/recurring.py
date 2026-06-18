@@ -5,20 +5,21 @@ import logging
 from rest_framework.response import Response
 from rest_framework import status
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as _time
 
 from plane.app.views.base import BaseAPIView
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import Issue, Project, RecurringRule
+from plane.db.models import Issue, Notification, Project, RecurringRule
 from plane.bgtasks.recurring_task import run_rule_now, seed_next_run
-from plane.utils.recurring import add_working_days, now_jst_date, period_label, snooze_datetime_utc
+from plane.utils.recurring import JST, add_working_days, now_jst_date, period_label, snooze_datetime_utc
 from django.utils import timezone
+from django.db.models import Q
 
 logger = logging.getLogger(__name__)
 
 _CADENCES = {"weekly", "monthly", "quarterly", "yearly"}
 _DONE_GROUPS = ("completed", "cancelled")
-_EDITABLE = ("name", "cadence", "anchor", "lead_days", "labels", "template", "blueprint_id", "assignee_id")
+_EDITABLE = ("name", "cadence", "anchor", "lead_days", "labels", "template", "blueprint_id", "assignee_id", "generation_prompt")
 _SCHED_FIELDS = ("cadence", "anchor", "lead_days")  # 改这些 → 重算 next_run
 
 
@@ -64,6 +65,7 @@ def _rule_json(rule, today):
         "assignee": {"id": str(a.id), "display_name": a.display_name} if a else None,
         "labels": list(rule.labels or []),
         "template": rule.template or {},
+        "generation_prompt": rule.generation_prompt or "",
         "blueprint": str(rule.blueprint_id) if rule.blueprint_id else None,
         "next_run_at": rule.next_run_at.isoformat() if rule.next_run_at else None,
         "next_due": due.isoformat() if due else None,
@@ -119,6 +121,7 @@ class RecurringRuleListEndpoint(BaseAPIView):
             name=name, cadence=data.get("cadence") or "monthly", anchor=data.get("anchor") or {},
             lead_days=int(data.get("lead_days") or 0), labels=data.get("labels") or [],
             template=data.get("template") or {}, assignee_id=data.get("assignee_id") or None,
+            generation_prompt=(data.get("generation_prompt") or "").strip(),
             blueprint_id=data.get("blueprint_id") or None,
             project_id=project_id, workspace_id=_ws_id(slug, project_id),
             created_by_id=uid, updated_by_id=uid)
@@ -219,40 +222,111 @@ def _snooze_target(preset, until, today):
     return None
 
 
+def _remind_at_utc(data, issue, today):
+    """触发 UTC 时刻。优先级: at(ISO 绝対) > lead_days(相对 target_date) > preset/until(日付)。
+    日付指定时の時刻 = time(hh:mm JST, 既定 09:00)。"""
+    at = (data.get("at") or "").strip()
+    if at:
+        try:
+            dt = datetime.fromisoformat(at.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=JST)  # 前端裸时间按 JST
+        return dt.astimezone(timezone.utc)
+    hh, mm = 9, 0
+    tt = (data.get("time") or "").strip()
+    if tt:
+        try:
+            ps = tt.split(":")
+            hh, mm = int(ps[0]), (int(ps[1]) if len(ps) > 1 else 0)
+        except (ValueError, IndexError):
+            hh, mm = 9, 0
+    target = None
+    lead = data.get("lead_days")
+    if lead is not None and getattr(issue, "target_date", None):
+        try:
+            base = issue.target_date
+            base = base.date() if hasattr(base, "date") else base
+            target = base - timedelta(days=int(lead))
+        except (ValueError, TypeError):
+            target = None
+    if target is None:
+        target = _snooze_target(data.get("preset"), data.get("until"), today)
+    if not target:
+        return None
+    return datetime.combine(target, _time(hh, mm), tzinfo=JST).astimezone(timezone.utc)
+
+
 class IssueSnoozeEndpoint(BaseAPIView):
-    """フォローアップ・スヌーズ: GET 当前状态 / POST 设置·清除。
-    设置 → snoozed_until>now 使卡从 active 视图隐藏(IssueManager), 到点自动复活 + Beat 1 回ベル(零评论)。"""
+    """リマインダー(旧スヌーズ強化): GET 当前配置 / POST 设置·清除。
+    可配置: 何时(at/preset/lead_days+time) · 是否隐藏(hide) · 强度(once/daily) · 受众(self/assignees/members)。
+    hide=True → snoozed_until 使卡从 active 视图隐藏(IssueManager); hide=False → 卡留视图(前端显徽章)。
+    到点由高频 Beat(reminder_sweep)给受众响铃(零评论); daily=每日续提醒至卡完成或解除。"""
+
+    def _state(self, i):
+        if not i.remind_at:
+            return {"set": False}
+        return {
+            "set": True,
+            "at": i.remind_at.isoformat(),
+            "at_date": now_jst_date(i.remind_at).isoformat(),
+            "at_jst": i.remind_at.astimezone(JST).strftime("%Y-%m-%d %H:%M"),
+            "hide": bool(i.remind_hide),
+            "intensity": i.remind_intensity or "once",
+            "audience": i.remind_audience or "self",
+            "note": i.remind_note or "",
+            "by": {"id": str(i.snoozed_by_id), "display_name": i.snoozed_by.display_name} if i.snoozed_by_id else None,
+        }
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def get(self, request, slug, project_id, issue_id):
         i = Issue.objects.select_related("snoozed_by").get(pk=issue_id, project_id=project_id, workspace__slug=slug)
-        if not i.snoozed_until:
-            return Response({"snoozed": False}, status=status.HTTP_200_OK)
-        return Response({
-            "snoozed": True,
-            "until": i.snoozed_until.isoformat(),
-            "until_date": now_jst_date(i.snoozed_until).isoformat(),  # JST 日界の対象日
-            "by": {"id": str(i.snoozed_by_id), "display_name": i.snoozed_by.display_name} if i.snoozed_by_id else None,
-        }, status=status.HTTP_200_OK)
+        return Response(self._state(i), status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def post(self, request, slug, project_id, issue_id):
-        i = Issue.objects.get(pk=issue_id, project_id=project_id, workspace__slug=slug)
+        i = Issue.objects.select_related("snoozed_by").get(pk=issue_id, project_id=project_id, workspace__slug=slug)
         data = request.data or {}
+        fields = ["snoozed_until", "snoozed_by", "remind_at", "remind_hide",
+                  "remind_intensity", "remind_audience", "remind_note", "remind_fired_on", "updated_at"]
         if data.get("clear"):
-            i.snoozed_until = None
-            i.snoozed_by = None
-            i.save(update_fields=["snoozed_until", "snoozed_by", "updated_at"])
-            return Response({"snoozed": False}, status=status.HTTP_200_OK)
-        today = now_jst_date(timezone.now())
-        target = _snooze_target(data.get("preset"), data.get("until"), today)
-        if not target or target <= today:
-            return Response({"error": "未来の日付を指定してください"}, status=status.HTTP_400_BAD_REQUEST)
-        i.snoozed_until = snooze_datetime_utc(target)
+            i.snoozed_until = None; i.snoozed_by = None; i.remind_at = None
+            i.remind_hide = False; i.remind_intensity = "once"; i.remind_audience = "self"
+            i.remind_note = ""; i.remind_fired_on = None
+            i.save(update_fields=fields)
+            # P3: 解除 → 取消 Temporal ReminderWorkflow(cancel signal)
+            from plane.bgtasks.recurring_task import _cancel_reminder_workflow
+            _cancel_reminder_workflow(issue_id)
+            return Response({"set": False}, status=status.HTTP_200_OK)
+        remind_at = _remind_at_utc(data, i, now_jst_date(timezone.now()))
+        if not remind_at or remind_at <= timezone.now():
+            return Response({"error": "未来の日時を指定してください"}, status=status.HTTP_400_BAD_REQUEST)
+        hide = bool(data.get("hide"))
+        intensity = data.get("intensity") if data.get("intensity") in ("once", "daily") else "once"
+        audience = data.get("audience") if data.get("audience") in ("self", "assignees", "members") else "self"
+        # 新 remind_at 設定時に既存の未読提醒通知を削除 — 即リフレッシュで紫が出ないよう。
+        Notification.objects.filter(
+            entity_identifier=issue_id,
+            entity_name="issue",
+            sender="reminder",
+            read_at__isnull=True,
+            archived_at__isnull=True,
+        ).delete()
+        i.remind_at = remind_at
+        i.remind_hide = hide
+        i.remind_intensity = intensity
+        i.remind_audience = audience
+        i.remind_note = (data.get("note") or "").strip()[:200]
+        i.remind_fired_on = None
+        i.snoozed_until = remind_at if hide else None  # 隐藏驱动: 只有 hide 才进 IssueManager 过滤
         i.snoozed_by_id = request.user.id if request.user.is_authenticated else None
-        i.save(update_fields=["snoozed_until", "snoozed_by", "updated_at"])
-        return Response({"snoozed": True, "until": i.snoozed_until.isoformat(), "until_date": target.isoformat()},
-                        status=status.HTTP_200_OK)
+        i.save(update_fields=fields)
+        # P3: 设/改提醒 → 排 Temporal 持久定时器(ai-bot /reminder/set, SignalWithStart 幂等改期)
+        from plane.bgtasks.recurring_task import _schedule_reminder_workflow
+        _schedule_reminder_workflow(i, slug)
+        i = Issue.objects.select_related("snoozed_by").get(pk=i.pk)
+        return Response(self._state(i), status=status.HTTP_200_OK)
 
 
 class RecurringRuleActionEndpoint(BaseAPIView):
@@ -285,3 +359,29 @@ class RecurringRuleActionEndpoint(BaseAPIView):
         rule.refresh_from_db()
         today = now_jst_date(timezone.now())
         return Response(_rule_json(rule, today), status=status.HTTP_200_OK)
+
+
+class MyRemindersEndpoint(BaseAPIView):
+    """GET /workspaces/{slug}/reminders/ — 我的待回来提醒(我设的 + 指派给我且受众含我)。
+    按 remind_at 升序; hub「リマインダー」用。隐藏卡也列在这(直链可开)。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
+    def get(self, request, slug):
+        uid = request.user.id
+        qs = (Issue.objects.filter(workspace__slug=slug, remind_at__isnull=False, deleted_at__isnull=True)
+              .filter(Q(snoozed_by_id=uid) | Q(assignees__id=uid, remind_audience__in=["assignees", "members"]))
+              .select_related("project", "state").distinct().order_by("remind_at"))
+        out = []
+        for i in qs[:200]:
+            out.append({
+                "id": str(i.id), "name": i.name, "sequence_id": i.sequence_id,
+                "project_id": str(i.project_id), "project_identifier": i.project.identifier,
+                "at": i.remind_at.isoformat(),
+                "at_jst": i.remind_at.astimezone(JST).strftime("%Y-%m-%d %H:%M"),
+                "at_date": now_jst_date(i.remind_at).isoformat(),
+                "note": i.remind_note or "", "hide": bool(i.remind_hide),
+                "intensity": i.remind_intensity or "once", "audience": i.remind_audience or "self",
+                "state_group": i.state.group if i.state_id else None,
+                "mine": str(i.snoozed_by_id) == str(uid) if i.snoozed_by_id else False,
+            })
+        return Response(out, status=status.HTTP_200_OK)

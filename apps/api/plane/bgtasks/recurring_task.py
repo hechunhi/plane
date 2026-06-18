@@ -64,6 +64,15 @@ def _notify_bell(issue: Issue, receiver_ids, title: str, sender: str = "recurrin
                          receiver_id=rid, entity_identifier=issue.id, entity_name="issue",
                          title=title, data=data) for rid in receiver_ids if rid]
     if rows:
+        # 提醒通知は1枚だけ保持: 古い未読提醒を消してから新規作成。
+        if extra and extra.get("kind") == "reminder":
+            Notification.objects.filter(
+                entity_identifier=issue.id,
+                entity_name="issue",
+                sender="reminder",
+                read_at__isnull=True,
+                archived_at__isnull=True,
+            ).delete()
         Notification.objects.bulk_create(rows, batch_size=50)
 
 
