@@ -350,7 +350,7 @@ def _push_rt_invalidate(i: Issue) -> None:
         requests.post(
             _RT_INGEST_URL,
             headers={"X-RT-Token": _RT_INGEST_TOKEN},
-            json={"project": str(i.project_id), "issue": str(i.id), "kind": "reminder"},
+            json={"project": str(i.project_id), "issues": [str(i.id)], "kind": "reminder"},
             timeout=3,
         )
     except Exception:
