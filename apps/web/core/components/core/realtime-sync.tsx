@@ -46,63 +46,47 @@ export const RealtimeSync = () => {
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
+    // BARSOUL 2026-06-19: 全路 digest-first 最適化。
+    // SSE・safety timer・tab 復帰すべてカウント先確認経路を通す。
+    // 大半の SSE invalidate はユーザの通知件数を変えないため
+    // 実際の 2×300 件全量フェッチは激減する(通常は count 1 回のみ)。
+    const digestSync = async (ws: string) => {
+      const result = await getUnreadNotificationsCount(ws);
+      if (!result) throw new Error("no count");
+      const prev = lastUnreadSnapshot.current;
+      const changed =
+        !prev ||
+        prev.total !== result.total_unread_notifications_count ||
+        prev.mention !== result.mention_unread_notifications_count;
+      lastUnreadSnapshot.current = {
+        total: result.total_unread_notifications_count,
+        mention: result.mention_unread_notifications_count,
+      };
+      if (changed) {
+        // ALL + MENTIONS 二経路並列フェッチで unreadByIssueId を更新
+        void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
+        void refreshBadgeNotifications(ws);
+      }
+    };
+
+    const fullFetch = (ws: string) => {
+      void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
+      void refreshBadgeNotifications(ws);
+    };
+
     const refreshNotifications = () => {
       const ws = (workspaceSlug || "").toString();
       if (!ws) return;
       if (notifTimer.current) clearTimeout(notifTimer.current);
       notifTimer.current = setTimeout(() => {
-        try {
-          // ① SWR cache 失効 → top-nav/sidebar の useSWR が fetcher 再呼出
-          //    → getUnreadNotificationsCount → mobx update → observer 再描画
-          void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
-          // ② notification list (badge 用) は store の refreshBadgeNotifications
-          //    を呼ぶ. **ALL + MENTIONS 二経路の並列 fetch**(Plane apiserver は
-          //    ALL タブで mention sender を EXCLUDE する仕様 → 旧コードの
-          //    getNotifications 単呼出だと @mention 通知が SSE 経由で来ても
-          //    store に入らず、@mention のみで unread のカードが永遠に既読
-          //    扱いになる bug の根因. 2026-05-26 修正).
-          void refreshBadgeNotifications(ws);
-        } catch {
-          /* notif refresh 失敗は SSE 主路を阻害しない */
-        }
+        void digestSync(ws).catch(() => fullFetch(ws));
       }, NOTIF_REFETCH_DEBOUNCE_MS);
     };
 
-    // BARSOUL 2026-06-18: digest 最適化 — safety 間隔専用の軽量チェック。
-    // SSE 由来の refreshNotifications は毎回全量フェッチ(変化確実)のまま。
-    // safety timer のみ count 先チェック → 差分あれば全量フェッチに落とす。
-    const safetySync = async () => {
+    const safetySync = () => {
       const ws = (workspaceSlug || "").toString();
       if (!ws) return;
-      try {
-        const result = await getUnreadNotificationsCount(ws);
-        if (!result) {
-          // count エンドポイント失敗 → フォールバックで全量フェッチ
-          void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
-          void refreshBadgeNotifications(ws);
-          return;
-        }
-        const prev = lastUnreadSnapshot.current;
-        const changed =
-          !prev ||
-          prev.total !== result.total_unread_notifications_count ||
-          prev.mention !== result.mention_unread_notifications_count;
-        lastUnreadSnapshot.current = {
-          total: result.total_unread_notifications_count,
-          mention: result.mention_unread_notifications_count,
-        };
-        if (changed) {
-          // カウントが変わった → 全量フェッチで unreadByIssueId も更新
-          void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
-          void refreshBadgeNotifications(ws);
-        }
-        // !changed: getUnreadNotificationsCount が MobX 更新済み → count badge OK
-        // unreadByIssueId は変化なし → 300 件フェッチ不要
-      } catch {
-        // 何らかの例外 → 安全側(全量フェッチ)にフォールバック
-        void mutate("WORKSPACE_UNREAD_NOTIFICATION_COUNT");
-        void refreshBadgeNotifications(ws);
-      }
+      void digestSync(ws).catch(() => fullFetch(ws));
     };
 
     let es: EventSource | null = null;
