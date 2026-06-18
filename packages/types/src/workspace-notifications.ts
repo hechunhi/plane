@@ -75,6 +75,8 @@ export type TNotificationPaginatedInfoQueryParams = {
   read?: boolean;
   per_page?: number;
   cursor?: string;
+  /** BARSOUL: 増分フェッチ用 ISO 8601 timestamp。この時刻より新しい通知のみ返す。 */
+  since?: string;
 };
 
 export type TNotificationPaginatedInfo = {

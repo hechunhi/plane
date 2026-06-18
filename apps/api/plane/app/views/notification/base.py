@@ -148,6 +148,12 @@ class NotificationViewSet(BaseViewSet, BasePaginator):
         # Apply the combined Q object filters
         notifications = notifications.filter(q_filters)
 
+        # BARSOUL: 増分フェッチ. `since` = ISO 8601 timestamp(UTC). この時刻より
+        # 新しい通知のみ返す. バッジ refresh 用(初回フル 300件 → 以降 SSE 後差分 50件)
+        since = request.GET.get("since", None)
+        if since:
+            notifications = notifications.filter(created_at__gt=since)
+
         # Pagination
         if request.GET.get("per_page", False) and request.GET.get("cursor", False):
             return self.paginate(

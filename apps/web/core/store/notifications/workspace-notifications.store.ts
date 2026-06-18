@@ -107,6 +107,10 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
   // (healthy 5min / degraded 30s / 不可視 0) が realtime-sync.tsx で完結
   // — 本 store 側に追加 polling は持たない(ADR-028 性能配慮設計の遵守).
   private _badgeWS: Set<string> = new Set();
+  // BARSOUL: 増分フェッチ用タイムスタンプ. 最後の badge refresh 開始時刻を保持し、
+  // 次回 refresh では `since` パラメータとしてバックエンドに渡す. null = 初回フル fetch.
+  // _badgeWS と同様に非リアクティブ (makeObservable 外).
+  private _lastBadgeFetchAt: string | null = null;
 
   constructor(protected store: CoreRootStore) {
     makeObservable(this, {
@@ -376,14 +380,21 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     const ws = workspaceSlug || this.store.router.workspaceSlug?.toString() || "";
     if (!ws) return;
     try {
+      // BARSOUL 増分フェッチ: 初回(null)はフル 300件. 以降は `since` を渡して
+      // 差分 50件に絞る. since = フェッチ開始前の timestamp なので in-flight 中に
+      // 届いた通知も次回の since 窓に必ず入る.
+      const since = this._lastBadgeFetchAt ?? undefined;
+      const fetchedAt = new Date().toISOString();
       // unread count は SWR(WORKSPACE_UNREAD_NOTIFICATION_COUNT) が
       // realtime-sync.tsx 側で mutate() 経由で別途 refresh しているので
       // ここでは list 二経路のみに専念(double fetch 排除).
+      const pageSize = since ? 50 : this.paginatedCount;
       const base: TNotificationPaginatedInfoQueryParams = {
-        per_page: this.paginatedCount,
-        cursor: `${this.paginatedCount}:0:0`,
+        per_page: pageSize,
+        cursor: `${pageSize}:0:0`,
         snoozed: false,
         archived: false,
+        ...(since ? { since } : {}),
       };
       const [allResp, menResp] = await Promise.all([
         workspaceNotificationService.fetchNotifications(ws, { ...base }),
@@ -393,6 +404,8 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
         if (allResp?.results) this.mutateNotifications(allResp.results);
         if (menResp?.results) this.mutateNotifications(menResp.results);
       });
+      // 成功時のみタイムスタンプを更新(失敗時は次回も同じ since で再試行).
+      this._lastBadgeFetchAt = fetchedAt;
     } catch {
       // 失敗は次の SSE / safety interval / visibility 復帰で復旧
     }
