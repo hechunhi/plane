@@ -74,12 +74,21 @@ export const RealtimeSync = () => {
       void refreshBadgeNotifications(ws);
     };
 
-    const refreshNotifications = () => {
+    const refreshNotifications = (kind?: string) => {
       const ws = (workspaceSlug || "").toString();
       if (!ws) return;
       if (notifTimer.current) clearTimeout(notifTimer.current);
       notifTimer.current = setTimeout(() => {
-        void digestSync(ws).catch(() => fullFetch(ws));
+        // reminder-kind SSE は digestSync をスキップして必ず全量フェッチ。
+        // 理由: ユーザが旧提醒通知を既読にすると setUnreadNotificationsCount("decrement")
+        // がローカル件数を下げるが lastUnreadSnapshot は更新されない。次の提醒が
+        // 発火すると件数が元の値に戻り digestSync が「変化なし」と判断して
+        // refreshBadgeNotifications をスキップ → 新通知がストアに入らず紫にならない。
+        if (kind === "reminder") {
+          fullFetch(ws);
+        } else {
+          void digestSync(ws).catch(() => fullFetch(ws));
+        }
       }, NOTIF_REFETCH_DEBOUNCE_MS);
     };
 
@@ -98,9 +107,11 @@ export const RealtimeSync = () => {
       let ids: string[] | null = null;
       let hasIssueSignal = false;
       let commentIssueIds: string[] = [];
+      let sseKind = "";
       try {
         const d = JSON.parse(ev.data || "{}");
         project = (d.project as string) || "";
+        sseKind = (d.kind as string) || "";
         // 「issues キーの有無」=「看板(issue)活動があったか」。
         //   キー存在時のみ看板へ通知する。コメントのみのフレーム
         //   (issues キー無し)では看板に一切触れない = コメントが
@@ -165,7 +176,7 @@ export const RealtimeSync = () => {
       //   ハイライトをリアルタイム化(従来 polling のみ).
       if (hasIssueSignal || commentIssueIds.length > 0) {
         try {
-          refreshNotifications();
+          refreshNotifications(sseKind);
         } catch {
           /* noop */
         }
