@@ -32,7 +32,7 @@ type TNotificationQueryParamType = ENotificationQueryParamType;
 
 // BARSOUL A1: カード未読インジケータの「種別」。優先度: mention > assigned
 // > comment > update（"対応必須" ほど強い表現にする）。none = 未読なし。
-export type TUnreadKind = "mention" | "assigned" | "comment" | "update" | "none";
+export type TUnreadKind = "mention" | "assigned" | "comment" | "update" | "reminder" | "none";
 
 export interface IWorkspaceNotificationStore {
   // observables
@@ -50,6 +50,7 @@ export interface IWorkspaceNotificationStore {
   // BARSOUL: 卡片未读バッジ用
   unreadCountByIssueId: (issueId: string | undefined) => number;
   unreadKindByIssueId: (issueId: string | undefined) => TUnreadKind;
+  unreadHasReminderByIssueId: (issueId: string | undefined) => boolean;
   unreadCountForIssueIds: (issueIds: string[]) => number;
   unreadProjectIdSet: Set<string>;
   ensureBadgeNotifications: (workspaceSlug: string) => void;
@@ -83,6 +84,10 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     mention_unread_notifications_count: 0,
   };
   notifications: Record<string, INotification> = {};
+  // BARSOUL: lodash set() で新キー追加時 MobX は変化を検知しないため、
+  // mutateNotifications の else 分岐で必ずインクリメント。
+  // computedFn がこれを購読することで新着通知到着時に再評価される。
+  _notifUpdateSeq = 0;
   currentNotificationTab: TNotificationTab = ENotificationTab.ALL;
   currentSelectedNotificationId: string | undefined = undefined;
   paginationInfo: Omit<TNotificationPaginatedInfo, "results"> | undefined = undefined;
@@ -113,6 +118,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       currentSelectedNotificationId: observable,
       paginationInfo: observable,
       filters: observable,
+      _notifUpdateSeq: observable.ref,
       // computed
       // helper actions
       setCurrentNotificationTab: action,
@@ -161,9 +167,9 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
           }
         } else {
           if (this.filters.snoozed) {
-            return n.snoozed_till ? true : false;
+            return !!n.snoozed_till;
           } else if (this.filters.archived) {
-            return n.archived_at ? true : false;
+            return !!n.archived_at;
           } else {
             return true;
           }
@@ -207,6 +213,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     // 「既読にしたら自動で消える」も成立: 既読時 setUnreadNotificationsCount
     // が走るため）。
     void this.unreadNotificationsCount.total_unread_notifications_count;
+    void this._notifUpdateSeq;
     if (!issueId || isEmpty(this.notifications)) return 0;
     let count = 0;
     for (const n of Object.values(this.notifications || {})) {
@@ -227,12 +234,14 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
    */
   unreadKindByIssueId = computedFn((issueId: string | undefined): TUnreadKind => {
     void this.unreadNotificationsCount.total_unread_notifications_count;
+    void this._notifUpdateSeq;
     if (!issueId || isEmpty(this.notifications)) return "none";
     const rank: Record<Exclude<TUnreadKind, "none">, number> = {
-      mention: 4,
-      assigned: 3,
-      comment: 2,
-      update: 1,
+      mention: 5,
+      assigned: 4,
+      comment: 3,
+      update: 2,
+      reminder: 1, // 最低優先度 — 非提醒未読があれば必ずそちらが勝つ
     };
     let best = 0;
     let bestKind: TUnreadKind = "none";
@@ -241,13 +250,16 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       const nIssueId = n.data?.issue?.id || n.entity_identifier;
       if (nIssueId !== issueId || n.read_at || n.archived_at || n.snoozed_till) continue;
       const field = n.data?.issue_activity?.field;
-      const kind: Exclude<TUnreadKind, "none"> = n.is_mentioned_notification
-        ? "mention"
-        : field === "assignees"
-          ? "assigned"
-          : field === "comment"
-            ? "comment"
-            : "update";
+      const kind: Exclude<TUnreadKind, "none"> =
+        (n.data as any)?.kind === "reminder"
+          ? "reminder"
+          : n.is_mentioned_notification
+            ? "mention"
+            : field === "assignees"
+              ? "assigned"
+              : field === "comment"
+                ? "comment"
+                : "update";
       if (rank[kind] > best) {
         best = rank[kind];
         bestKind = kind;
@@ -261,6 +273,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
    */
   unreadCountForIssueIds = computedFn((issueIds: string[]): number => {
     void this.unreadNotificationsCount.total_unread_notifications_count;
+    void this._notifUpdateSeq;
     // BARSOUL 2026-06-08 (hechun): sub-group 看板では groupIssueIds が配列でなく
     // {subGroupId: string[]} の **object** になり、`.length===0` を素通り → new Set(object)
     // が "not iterable" で看板全体をクラッシュさせていた。Array.isArray で堅牢化
@@ -279,12 +292,30 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
   });
 
   /**
+   * BARSOUL A3: 指定 issue に未読の「提醒」通知があるか。
+   * unreadKindByIssueId とは独立に判定し「未読+提醒 同時」の both-case に対応。
+   */
+  unreadHasReminderByIssueId = computedFn((issueId: string | undefined): boolean => {
+    void this.unreadNotificationsCount.total_unread_notifications_count;
+    void this._notifUpdateSeq;
+    if (!issueId || isEmpty(this.notifications)) return false;
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      const nIssueId = n.data?.issue?.id || n.entity_identifier;
+      if (nIssueId !== issueId || n.read_at || n.archived_at || n.snoozed_till) continue;
+      if ((n.data as any)?.kind === "reminder") return true;
+    }
+    return false;
+  });
+
+  /**
    * BARSOUL(2026-05-25): サイドバー赤点用 — 未読が存在するプロジェクト ID 集合。
    * 「項目→BARSOUL→工作項」のパンくず各レベルに red dot を出すための計算源。
    * 通知 store の未読(read_at=未, archived/snoozed=未)を project ごとに集約。
    */
   get unreadProjectIdSet(): Set<string> {
     void this.unreadNotificationsCount.total_unread_notifications_count;
+    void this._notifUpdateSeq;
     const s = new Set<string>();
     if (isEmpty(this.notifications)) return s;
     for (const n of Object.values(this.notifications || {})) {
@@ -295,7 +326,6 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
     }
     return s;
   }
-
 
   /**
    * BARSOUL: カードバッジ用に通知を先読み（ワークスペース単位、idempotent）。
@@ -467,6 +497,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
         this.notifications[notification.id].mutateNotification(notification);
       } else {
         set(this.notifications, notification.id, new Notification(this.store, notification));
+        this._notifUpdateSeq++;
       }
     });
   };
