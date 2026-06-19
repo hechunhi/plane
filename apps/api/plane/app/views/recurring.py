@@ -282,6 +282,15 @@ class IssueSnoozeEndpoint(BaseAPIView):
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def get(self, request, slug, project_id, issue_id):
         i = Issue.objects.select_related("snoozed_by").get(pk=issue_id, project_id=project_id, workspace__slug=slug)
+        if i.remind_at:
+            audience = i.remind_audience or "self"
+            uid = request.user.id
+            if audience == "self" and i.snoozed_by_id != uid:
+                return Response({"set": False}, status=status.HTTP_200_OK)
+            if audience == "assignees" and i.snoozed_by_id != uid:
+                from plane.db.models import IssueAssignee
+                if not IssueAssignee.objects.filter(issue_id=issue_id, assignee_id=uid).exists():
+                    return Response({"set": False}, status=status.HTTP_200_OK)
         return Response(self._state(i), status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])

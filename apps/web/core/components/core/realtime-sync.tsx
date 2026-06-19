@@ -192,6 +192,16 @@ export const RealtimeSync = () => {
           /* noop */
         }
       });
+      // BARSOUL reminder: 提醒到期后端清空 remind_at → 失效 SNOOZE 缓存 → 看板卡/详情即时消除状态
+      if (sseKind === "reminder" && ids) {
+        ids.forEach((iid) => {
+          try {
+            void mutate(`SNOOZE:${iid}`);
+          } catch {
+            /* noop */
+          }
+        });
+      }
       // BARSOUL DIS: 评论/卡片变更很可能触发 AI 异步重判(debounce 4s + LLM)。
       //   延时失效该 issue 的 ai-state 缓存 → 看板/详情的「AI 当前态」在重判
       //   落地后自动刷新(近实时,无需手刷)。两档延时覆盖重判耗时窗口。

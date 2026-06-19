@@ -186,9 +186,30 @@ class IssueListEndpoint(BaseAPIView):
                 "is_draft",
                 "archived_at",
                 "deleted_at",
+                "remind_at",  # BARSOUL: 看板卡提醒徽标/呼吸点
+                "remind_note",  # BARSOUL: 提醒备忘
+                "remind_audience",  # BARSOUL: 受众(隐私过滤用,不输出)
+                "snoozed_by_id",  # BARSOUL: 设置人(隐私过滤用,不输出)
             )
             datetime_fields = ["created_at", "updated_at"]
             issues = user_timezone_converter(issues, datetime_fields, request.user.user_timezone)
+            # BARSOUL privacy: self 提醒只有设置人可见; assignees 受众限设置人+受理人
+            uid = str(request.user.id)
+            cleaned = []
+            for issue in issues:
+                audience = issue.pop("remind_audience", None) or "self"
+                setter = str(issue.pop("snoozed_by_id", None) or "")
+                if issue.get("remind_at"):
+                    if audience == "self" and setter != uid:
+                        issue["remind_at"] = None
+                        issue["remind_note"] = None
+                    elif audience == "assignees" and setter != uid:
+                        assignee_ids = issue.get("assignee_ids") or []
+                        if uid not in [str(a) for a in assignee_ids]:
+                            issue["remind_at"] = None
+                            issue["remind_note"] = None
+                cleaned.append(issue)
+            issues = cleaned
         return Response(issues, status=status.HTTP_200_OK)
 
 
@@ -880,12 +901,30 @@ class IssuePaginatedViewSet(BaseViewSet):
             )
         )
 
-    def process_paginated_result(self, fields, results, timezone):
+    def process_paginated_result(self, fields, results, timezone, user_id=None):
         paginated_data = results.values(*fields)
 
         # converting the datetime fields in paginated data
         datetime_fields = ["created_at", "updated_at"]
         paginated_data = user_timezone_converter(paginated_data, datetime_fields, timezone)
+
+        if user_id is not None:
+            uid = str(user_id)
+            cleaned = []
+            for issue in paginated_data:
+                audience = issue.pop("remind_audience", None) or "self"
+                setter = str(issue.pop("snoozed_by_id", None) or "")
+                if issue.get("remind_at"):
+                    if audience == "self" and setter != uid:
+                        issue["remind_at"] = None
+                        issue["remind_note"] = None
+                    elif audience == "assignees" and setter != uid:
+                        assignee_ids = issue.get("assignee_ids") or []
+                        if uid not in [str(a) for a in assignee_ids]:
+                            issue["remind_at"] = None
+                            issue["remind_note"] = None
+                cleaned.append(issue)
+            return cleaned
 
         return paginated_data
 
@@ -923,6 +962,10 @@ class IssuePaginatedViewSet(BaseViewSet):
             "link_count",
             "attachment_count",
             "sub_issues_count",
+            "remind_at",  # BARSOUL: 看板卡提醒徽标/呼吸点(此卡有未到点的提醒 + 时刻)
+            "remind_note",  # BARSOUL: 提醒备忘(看板卡显示)
+            "remind_audience",  # BARSOUL: 隐私过滤用,不输出
+            "snoozed_by_id",  # BARSOUL: 设置人(隐私过滤用,不输出)
         ]
 
         if str(is_description_required).lower() == "true":
@@ -993,7 +1036,7 @@ class IssuePaginatedViewSet(BaseViewSet):
             queryset=queryset,
             cursor=cursor,
             on_result=lambda results: self.process_paginated_result(
-                required_fields, results, request.user.user_timezone
+                required_fields, results, request.user.user_timezone, user_id=request.user.id
             ),
         )
 
