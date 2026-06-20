@@ -12,11 +12,13 @@ from plane.app.views import (
     IssueAttachmentEndpoint,
     CommentReactionViewSet,
     CommentTranslateOnDemandEndpoint,
+    IssueTranslateOnDemandEndpoint,
     IssueAIApprovalEndpoint,
     IssueAIStateBatchEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
     IssueAIStateRederiveEndpoint,
+    IssueAIStateUrgeEndpoint,
     IssueActivityEndpoint,
     IssueArchiveViewSet,
     IssueCommentViewSet,
@@ -182,6 +184,12 @@ urlpatterns = [
         CommentTranslateOnDemandEndpoint.as_view(),
         name="project-issue-comment-translate",
     ),
+    # BARSOUL 2026-06-15: 卡片标题/正文 即点即译(display-only, 不改原内容)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/translate/",
+        IssueTranslateOnDemandEndpoint.as_view(),
+        name="project-issue-translate",
+    ),
     # BARSOUL 2026-06-06: Plane 原生发起审批(爱酱图标/表单 → 认证代理 → ai-bot → Temporal)
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-approval/",
@@ -212,6 +220,12 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/rederive/",
         IssueAIStateRederiveEndpoint.as_view(),
         name="project-issue-ai-state-rederive",
+    ),
+    # BARSOUL DIS: 以 愛ちゃん 名义催促(@当前行动人,发评论;不碰 SoR)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/urge/",
+        IssueAIStateUrgeEndpoint.as_view(),
+        name="project-issue-ai-state-urge",
     ),
     # Issue Subscribers
     path(

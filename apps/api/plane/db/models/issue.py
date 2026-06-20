@@ -177,10 +177,18 @@ class Issue(ProjectBaseModel):
     # BARSOUL フォローアップ・スヌーズ(Linear 风): snoozed_until > now のカードは issue_objects から隠れる
     # (active 视图全过滤)→ 期日に自动复活(过滤翻转)+ Beat が 1 回ベル(snoozed_by へ, 零评论)。
     # nullable → null 时与现状完全一致(全存量卡不受影响)。详情 retrieve は .objects 使用なので隠れても直链で開ける。
-    snoozed_until = models.DateTimeField(null=True, blank=True)
+    snoozed_until = models.DateTimeField(null=True, blank=True)  # 隐藏驱动(remind_hide 时 = remind_at;否则 null)
     snoozed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="snoozed_issues"
     )
+    # BARSOUL 2026-06-15 リマインダー強化(hechun: 旧スヌーズ"做的不好"): 可配置提醒。
+    # remind_at = 触发时刻(权威, 高频 Beat 扫描); 隐藏与否分离 → remind_hide=False 时卡留视图+徽章(治"黑洞")。
+    remind_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    remind_hide = models.BooleanField(default=False)              # 是否到点前隐藏卡片(默认否)
+    remind_intensity = models.CharField(max_length=8, default="once")    # once=1回铃 / daily=每日续提醒至完成
+    remind_audience = models.CharField(max_length=12, default="self")    # self / assignees / members
+    remind_note = models.CharField(max_length=200, blank=True, default="")  # 备忘: 到时提醒我做什么(显示在铃/hub/卡顶条)
+    remind_fired_on = models.DateField(null=True, blank=True)     # daily 去重: 最近响铃的 JST 日
 
     issue_objects = IssueManager()
 
@@ -860,6 +868,37 @@ class CommentTranslation(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.comment_id}:{self.target_lang}"
+
+
+class IssueTranslation(ProjectBaseModel):
+    """BARSOUL 2026-06-15 (hechun): issue 标题/正文の表示翻訳キャッシュ。評論翻訳
+    (CommentTranslation)と同型 — **原 issue.name / description_html は不可変(真相)**,
+    本表は読み取り専用の派生キャッシュ(target_lang 別 + source_hash 自己無効化)。
+    field で title(纯文本)/ description(富 HTML)を区別。表示のみ, 内容改変なし。"""
+    issue = models.ForeignKey(
+        Issue, on_delete=models.CASCADE, related_name="translations")
+    field = models.CharField(max_length=16)          # "title" | "description"
+    target_lang = models.CharField(max_length=8)     # "ja" | "zh" | "en"
+    source_lang = models.CharField(max_length=8, blank=True, default="")
+    text = models.TextField(blank=True, default="")
+    translated_by = models.CharField(max_length=64, blank=True, default="aichan")
+    source_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    class Meta:
+        verbose_name = "Issue Translation"
+        verbose_name_plural = "Issue Translations"
+        db_table = "issue_translations"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["issue", "field", "target_lang"],
+                name="uniq_issue_translation_per_field_lang"),
+        ]
+        indexes = [
+            models.Index(fields=["issue", "field", "target_lang"]),
+        ]
+
+    def __str__(self):
+        return f"{self.issue_id}:{self.field}:{self.target_lang}"
 
 
 # BARSOUL: 派生卡片当前态 (Derived Issue State, DIS)。真相=issue + comments +

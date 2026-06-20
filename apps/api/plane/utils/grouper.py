@@ -127,6 +127,8 @@ def issue_on_results(
         "is_draft",
         "archived_at",
         "state__group",
+        "remind_at",  # BARSOUL: 看板卡提醒呼吸点/边框/行(此卡有未到点的提醒 + 时刻)
+        "remind_note",  # BARSOUL: 提醒备忘(看板卡显示)
     ]
 
     if group_by in FIELD_MAPPER:

@@ -19,7 +19,7 @@ from rest_framework import status
 from .. import BaseViewSet
 from plane.app.serializers import IssueCommentSerializer, CommentReactionSerializer
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueComment, ProjectMember, CommentReaction, Project, Issue, CommentTranslation
+from plane.db.models import IssueComment, ProjectMember, CommentReaction, Project, Issue, CommentTranslation, IssueTranslation
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
 from plane.bgtasks.webhook_task import model_activity, webhook_activity
@@ -1049,3 +1049,90 @@ class CommentReactionViewSet(BaseViewSet):
         )
         comment_reaction.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class IssueTranslateOnDemandEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/translate/
+    Body: {target_lang:"zh"|"ja", field:"title"|"description", source?, force?}
+    BARSOUL 2026-06-15 (hechun): 卡片标题/正文の表示翻訳。評論翻訳と同ロジック —
+    **原 issue.name / description_html は不可変(真相)**, IssueTranslation は派生キャッシュのみ
+    (内容改変なし)。title=纯文本(_call_llm), description=富 HTML(ai-bot /translate 構造保持)。
+    缓存 = (issue, field, target_lang) + source_hash 自己無効化(編集→hash 変化→自然再翻訳)。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        try:
+            issue = Issue.objects.get(
+                pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        o_tgt = (data.get("target_lang") or "").strip().lower()[:2]
+        field = (data.get("field") or "").strip().lower()
+        o_force = bool(data.get("force"))
+        if o_tgt not in ("zh", "ja"):
+            return Response({"error": "target_lang must be zh|ja"}, status=status.HTTP_400_BAD_REQUEST)
+        if field not in ("title", "description"):
+            return Response({"error": "field must be title|description"}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_html = field == "description"
+        raw = (issue.description_html if is_html else issue.name) or ""
+        plain = _strip(raw) if is_html else raw
+        if not plain.strip():
+            return Response({"text": "", "by": "noop:empty", "skip": True})
+        o_src = _detect_src(plain) or "auto"
+        if o_src == o_tgt:
+            return Response({"text": "", "by": "noop:same-lang", "skip": True})
+
+        src_hash = _hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        row = IssueTranslation.all_objects.filter(
+            issue=issue, field=field, target_lang=o_tgt).first()
+        if (not o_force and row and not row.deleted_at and row.text
+                and row.source_hash == src_hash):
+            return Response({"text": row.text, "source_lang": row.source_lang,
+                             "by": row.translated_by, "cached": True})
+
+        # 标题用 issue 自身做不了 context;正文用标题做主语推断补强(与评论同)。
+        ctx = issue.name if is_html else ""
+        out = ""
+        by = ""
+        if is_html:
+            try:
+                _rr = _req.post(
+                    _AIBOT_BASE + "/translate",
+                    json={"html": raw, "source": o_src, "target": o_tgt, "ctx": ctx},
+                    timeout=60)
+                if _rr.ok:
+                    _jj = _rr.json()
+                    if _jj.get("ok"):
+                        out = _jj.get("html") or ""
+            except Exception:
+                logger.exception("ai-bot translate_html (issue desc) failed (非致命)")
+            by = "ondemand:structure"
+        else:
+            out = _call_llm(raw, o_src, o_tgt, context=ctx) or ""
+            _m = globals().get("_last_model_used") or ""
+            by = f"ondemand:{_m}" if (_m and not _m.startswith("ondemand")) else (_m or "ondemand")
+        if not out:
+            return Response({"error": "translation failed"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        try:
+            if row:
+                row.text = out
+                row.source_hash = src_hash
+                row.source_lang = o_src if o_src != "auto" else row.source_lang
+                row.translated_by = by
+                row.deleted_at = None
+                row.updated_by_id = request.user.id
+                row.save()
+            else:
+                IssueTranslation.objects.create(
+                    issue=issue, field=field, target_lang=o_tgt,
+                    project_id=project_id, workspace_id=issue.workspace_id,
+                    text=out, source_lang=o_src, source_hash=src_hash,
+                    translated_by=by,
+                    created_by_id=request.user.id, updated_by_id=request.user.id)
+        except Exception:
+            logger.exception("issue translate cache upsert failed (非致命)")
+        return Response({"text": out, "source_lang": o_src, "by": by, "cached": False})

@@ -24,7 +24,7 @@ from rest_framework import status
 # Module imports
 from .. import BaseAPIView
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueAIState, IssueAIStateCorrection, Issue, IssueComment
+from plane.db.models import IssueAIState, IssueAIStateCorrection, Issue, IssueComment, User
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
 
@@ -217,6 +217,59 @@ class IssueAIStateCorrectEndpoint(BaseAPIView):
 
         fresh = IssueAIState.objects.select_related("issue", "issue__state", "project").get(pk=row.pk)
         return Response(_serialize(fresh), status=status.HTTP_200_OK)
+
+
+class IssueAIStateUrgeEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/urge/
+    Body: {message}. **以 愛ちゃん(AI 用户)名义**在工单发催促评论,@ 当前行动人(球在谁手)并通知。
+    人手点击=授权(本人有项目权限),但发布者是 AI → 「由爱酱催」。仅发评论,不碰 SoR 真值。
+    评论区自动多语言化:以一种语言发出,各读者按自己语言看。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        body = request.data or {}
+        # draft 模式:让 愛ちゃん(本地 gemma)结合卡情生成『友好·有理有据』的催促草稿,不发布。
+        if body.get("draft"):
+            try:
+                rr = requests.post(f"{_AIBOT}/dis/compose-urge",
+                                   json={"project_id": str(project_id), "issue_id": str(issue_id)}, timeout=40)
+                txt = (rr.json() or {}).get("text", "") if rr.ok else ""
+            except Exception:
+                logger.warning("urge draft compose failed (非致命)", exc_info=True)
+                txt = ""
+            return Response({"text": txt}, status=status.HTTP_200_OK)
+        msg = (body.get("message") or "").strip()[:2000]
+        if not msg:
+            return Response({"error": "message required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+        # 发布者 = 愛ちゃん(AI 用户);找不到则拒绝(绝不退回以本人名义发,那正是要修掉的)
+        ai_user = User.objects.filter(email=os.environ.get("AI_BOT_EMAIL", "ai@barsoul.jp")).first()
+        if not ai_user:
+            return Response({"error": "AI user (愛ちゃん) not found"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # @ 当前行动人(球在谁手),使其收到提及通知
+        row = IssueAIState.objects.filter(issue=issue, project_id=project_id).first()
+        mention = ""
+        if row and row.actor_user_id:
+            mention = (f'<mention-component entity_identifier="{row.actor_user_id}" '
+                       f'entity_name="user_mention"></mention-component> ')
+        safe = msg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>")
+        html = f"<p>{mention}{safe}</p>"
+        IssueComment.objects.create(
+            workspace_id=issue.workspace_id, project_id=project_id, issue=issue,
+            actor=ai_user, comment_html=html, comment_stripped=msg, access="INTERNAL",
+            created_by=ai_user, updated_by=ai_user)
+        issue_activity.delay(
+            type="comment.activity.created",
+            requested_data=json.dumps({"comment_html": html, "comment_stripped": msg}, cls=DjangoJSONEncoder),
+            actor_id=str(ai_user.id), issue_id=str(issue_id), project_id=str(project_id),
+            current_instance=None, epoch=int(timezone.now().timestamp()),
+            notification=True, origin=base_host(request=request, is_app=True))
+        # 催促后这条新评论可能改变「球」→ 触发重判(仅派生表)
+        _trigger_rederive(project_id, issue_id)
+        return Response({"ok": True}, status=status.HTTP_200_OK)
 
 
 class IssueAIStateTranslateEndpoint(BaseAPIView):

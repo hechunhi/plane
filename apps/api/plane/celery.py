@@ -53,6 +53,13 @@ app.conf.beat_schedule = {
         "task": "plane.bgtasks.recurring_task.recurring_sweep",
         "schedule": crontab(hour=22, minute=0),
     },
+    # BARSOUL P3-EVENT-RELIABILITY: 提醒到点改 Temporal 持久定时器(ReminderWorkflow, NewTimer)。
+    # 退役旧 reminder_sweep(15min 扫世界哨兵反模式)。此处只留日次 selfheal 对账(确保 workflow 存在,
+    # 补 start 失败/存量/重启遗漏; 绝不直接响铃)。到点响铃全靠 Temporal durable timer。
+    "barsoul-reminder-reconcile": {
+        "task": "plane.bgtasks.recurring_task.reminder_reconcile",
+        "schedule": crontab(hour=23, minute=10),  # UTC 23:10 = JST 08:10 日次
+    },
     "check-every-day-to-delete_exporter_history": {
         "task": "plane.bgtasks.exporter_expired_task.delete_old_s3_link",
         "schedule": crontab(hour=1, minute=30),  # UTC 01:30

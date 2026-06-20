@@ -13,8 +13,10 @@ from plane.api.views import (
     IssueCommentDetailAPIEndpoint,
     CommentTranslationUpsertAPIEndpoint,
     IssueAIStateUpsertAPIEndpoint,
+    IssueAIStateReadAPIEndpoint,
     IssueSubtreeDISAPIEndpoint,
     SmartTableBindingUpsertAPIEndpoint,
+    WorkItemRingReminderAPIEndpoint,
     IssueActivityListAPIEndpoint,
     IssueActivityDetailAPIEndpoint,
     IssueAttachmentListCreateAPIEndpoint,
@@ -79,6 +81,12 @@ old_url_patterns = [
         IssueAIStateUpsertAPIEndpoint.as_view(http_method_names=["get", "post"]),
         name="issue-ai-state",
     ),
+    # BARSOUL: DIS 批量读 (key 鉴权, chat×Plane 集成 = 愛ちゃん·Plane 工具)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/ai-states/",
+        IssueAIStateReadAPIEndpoint.as_view(http_method_names=["get"]),
+        name="issue-ai-states-read",
+    ),
     # BARSOUL DIS 子树 rollup: 父→直接子卡+各子 DIS 取材 (ai-bot 拉, code 分类)
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/subtree-dis/",
@@ -90,6 +98,12 @@ old_url_patterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/smart-table-binding/",
         SmartTableBindingUpsertAPIEndpoint.as_view(http_method_names=["post"]),
         name="issue-smart-table-binding-v1",
+    ),
+    # BARSOUL P3: リマインダー到点回调 (Temporal timer → ai-bot → ここ; 响铃/续排)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ring-reminder/",
+        WorkItemRingReminderAPIEndpoint.as_view(http_method_names=["post"]),
+        name="issue-ring-reminder-v1",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/activities/",

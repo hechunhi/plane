@@ -27,9 +27,11 @@ from plane.db.models import (
     SmartForm,
     SmartRow,
     SmartTable,
+    SmartTableFolder,
     SmartTableIssueBinding,
     SmartTableUserView,
 )
+from plane.db.models import ProjectMember
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +40,24 @@ _VALID_TYPES = {"text", "number", "single_select", "multi_select", "date", "chec
 
 
 # ── hand-built JSON (同 DIS 风格, 不上 DRF serializer) ──
-def _col(c):
+# ── 字段级角色权限(服务端强制): acl_view/acl_edit = 最低角色阈值 int(0=不限) ──
+def _can_view(c, role):
+    return not c.acl_view or (role or 0) >= c.acl_view
+
+def _can_edit(c, role):
+    return c.source == "manual" and (not c.acl_edit or (role or 0) >= c.acl_edit)
+
+
+def _col(c, role=None):
     return {
         "id": str(c.id), "key": c.key, "name": c.name, "type": c.type,
         "source": c.source, "options": c.options or [],
         "required": bool(c.required), "position": c.position, "width": c.width,
         "deriver": (c.binding or {}).get("deriver"),
         "i18n": c.i18n or {},
+        "acl_view": int(c.acl_view or 0), "acl_edit": int(c.acl_edit or 0),
+        # 此阅览者能否编辑(manual 且角色达标)。role=None → 兼容旧调用(=manual 即可编辑)。
+        "editable": (c.source == "manual") if role is None else _can_edit(c, role),
     }
 
 
@@ -67,15 +80,18 @@ def _form(f):
     return {"id": str(f.id), "name": f.name, "fields": f.fields or [], "position": f.position, "i18n": f.i18n or {}}
 
 
-def _form_fields(form, columns):
-    """form.fields → 列样式 dict(给卡内表单渲染): 子集 + 有序 + label 覆盖名 + 表单级 required."""
+def _form_fields(form, columns, role=None):
+    """form.fields → 列样式 dict(给卡内表单渲染): 子集 + 有序 + label 覆盖名 + 表单级 required。
+    role 给定时按字段级权限隐藏不可见列 + 标注 editable。"""
     by_key = {c.key: c for c in columns}
     out = []
     for fld in (form.fields or []):
         c = by_key.get(fld.get("col"))
         if not c:
             continue
-        d = _col(c)
+        if role is not None and not _can_view(c, role):
+            continue  # 隐藏列: 表单里也不出现
+        d = _col(c, role)
         if fld.get("label"):
             d["name"] = fld["label"]
             # 别名的译文(form.i18n.labels)盖到 i18n.name 槽 → 前端统一按 i18n 解析显示
@@ -125,6 +141,10 @@ def _commit_completed(table=None, issue_id=None):
                     row.status = "committed"
                     row.incomplete = any(_is_empty(cells.get(k)) for k in req)
                     row.save(update_fields=["status", "incomplete", "updated_at"])
+            # Option A: commit any extra rows for this issue/table (candidates promoted to rows)
+            SmartRow.objects.filter(
+                source_issue_id=b.issue_id, table_id=b.table_id, status="draft", deleted_at__isnull=True,
+            ).exclude(pk=b.row_id).update(status="committed", updated_at=timezone.now())
             b.committed = True
             b.save(update_fields=["committed", "updated_at"])
 
@@ -142,10 +162,21 @@ def _accessible_table(slug, project_id, table_id):
     )
 
 
-def _coerce_cells(columns, cells):
-    """只接受 manual 列的 key; 投影列(plane/keiri/ai_bot)只读, 丢弃前端误传."""
-    allowed = {c.key for c in columns if c.source == "manual"}
+def _coerce_cells(columns, cells, role=None):
+    """只接受 manual 列的 key; 投影列(plane/keiri/ai_bot)只读, 丢弃前端误传。
+    role 给定时再按字段级权限丢弃此人无编辑权的列(服务端强制, 不信前端隐藏)。"""
+    allowed = {c.key for c in columns
+               if c.source == "manual" and (role is None or _can_edit(c, role))}
     return {k: v for k, v in (cells or {}).items() if k in allowed}
+
+
+def _viewer_role(slug, project_id, user):
+    """阅览者在当前 project 的角色 int(ADMIN=20/MEMBER=15/GUEST=5; 非成员=0)。字段级权限按此判定。"""
+    if not user or not getattr(user, "is_authenticated", False):
+        return 0
+    return ProjectMember.objects.filter(
+        workspace__slug=slug, project_id=project_id, member=user, is_active=True
+    ).values_list("role", flat=True).first() or 0
 
 
 def _table_deps(t):
@@ -269,6 +300,8 @@ class SmartTableListEndpoint(BaseAPIView):
             "shared_workspace": bool(t.shared_workspace),
             "shared_projects": list(t.shared_projects or []),
             "foreign": str(t.project_id) != str(project_id),
+            # 文件夹归属仅 home project 有意义(外项目共享表在本项目列表里视为未归类)
+            "folder": str(t.folder_id) if (t.folder_id and str(t.project_id) == str(project_id)) else None,
         } for t in tables]
         return Response(out, status=status.HTTP_200_OK)
 
@@ -286,6 +319,55 @@ class SmartTableListEndpoint(BaseAPIView):
                          "columns": [], "rows": []}, status=status.HTTP_201_CREATED)
 
 
+class SmartTableFolderEndpoint(BaseAPIView):
+    """数据表文件夹(组织层). GET/POST .../smart-table-folders/  |  PATCH/DELETE .../smart-table-folders/{fid}/
+    纯组织: 删文件夹只把表 folder 置空(SET_NULL), 不删表; 不碰 SoR、不影响表共享。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def get(self, request, slug, project_id):
+        fs = SmartTableFolder.objects.filter(workspace__slug=slug, project_id=project_id).order_by("position", "created_at")
+        return Response([{"id": str(f.id), "name": f.name, "position": f.position} for f in fs], status=status.HTTP_200_OK)
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
+    def post(self, request, slug, project_id):
+        name = ((request.data or {}).get("name") or "").strip()[:120]
+        if not name:
+            return Response({"error": "name required"}, status=status.HTTP_400_BAD_REQUEST)
+        uid = request.user.id if request.user.is_authenticated else None
+        last = SmartTableFolder.objects.filter(project_id=project_id).count()
+        f = SmartTableFolder.objects.create(
+            name=name, position=last, project_id=project_id, workspace_id=_ws_id(slug, project_id),
+            created_by_id=uid, updated_by_id=uid)
+        return Response({"id": str(f.id), "name": f.name, "position": f.position}, status=status.HTTP_201_CREATED)
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
+    def patch(self, request, slug, project_id, folder_id):
+        try:
+            f = SmartTableFolder.objects.get(pk=folder_id, workspace__slug=slug, project_id=project_id)
+        except SmartTableFolder.DoesNotExist:
+            return Response({"error": "not found"}, status=status.HTTP_404_NOT_FOUND)
+        d = request.data or {}
+        if d.get("name"):
+            f.name = d["name"].strip()[:120]
+        if isinstance(d.get("position"), int):
+            f.position = d["position"]
+        f.updated_by_id = request.user.id if request.user.is_authenticated else None
+        f.save()
+        return Response({"id": str(f.id), "name": f.name, "position": f.position}, status=status.HTTP_200_OK)
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
+    def delete(self, request, slug, project_id, folder_id):
+        try:
+            f = SmartTableFolder.objects.get(pk=folder_id, workspace__slug=slug, project_id=project_id)
+        except SmartTableFolder.DoesNotExist:
+            return Response({"error": "not found"}, status=status.HTTP_404_NOT_FOUND)
+        # 表 folder 置空(组内表回到「未归类」), 再软删文件夹 — 绝不删表
+        SmartTable.objects.filter(folder_id=folder_id).update(folder=None)
+        f.deleted_at = timezone.now()
+        f.save(update_fields=["deleted_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class SmartTableDetailEndpoint(BaseAPIView):
     """GET/PATCH/DELETE /workspaces/{slug}/projects/{pid}/smart-tables/{tid}/ — GET 返列+committed 行(网格用)"""
 
@@ -299,16 +381,23 @@ class SmartTableDetailEndpoint(BaseAPIView):
         except SmartTable.DoesNotExist:
             return Response({"error": "not found"}, status=status.HTTP_404_NOT_FOUND)
         _commit_completed(table=t)
-        cols = list(SmartColumn.objects.filter(table=t).order_by("position", "created_at"))
+        role = _viewer_role(slug, project_id, request.user)
+        cols = [c for c in SmartColumn.objects.filter(table=t).order_by("position", "created_at") if _can_view(c, role)]
+        vkeys = {c.key for c in cols}  # 隐藏列的 cell 绝不出服务端
         rows = list(SmartRow.objects.filter(table=t, status="committed").select_related("source_issue").order_by("position", "created_at"))
-        _project_rows(rows, cols, timezone.now())
+        _project_rows(rows, cols, timezone.now())  # 只投影可见列
+        out_rows = []
+        for r in rows:
+            rr = _row(r)
+            rr["cells"] = {k: v for k, v in (rr["cells"] or {}).items() if k in vkeys}
+            out_rows.append(rr)
         return Response({
             "id": str(t.id), "name": t.name, "description": t.description,
             "shared_workspace": bool(t.shared_workspace),
             "shared_projects": list(t.shared_projects or []),
             "foreign": str(t.project_id) != str(project_id),
             "i18n": t.i18n or {},
-            "columns": [_col(c) for c in cols], "rows": [_row(r) for r in rows],
+            "columns": [_col(c, role) for c in cols], "rows": out_rows,
         }, status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
@@ -324,6 +413,14 @@ class SmartTableDetailEndpoint(BaseAPIView):
             t.description = (d["description"] or "")[:2000]
         if isinstance(d.get("i18n"), dict):
             t.i18n = d["i18n"]
+        if "folder_id" in d and str(t.project_id) == str(project_id):
+            # 归入文件夹 / 移出(null)。文件夹须同项目, 否则忽略(防越权挂他项目文件夹)。
+            fid = d.get("folder_id")
+            if fid:
+                ok = SmartTableFolder.objects.filter(pk=fid, project_id=project_id).exists()
+                t.folder_id = fid if ok else t.folder_id
+            else:
+                t.folder = None
         if ("shared_workspace" in d or "shared_projects" in d) and str(t.project_id) == str(project_id):
             # 仅 home project 可改共享。范围 = 全工作区(shared_workspace) 或 项目白名单(shared_projects)。
             want_ws = bool(d.get("shared_workspace", t.shared_workspace))
@@ -463,6 +560,12 @@ class SmartColumnEndpoint(BaseAPIView):
             c.width = d["width"]
         if isinstance(d.get("i18n"), dict):
             c.i18n = d["i18n"]
+        # 字段级权限阈值(0/5/15/20)。仅接受合法档位。
+        for fld in ("acl_view", "acl_edit"):
+            if fld in d:
+                v = d.get(fld)
+                if v in (0, 5, 15, 20):
+                    setattr(c, fld, v)
         c.updated_by_id = request.user.id if request.user.is_authenticated else None
         c.save()
         return Response(_col(c), status=status.HTTP_200_OK)
@@ -487,7 +590,8 @@ class SmartRowEndpoint(BaseAPIView):
         except SmartTable.DoesNotExist:
             return Response({"error": "table not found"}, status=status.HTTP_404_NOT_FOUND)
         uid = request.user.id if request.user.is_authenticated else None
-        cells = _coerce_cells(SmartColumn.objects.filter(table=t), (request.data or {}).get("cells"))
+        role = _viewer_role(slug, project_id, request.user)
+        cells = _coerce_cells(SmartColumn.objects.filter(table=t), (request.data or {}).get("cells"), role)
         r = SmartRow.objects.create(
             table=t, cells=cells, status="committed",
             position=SmartRow.objects.filter(table=t).count(),
@@ -502,7 +606,8 @@ class SmartRowEndpoint(BaseAPIView):
         except (SmartTable.DoesNotExist, SmartRow.DoesNotExist):
             return Response({"error": "not found"}, status=status.HTTP_404_NOT_FOUND)
         body = request.data or {}
-        patch = _coerce_cells(SmartColumn.objects.filter(table_id=table_id), body.get("cells"))
+        role = _viewer_role(slug, project_id, request.user)
+        patch = _coerce_cells(SmartColumn.objects.filter(table_id=table_id), body.get("cells"), role)
         merged = dict(r.cells or {})
         merged.update(patch)
         r.cells = merged
@@ -785,16 +890,30 @@ class IssueSmartTableBindingEndpoint(BaseAPIView):
              .select_related("table", "form", "row").first())
         if not b:
             return Response({"bound": False}, status=status.HTTP_200_OK)
+        role = _viewer_role(slug, project_id, request.user)
         cols = list(SmartColumn.objects.filter(table_id=b.table_id).order_by("position", "created_at"))
-        columns = _form_fields(b.form, cols) if b.form_id else [_col(c) for c in cols]
+        columns = _form_fields(b.form, cols, role) if b.form_id else [_col(c, role) for c in cols if _can_view(c, role)]
+        vkeys = {c["key"] for c in columns}
+        row_out = _row(b.row) if b.row_id else {"cells": {}}
+        row_out["cells"] = {k: v for k, v in (row_out.get("cells") or {}).items() if k in vkeys}
+        # Option A: issue's extra rows (candidates promoted) — exclude the binding's main row
+        issue_rows_qs = (SmartRow.objects
+                         .filter(source_issue_id=issue_id, table_id=b.table_id)
+                         .order_by("position", "created_at"))
+        if b.row_id:
+            issue_rows_qs = issue_rows_qs.exclude(pk=b.row_id)
+        rows_out = []
+        for r in issue_rows_qs:
+            ro = _row(r)
+            ro["cells"] = {k: v for k, v in (ro.get("cells") or {}).items() if k in vkeys}
+            rows_out.append(ro)
         return Response({
             "bound": True, "committed": bool(b.committed),
             "table": {"id": str(b.table_id), "name": b.table.name, "i18n": b.table.i18n or {}},
             "form": {"id": str(b.form_id), "name": b.form.name, "i18n": b.form.i18n or {}} if b.form_id else None,
             "columns": columns,
-            "row": _row(b.row) if b.row_id else {"cells": {}},
-            # B-4a 候选行: 比价等"运行时份数"的过程数据(行级 meta, 非列值)
-            "candidates": ((b.row.meta or {}).get("candidates") or []) if b.row_id else [],
+            "row": row_out,
+            "rows": rows_out,
         }, status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
@@ -848,14 +967,18 @@ class IssueSmartTableBindingEndpoint(BaseAPIView):
             b = SmartTableIssueBinding.objects.create(
                 issue=issue, table=table, form=form, row=row, committed=committed,
                 project_id=project_id, workspace_id=issue.workspace_id, created_by_id=uid, updated_by_id=uid)
+        role = _viewer_role(slug, project_id, request.user)
         cols = list(SmartColumn.objects.filter(table_id=table.id).order_by("position", "created_at"))
-        columns = _form_fields(form, cols) if form else [_col(c) for c in cols]
+        columns = _form_fields(form, cols, role) if form else [_col(c, role) for c in cols if _can_view(c, role)]
+        vkeys = {c["key"] for c in columns}
+        row_out = _row(b.row) if b.row_id else {"cells": {}}
+        row_out["cells"] = {k: v for k, v in (row_out.get("cells") or {}).items() if k in vkeys}
         return Response({
             "bound": True, "committed": bool(b.committed),
             "table": {"id": str(table.id), "name": table.name, "i18n": table.i18n or {}},
             "form": {"id": str(form.id), "name": form.name, "i18n": form.i18n or {}} if form else None,
             "columns": columns,
-            "row": _row(b.row) if b.row_id else {"cells": {}},
+            "row": row_out,
         }, status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
@@ -864,7 +987,8 @@ class IssueSmartTableBindingEndpoint(BaseAPIView):
              .filter(issue_id=issue_id, project_id=project_id).select_related("row").first())
         if not b or not b.row_id:
             return Response({"error": "no binding"}, status=status.HTTP_404_NOT_FOUND)
-        patch = _coerce_cells(SmartColumn.objects.filter(table_id=b.table_id), (request.data or {}).get("cells"))
+        role = _viewer_role(slug, project_id, request.user)
+        patch = _coerce_cells(SmartColumn.objects.filter(table_id=b.table_id), (request.data or {}).get("cells"), role)
         merged = dict(b.row.cells or {})
         merged.update(patch)
         b.row.cells = merged
@@ -884,63 +1008,67 @@ class IssueSmartTableBindingEndpoint(BaseAPIView):
 
 
 class IssueSmartBindingCandidatesEndpoint(BaseAPIView):
-    """B-4a 候选行(2026-06-10 专家批判会:「比价是数据问题, 不是卡片问题」)。
+    """Option A: 候选行已提升为独立 SmartRow (2026-06-19).
     POST .../issues/{iid}/smart-table-binding/candidates/
-      {action: "upsert", candidate: {id?, values:{col_key:val}}}  → 增/改一条候选
-      {action: "delete", id}                                       → 删一条
-      {action: "adopt",  id}                                       → 采用: 该候选 values 经
-        _coerce_cells 写主行 cells(守门: 仅 manual 列), 全候选互斥标 adopted。
-    候选全集留在 row.meta.candidates(过程数据=议价资产, 绝不丢)。committed 后冻结。
-    返回 {candidates, cells}(前端原地刷新)。"""
+      {action: "upsert", candidate: {id?, values:{col_key:val}}}  → 增/改一行(committed)
+      {action: "delete", id}                                       → 软删一行
+    committed 后冻结。返回 {rows}(前端原地刷新)。"""
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def post(self, request, slug, project_id, issue_id):
         b = (SmartTableIssueBinding.objects
              .filter(issue_id=issue_id, project_id=project_id)
-             .select_related("row", "table").first())
-        if not b or not b.row_id:
-            return Response({"error": "no binding/row"}, status=status.HTTP_404_NOT_FOUND)
+             .select_related("row", "table", "form").first())
+        if not b:
+            return Response({"error": "no binding"}, status=status.HTTP_404_NOT_FOUND)
         if b.committed:
-            return Response({"error": "row committed, candidates frozen"}, status=status.HTTP_409_CONFLICT)
+            return Response({"error": "committed, rows frozen"}, status=status.HTTP_409_CONFLICT)
         d = request.data or {}
         action = (d.get("action") or "").strip()
-        row = b.row
-        meta = dict(row.meta or {})
-        cands = list(meta.get("candidates") or [])
         cols = SmartColumn.objects.filter(table_id=b.table_id)
+        role = _viewer_role(slug, project_id, request.user)
         uid = request.user.id if request.user.is_authenticated else None
+        now = timezone.now()
 
         if action == "upsert":
             cand = d.get("candidate") or {}
-            values = _coerce_cells(cols, cand.get("values") or {})
-            cid = (cand.get("id") or "").strip() or uuid.uuid4().hex[:8]
-            hit = next((c for c in cands if c.get("id") == cid), None)
-            if hit:
-                hit["values"] = {**(hit.get("values") or {}), **values}
+            values = _coerce_cells(cols, cand.get("values") or {}, role)
+            cid = (cand.get("id") or "").strip()
+            if cid:
+                # update existing row (must belong to this issue/table)
+                SmartRow.objects.filter(
+                    pk=cid, source_issue_id=issue_id, table_id=b.table_id, deleted_at__isnull=True,
+                ).update(cells=values, updated_by_id=uid, updated_at=now)
             else:
-                cands.append({"id": cid, "values": values, "adopted": False,
-                              "by": str(uid) if uid else None,
-                              "at": timezone.now().isoformat()})
+                SmartRow.objects.create(
+                    table_id=b.table_id, source_issue_id=issue_id,
+                    cells=values, status="committed", position=0, meta={},
+                    project_id=project_id, workspace_id=b.workspace_id,
+                    created_by_id=uid, updated_by_id=uid,
+                )
         elif action == "delete":
             cid = (d.get("id") or "").strip()
-            cands = [c for c in cands if c.get("id") != cid]
-        elif action == "adopt":
-            cid = (d.get("id") or "").strip()
-            hit = next((c for c in cands if c.get("id") == cid), None)
-            if not hit:
-                return Response({"error": "candidate not found"}, status=status.HTTP_404_NOT_FOUND)
-            adopted_values = _coerce_cells(cols, hit.get("values") or {})
-            row.cells = {**(row.cells or {}), **adopted_values}
-            for c in cands:
-                c["adopted"] = c.get("id") == cid
+            SmartRow.objects.filter(
+                pk=cid, source_issue_id=issue_id, table_id=b.table_id,
+            ).update(deleted_at=now, updated_at=now)
         else:
-            return Response({"error": "action must be upsert|delete|adopt"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "action must be upsert|delete"}, status=status.HTTP_400_BAD_REQUEST)
 
-        meta["candidates"] = cands
-        row.meta = meta
-        row.updated_by_id = uid
-        row.save(update_fields=["cells", "meta", "updated_by", "updated_at"])
-        return Response({"candidates": cands, "cells": row.cells or {}}, status=status.HTTP_200_OK)
+        # Rebuild rows list (exclude main binding row)
+        cols_list = list(SmartColumn.objects.filter(table_id=b.table_id).order_by("position", "created_at"))
+        columns = _form_fields(b.form, cols_list, role) if b.form_id else [_col(c, role) for c in cols_list if _can_view(c, role)]
+        vkeys = {c["key"] for c in columns}
+        issue_rows_qs = (SmartRow.objects
+                         .filter(source_issue_id=issue_id, table_id=b.table_id)
+                         .order_by("position", "created_at"))
+        if b.row_id:
+            issue_rows_qs = issue_rows_qs.exclude(pk=b.row_id)
+        rows_out = []
+        for r in issue_rows_qs:
+            ro = _row(r)
+            ro["cells"] = {k: v for k, v in (ro.get("cells") or {}).items() if k in vkeys}
+            rows_out.append(ro)
+        return Response({"rows": rows_out}, status=status.HTTP_200_OK)
 
 
 class IssueSmartSubtreeRowsEndpoint(BaseAPIView):
@@ -978,11 +1106,15 @@ class IssueSmartSubtreeRowsEndpoint(BaseAPIView):
                     "name": r.source_issue.name,
                 },
             })
+        role = _viewer_role(slug, project_id, request.user)
         out = []
         for tid, g in groups.items():
-            cols = SmartColumn.objects.filter(table_id=tid).order_by("position")
+            cols = [c for c in SmartColumn.objects.filter(table_id=tid).order_by("position") if _can_view(c, role)]
             used = [c for c in cols
                     if any((row["cells"].get(c.key) not in (None, "", []))
                            for row in g["rows"])]
-            out.append({"table": g["table"], "columns": [_col(c) for c in used], "rows": g["rows"]})
+            vkeys = {c.key for c in used}
+            for row in g["rows"]:  # 隐藏列的 cell 绝不出服务端
+                row["cells"] = {k: v for k, v in (row["cells"] or {}).items() if k in vkeys}
+            out.append({"table": g["table"], "columns": [_col(c, role) for c in used], "rows": g["rows"]})
         return Response({"groups": out}, status=status.HTTP_200_OK)

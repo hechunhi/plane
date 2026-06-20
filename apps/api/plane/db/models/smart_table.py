@@ -8,10 +8,30 @@ from django.db import models
 from .project import ProjectBaseModel
 
 
+class SmartTableFolder(ProjectBaseModel):
+    """BARSOUL 2026-06-15: 数据表文件夹(纯组织层). project 内; 表的 folder 指向它。
+    删文件夹→表 folder 置空(不删表)。仅组织/呈现, 不碰 SoR、不影响表自身共享。"""
+    name = models.CharField(max_length=120)
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "Smart Table Folder"
+        verbose_name_plural = "Smart Table Folders"
+        db_table = "smart_table_folders"
+        indexes = [models.Index(fields=["project"])]
+        ordering = ["position", "created_at"]
+
+    def __str__(self):
+        return self.name
+
+
 class SmartTable(ProjectBaseModel):
     """一张数据表(= Bitable 的一张表). project 内. schema 由 SmartColumn 运行时定义(B 路径)."""
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, default="")
+    # 文件夹(组织层, 可空=未归类)。删文件夹→SET_NULL。仅 home project 的列表分组用。
+    folder = models.ForeignKey(
+        SmartTableFolder, on_delete=models.SET_NULL, null=True, blank=True, related_name="tables")
     shared_workspace = models.BooleanField(default=False)  # 共享到全工作区 → 他 project 可引用(护城河)
     # 项目级精确共享: project id(str) 白名单, shared_workspace=False 时生效。
     # 动机: 工作区内可能有外部协作项目, 全工作区共享会泄露敏感表; 跨 workspace 由 slug 过滤天然隔离。
@@ -58,6 +78,11 @@ class SmartColumn(ProjectBaseModel):
     position = models.PositiveIntegerField(default=0)
     width = models.PositiveIntegerField(null=True, blank=True)  # 持久化列宽(px)
     i18n = models.JSONField(default=dict, blank=True)  # {lang: {name, options: {原值: 译文}}}; 选项译文仅显示用, cells 永远存原值
+    # BARSOUL 2026-06-15 字段级权限(按 Plane 项目角色, 服务端强制): 最低角色阈值 int —
+    # 0=不限(默认, 行为不变); 5=guest+ / 15=member+ / 20=仅 admin。view<阈值→该列隐藏(API 不返此 cell);
+    # edit<阈值→该列对此人只读(写入被服务端丢弃)。绝不只靠前端藏列(假安全)。
+    acl_view = models.PositiveSmallIntegerField(default=0)
+    acl_edit = models.PositiveSmallIntegerField(default=0)
 
     class Meta:
         verbose_name = "Smart Column"

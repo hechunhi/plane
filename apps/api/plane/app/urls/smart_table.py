@@ -3,6 +3,7 @@ from django.urls import path
 
 from plane.app.views import (
     SmartTableListEndpoint,
+    SmartTableFolderEndpoint,
     SmartTableDetailEndpoint,
     SmartColumnEndpoint,
     SmartFormEndpoint,
@@ -20,6 +21,16 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/",
         SmartTableListEndpoint.as_view(),
         name="smart-tables",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-table-folders/",
+        SmartTableFolderEndpoint.as_view(),
+        name="smart-table-folders",
+    ),
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/smart-table-folders/<uuid:folder_id>/",
+        SmartTableFolderEndpoint.as_view(),
+        name="smart-table-folder",
     ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/smart-tables/<uuid:table_id>/",

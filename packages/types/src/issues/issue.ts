@@ -68,6 +68,8 @@ export type TBaseIssue = {
   updated_at: string;
   start_date: string | null;
   target_date: string | null;
+  remind_at?: string | null; // BARSOUL: 看板卡提醒徽标/呼吸点(此卡有未到点的提醒 + 时刻)
+  remind_note?: string | null; // BARSOUL: 提醒备忘(看板卡显示)
   completed_at: string | null;
   archived_at: string | null;
 

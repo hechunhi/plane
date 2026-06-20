@@ -7,9 +7,16 @@ from plane.app.views import (
     RecurringRuleActionEndpoint,
     IssueRecurringContextEndpoint,
     IssueSnoozeEndpoint,
+    MyRemindersEndpoint,
 )
 
 urlpatterns = [
+    # BARSOUL: 我的提醒(工作区级, hub「リマインダー」用)
+    path(
+        "workspaces/<str:slug>/reminders/",
+        MyRemindersEndpoint.as_view(),
+        name="my-reminders",
+    ),
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/recurring/",
         IssueRecurringContextEndpoint.as_view(),

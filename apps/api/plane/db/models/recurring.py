@@ -38,6 +38,9 @@ class RecurringRule(ProjectBaseModel):
     )  # null = 未認領(团队任务): 生成卡进未指派 + @全员一次, 谁做谁认领
     labels = models.JSONField(default=list, blank=True)  # 生成卡套用的 label id 快照
     template = models.JSONField(default=dict, blank=True)  # {title?, description_html, priority, checklist?}
+    # BARSOUL 2026-06-16: 以「上一张生成的卡(无则模板快照)」为基, 套此提示词走 ai-bot /transform
+    # LLM 改写出新卡正文(结构保持, 仿评论翻译组件)。空=不改写, 原样克隆基底。
+    generation_prompt = models.TextField(blank=True, default="")
     blueprint = models.ForeignKey(
         "db.Blueprint", on_delete=models.SET_NULL, null=True, blank=True, related_name="recurring_rules"
     )  # 可选: 要台账的罕见场景, 生成时实例化该蓝图而非建普通卡

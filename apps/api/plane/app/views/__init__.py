@@ -139,17 +139,19 @@ from .issue.attachment import (
     IssueAttachmentV2Endpoint,
 )
 
-from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueAIApprovalEndpoint
+from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueTranslateOnDemandEndpoint, IssueAIApprovalEndpoint
 
 from .issue.ai_state import (
     IssueAIStateBatchEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
     IssueAIStateRederiveEndpoint,
+    IssueAIStateUrgeEndpoint,
 )
 
 from .smart_table import (
     SmartTableListEndpoint,
+    SmartTableFolderEndpoint,
     SmartTableDetailEndpoint,
     SmartColumnEndpoint,
     SmartFormEndpoint,
@@ -176,6 +178,7 @@ from .recurring import (
     RecurringRuleActionEndpoint,
     IssueRecurringContextEndpoint,
     IssueSnoozeEndpoint,
+    MyRemindersEndpoint,
 )
 
 from .issue.label import LabelViewSet, BulkCreateIssueLabelsEndpoint

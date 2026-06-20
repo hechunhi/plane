@@ -1824,6 +1824,36 @@ class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class IssueAIStateReadAPIEndpoint(BaseAPIView):
+    """BARSOUL 2026-06-15: 派生卡片当前态 (DIS) **读取** 端点(key 鉴权 = ai-bot)。
+    GET /api/v1/workspaces/{slug}/projects/{pid}/issues/ai-states/?issues=<id,id,...>
+    chat.barsoul.jp 集成(愛ちゃん·Plane 工具)が「球在谁手/下一步」等 rich DIS を読む。
+    既存 app 側 IssueAIStateBatchEndpoint と同じ序列化(_serialize 単一ソース)を再利用し、
+    認証のみ ProjectLitePermission(X-Api-Key)に。原 issue / SoR は一切触らない(只读)。"""
+
+    permission_classes = [ProjectLitePermission]
+
+    def get(self, request, slug, project_id):
+        # 遅延 import: 序列化を app 側と単一ソース化しつつ module-load 循環を回避
+        from plane.app.views.issue.ai_state import _serialize
+
+        raw = (request.query_params.get("issues") or "").strip()
+        qs = IssueAIState.objects.filter(
+            Q(issue__state__group__in=["unstarted", "started"]) | Q(needs_info=True),
+            workspace__slug=slug,
+            project_id=project_id,
+        ).select_related("issue", "issue__state", "project", "rep_child")
+        if raw:
+            ids = [x for x in (s.strip() for s in raw.split(",")) if x][:300]
+            qs = qs.filter(issue_id__in=ids)
+        else:
+            qs = qs.order_by("-updated_at")[:500]
+        return Response(
+            {str(r.issue_id): _serialize(r) for r in qs},
+            status=status.HTTP_200_OK,
+        )
+
+
 class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
     """BARSOUL: 派生卡片当前态 (DIS) 写入端点 (愛ちゃん/cloud Claude)。
     POST /api/v1/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/
@@ -2955,6 +2985,25 @@ class IssueArchiveUnarchiveAPIEndpoint(BaseAPIView):
             new_identifier=None,
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class WorkItemRingReminderAPIEndpoint(BaseAPIView):
+    """BARSOUL P3-EVENT-RELIABILITY: リマインダー到点回调 (ai-bot → ここ, Temporal timer 起点)。
+    POST /api/v1/workspaces/{slug}/projects/{pid}/issues/{iid}/ring-reminder/
+    受众響铃(零评论) + once消費/daily続排。返 {rang, repeat, next_at_ms}(workflow 续排判定)。
+    Auth: ProjectLitePermission (X-Api-Key = ai-bot)。SoR 不直写——仅动 remind_* 自有字段 + 通知。"""
+
+    permission_classes = [ProjectLitePermission]
+
+    def post(self, request, slug, project_id, issue_id):
+        from plane.bgtasks.recurring_task import ring_issue_reminder
+
+        try:
+            issue = Issue.objects.select_related("project", "state", "snoozed_by").get(
+                pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"rang": False, "repeat": False, "next_at_ms": 0}, status=status.HTTP_200_OK)
+        return Response(ring_issue_reminder(issue), status=status.HTTP_200_OK)
 
 
 class SmartTableBindingUpsertAPIEndpoint(BaseAPIView):

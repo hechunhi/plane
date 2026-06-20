@@ -31,6 +31,7 @@ from .integration import (
 from .issue import (
     CommentReaction,
     CommentTranslation,
+    IssueTranslation,
     IssueAIState,
     IssueAIStateCorrection,
     Issue,
@@ -55,6 +56,7 @@ from .smart_table import (
     SmartForm,
     SmartRow,
     SmartTable,
+    SmartTableFolder,
     SmartTableIssueBinding,
     SmartTableUserView,
 )
