@@ -323,16 +323,17 @@ def reminder_sweep():
                 if i.remind_fired_on == today:
                     continue  # 今天已响, 等明天
                 _ring_reminder(i)
-                _push_rt_invalidate(i)
                 i.remind_fired_on = today
                 if i.snoozed_until:
                     i.snoozed_until = None  # 隐藏卡浮回视图
                 i.save(update_fields=["remind_fired_on", "snoozed_until", "updated_at"])
+                _push_rt_invalidate(i)  # DB 保存後に推送(競態防止)
             else:
                 if i.remind_intensity != "daily":  # once → 响一次; daily 但卡完成 → 静默
                     _ring_reminder(i)
-                    _push_rt_invalidate(i)
-                _clear_reminder(i)  # 消費清除
+                _clear_reminder(i)  # 先 DB 清除
+                if i.remind_intensity != "daily":
+                    _push_rt_invalidate(i)  # DB 清除後に推送(競態防止)
             fired += 1
         except Exception:
             logger.exception("reminder: issue %s 处理失败", i.id)
@@ -412,18 +413,20 @@ def ring_issue_reminder(i: Issue) -> dict:
         rang = i.remind_fired_on != today
         if rang:
             _ring_reminder(i)
-            _push_rt_invalidate(i)
         nxt = i.remind_at + timedelta(days=1)
         i.remind_fired_on = today
         i.remind_at = nxt
         i.snoozed_until = nxt if i.remind_hide else None
         i.save(update_fields=["remind_fired_on", "remind_at", "snoozed_until", "updated_at"])
+        if rang:
+            _push_rt_invalidate(i)  # DB 保存後に推送(競態防止)
         return {"rang": rang, "repeat": True, "next_at_ms": int(nxt.timestamp() * 1000)}
     rang = i.remind_intensity != "daily"
     if rang:
         _ring_reminder(i)
-        _push_rt_invalidate(i)
-    _clear_reminder(i)
+    _clear_reminder(i)  # 先 DB 清除
+    if rang:
+        _push_rt_invalidate(i)  # DB 清除後に推送(競態防止)
     return {"rang": rang, "repeat": False, "next_at_ms": 0}
 
 
