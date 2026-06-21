@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { XCircle, ArchiveRestoreIcon, Clock, Repeat } from "lucide-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
@@ -23,13 +23,17 @@ import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 function _bizAdd(d: Date, n: number): Date {
   const r = new Date(d);
   let c = 0;
-  while (c < n) { r.setDate(r.getDate() + 1); const wd = r.getDay(); if (wd !== 0 && wd !== 6) c++; }
+  while (c < n) {
+    r.setDate(r.getDate() + 1);
+    const wd = r.getDay();
+    if (wd !== 0 && wd !== 6) c++;
+  }
   return r;
 }
 function _snoozePresets(zh: boolean): { v: TSnoozePreset; label: string; date: Date }[] {
   const today = new Date();
   const nextMon = new Date(today);
-  nextMon.setDate(today.getDate() + (((1 - today.getDay()) + 7) % 7 || 7));
+  nextMon.setDate(today.getDate() + ((1 - today.getDay() + 7) % 7 || 7));
   return [
     { v: "tomorrow", label: zh ? "明天" : "明日", date: new Date(today.getTime() + 86400000) },
     { v: "biz2", label: zh ? "2 个工作日后" : "2営業日後", date: _bizAdd(today, 2) },
@@ -143,6 +147,7 @@ export const useIssueActionHandlers = (props: MenuItemFactoryProps) => {
           title: "Restore success",
           message: "Your work item can be found in project work items.",
         });
+        return;
       })
       .catch(() => {
         setToast({
@@ -280,19 +285,25 @@ export const useMenuItemFactory = (props: MenuItemFactoryProps) => {
   const createSnoozeMenuItem = (): TContextMenuItem => {
     const ws = props.workspaceSlug;
     const pid = issue.project_id;
+    // 右键快捷 = 不隐藏 + 一次 + 只我(无黑洞); 富配置走详情页「提醒」条的详细设置。
     const snooze = async (preset: TSnoozePreset, label: string) => {
       if (!ws || !pid) return;
-      const r = await recurringService.setSnooze(ws, pid, issue.id, { preset }).catch(() => null);
-      if (r?.snoozed) {
-        const d = (r.until_date ?? "").slice(5).replace("-", "/");
-        setToast({ type: TOAST_TYPE.SUCCESS, title: `${d} まで「あとで通知」(${label})`, message: "それまで一覧から隠れます" });
+      const r = await recurringService
+        .setSnooze(ws, pid, issue.id, { preset, hide: false, intensity: "once", audience: "self" })
+        .catch(() => null);
+      if (r?.set) {
+        setToast({
+          type: TOAST_TYPE.SUCCESS,
+          title: zh ? `已设提醒 · ${r.at_jst ?? ""}` : `リマインダー · ${r.at_jst ?? ""}（${label}）`,
+          message: zh ? "卡片保留可见" : "表示のまま",
+        });
       } else {
-        setToast({ type: TOAST_TYPE.ERROR, title: "設定に失敗しました", message: "" });
+        setToast({ type: TOAST_TYPE.ERROR, title: zh ? "设置失败" : "設定に失敗しました", message: "" });
       }
     };
     return {
       key: "barsoul-snooze",
-      title: zh ? "稍后提醒" : "あとで通知",
+      title: zh ? "提醒我" : "リマインド",
       icon: Clock,
       action: () => {},
       shouldRender: isEditingAllowed && !!ws && !!pid,
@@ -340,7 +351,7 @@ export const useProjectIssueMenuItems = (props: MenuItemFactoryProps): TContextM
       factory.createCopyMenuItem(),
       factory.createOpenInNewTabMenuItem(),
       factory.createCopyLinkMenuItem(),
-      factory.createSnoozeMenuItem(),
+      // BARSOUL 2026-06-16: 右键「提醒我」移除 — 详情醒目条(SnoozeBar 两树, 含备忘/全选项)取代; 保留「设为定期」
       factory.createRecurrizeMenuItem(),
       factory.createArchiveMenuItem(),
       factory.createDeleteMenuItem(),
@@ -356,13 +367,12 @@ export const useWorkItemDetailMenuItems = (props: MenuItemFactoryProps): TContex
     () => [
       factory.createCopyMenuItem(props.workspaceSlug),
       factory.createOpenInNewTabMenuItem(),
-      factory.createSnoozeMenuItem(),
       factory.createRecurrizeMenuItem(),
       factory.createArchiveMenuItem(),
       factory.createRestoreMenuItem(),
       factory.createDeleteMenuItem(),
     ],
-    [factory]
+    [factory, props.workspaceSlug]
   );
 };
 
@@ -375,7 +385,6 @@ export const useAllIssueMenuItems = (props: MenuItemFactoryProps): TContextMenuI
       factory.createCopyMenuItem(),
       factory.createOpenInNewTabMenuItem(),
       factory.createCopyLinkMenuItem(),
-      factory.createSnoozeMenuItem(),
       factory.createRecurrizeMenuItem(),
       factory.createArchiveMenuItem(),
       factory.createDeleteMenuItem(),
@@ -387,13 +396,13 @@ export const useAllIssueMenuItems = (props: MenuItemFactoryProps): TContextMenuI
 export const useCycleIssueMenuItems = (props: MenuItemFactoryProps): TContextMenuItem[] => {
   const factory = useMenuItemFactory(props);
 
-  const customEditAction = () => {
+  const customEditAction = useCallback(() => {
     props.setIssueToEdit({
       ...props.issue,
       cycle_id: props.cycleId ?? null,
     });
     props.setCreateUpdateIssueModal(true);
-  };
+  }, [props]);
 
   return useMemo(
     () => [
@@ -407,20 +416,20 @@ export const useCycleIssueMenuItems = (props: MenuItemFactoryProps): TContextMen
       factory.createArchiveMenuItem(),
       factory.createDeleteMenuItem(),
     ],
-    [factory, props.cycleId]
+    [factory, customEditAction]
   );
 };
 
 export const useModuleIssueMenuItems = (props: MenuItemFactoryProps): TContextMenuItem[] => {
   const factory = useMenuItemFactory(props);
 
-  const customEditAction = () => {
+  const customEditAction = useCallback(() => {
     props.setIssueToEdit({
       ...props.issue,
       module_ids: props.moduleId ? [props.moduleId] : [],
     });
     props.setCreateUpdateIssueModal(true);
-  };
+  }, [props]);
 
   return useMemo(
     () => [
@@ -434,7 +443,7 @@ export const useModuleIssueMenuItems = (props: MenuItemFactoryProps): TContextMe
       factory.createArchiveMenuItem(),
       factory.createDeleteMenuItem(),
     ],
-    [factory, props.moduleId]
+    [factory, customEditAction]
   );
 };
 

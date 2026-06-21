@@ -28,6 +28,7 @@ export type TRecurringRule = {
   assignee: { id: string; display_name: string } | null;
   labels: string[];
   template: { title?: string; description_html?: string; priority?: string };
+  generation_prompt: string; // 以上一张卡为基, 按此提示词 LLM 改写出新卡正文(空=原样克隆)
   blueprint: string | null;
   next_run_at: string | null; // 次回作成(生成日)
   next_due: string | null; // 次回期日(≠ 作成日, 信任命门)
@@ -52,18 +53,54 @@ export type TRecurringInput = Partial<{
   assignee_id: string | null;
   labels: string[];
   template: Record<string, unknown>;
+  generation_prompt: string;
   blueprint_id: string | null;
 }>;
 
 export type TRecurringAction = "run_now" | "skip_next" | "pause" | "resume";
 
-// フォローアップ・スヌーズ(Linear 风: 隐藏到期日再浮现)
+// リマインダー(2026-06-15 強化: 何时/是否隐藏/强度/受众 可配置)
 export type TSnoozePreset = "tomorrow" | "biz2" | "next_mon" | "week1";
+export type TReminderIntensity = "once" | "daily";
+export type TReminderAudience = "self" | "assignees" | "members";
 export type TSnoozeState = {
-  snoozed: boolean;
-  until?: string;
-  until_date?: string; // JST 目标日 YYYY-MM-DD
+  set: boolean;
+  at?: string; // ISO
+  at_date?: string; // JST 目标日 YYYY-MM-DD
+  at_jst?: string; // "YYYY-MM-DD HH:MM" JST 显示
+  hide?: boolean;
+  intensity?: TReminderIntensity;
+  audience?: TReminderAudience;
+  note?: string; // 备忘: 到时提醒我做什么
   by?: { id: string; display_name: string } | null;
+};
+export type TReminderInput = {
+  at?: string; // ISO datetime(绝対, 优先)
+  preset?: TSnoozePreset;
+  until?: string; // YYYY-MM-DD
+  time?: string; // "HH:MM" JST(preset/until/lead 配合)
+  lead_days?: number; // 相对 target_date 提前 N 天
+  hide?: boolean;
+  intensity?: TReminderIntensity;
+  audience?: TReminderAudience;
+  note?: string;
+};
+// hub「リマインダー」: 我的待回来提醒(工作区级)
+export type TMyReminder = {
+  id: string;
+  name: string;
+  sequence_id: number;
+  project_id: string;
+  project_identifier: string;
+  at: string;
+  at_jst: string;
+  at_date: string;
+  note: string;
+  hide: boolean;
+  intensity: TReminderIntensity;
+  audience: TReminderAudience;
+  state_group: string | null;
+  mine: boolean;
 };
 
 // 卡顶上下文条: 该卡若是某规则的当前实例
@@ -125,14 +162,21 @@ class RecurringService extends APIService {
   }
   async getSnooze(ws: string, pid: string, iid: string): Promise<TSnoozeState> {
     return this.get(this.snoozeUrl(ws, pid, iid))
-      .then((r) => r?.data ?? { snoozed: false })
-      .catch(() => ({ snoozed: false }));
+      .then((r) => r?.data ?? { set: false })
+      .catch(() => ({ set: false }));
   }
-  async setSnooze(ws: string, pid: string, iid: string, body: { preset?: TSnoozePreset; until?: string }): Promise<TSnoozeState> {
+  async setSnooze(ws: string, pid: string, iid: string, body: TReminderInput): Promise<TSnoozeState> {
     return this.post(this.snoozeUrl(ws, pid, iid), body).then((r) => r?.data);
   }
   async clearSnooze(ws: string, pid: string, iid: string): Promise<TSnoozeState> {
     return this.post(this.snoozeUrl(ws, pid, iid), { clear: true }).then((r) => r?.data);
+  }
+
+  // hub: 我的待回来提醒(工作区级, 跨项目)
+  async listReminders(ws: string): Promise<TMyReminder[]> {
+    return this.get(`/api/workspaces/${ws}/reminders/`)
+      .then((r) => r?.data ?? [])
+      .catch(() => []);
   }
 }
 

@@ -359,6 +359,11 @@ export const coreRoutes: RouteConfigEntry[] = [
                 "./(all)/[workspaceSlug]/(settings)/settings/projects/[projectId]/automations/page.tsx"
               ),
             ]),
+            // BARSOUL Project Recurring Tasks(设置面板可达; 复用 RecurringRoot)
+            route(
+              ":workspaceSlug/settings/projects/:projectId/recurring",
+              "./(all)/[workspaceSlug]/(settings)/settings/projects/[projectId]/recurring/page.tsx"
+            ),
           ]),
         ]),
       ]),
