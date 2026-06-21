@@ -26,7 +26,10 @@ export type TSmartColumnType =
 export type TSmartSelectOption = { v: string; color?: string };
 
 // schema i18n 显示层 overlay: {lang: {name?, options?: {原值:译文}, labels?: {colkey:译文}}}; 原名=键, 翻译绝不改名
-export type TSchemaI18n = Record<string, { name?: string; options?: Record<string, string>; labels?: Record<string, string> }>;
+export type TSchemaI18n = Record<
+  string,
+  { name?: string; options?: Record<string, string>; labels?: Record<string, string> }
+>;
 
 export type TSmartColumn = {
   id: string;
@@ -40,6 +43,10 @@ export type TSmartColumn = {
   width?: number | null;
   deriver?: string | null;
   i18n?: TSchemaI18n;
+  // 字段级角色权限(0=不限 / 5=guest+ / 15=member+ / 20=仅admin)+ 此阅览者能否编辑(服务端算)
+  acl_view?: number;
+  acl_edit?: number;
+  editable?: boolean;
 };
 
 export type TSmartFormField = { col: string; label?: string; required?: boolean };
@@ -76,7 +83,10 @@ export type TSmartTableSummary = {
   shared_workspace?: boolean;
   shared_projects?: string[];
   foreign?: boolean;
+  folder?: string | null; // 所属文件夹 id(仅 home project 有意义)
 };
+
+export type TSmartTableFolder = { id: string; name: string; position: number };
 
 export type TSmartTable = {
   id: string;
@@ -195,7 +205,7 @@ export type TSmartBinding =
       form?: { id: string; name: string; i18n?: TSchemaI18n } | null;
       columns: TSmartColumn[];
       row: { id?: string; cells: Record<string, unknown> };
-      candidates?: TCandidate[];
+      rows?: TSmartRow[]; // Option A: extra rows per issue (candidates promoted to real SmartRows)
     };
 
 class SmartTableService extends APIService {
@@ -233,6 +243,37 @@ class SmartTableService extends APIService {
       .catch(() => []);
   }
 
+  // ── folders(组织层)──
+  private folderBase(ws: string, pid: string) {
+    return `/api/workspaces/${ws}/projects/${pid}/smart-table-folders`;
+  }
+  async listFolders(ws: string, pid: string): Promise<TSmartTableFolder[]> {
+    return this.get(`${this.folderBase(ws, pid)}/`)
+      .then((r) => r?.data ?? [])
+      .catch(() => []);
+  }
+  async createFolder(ws: string, pid: string, name: string): Promise<TSmartTableFolder | null> {
+    return this.post(`${this.folderBase(ws, pid)}/`, { name })
+      .then((r) => r?.data ?? null)
+      .catch(() => null);
+  }
+  async renameFolder(ws: string, pid: string, fid: string, name: string): Promise<boolean> {
+    return this.patch(`${this.folderBase(ws, pid)}/${fid}/`, { name })
+      .then(() => true)
+      .catch(() => false);
+  }
+  async deleteFolder(ws: string, pid: string, fid: string): Promise<boolean> {
+    return this.delete(`${this.folderBase(ws, pid)}/${fid}/`)
+      .then(() => true)
+      .catch(() => false);
+  }
+  // 表归入/移出文件夹(folderId=null 移出)
+  async moveTableToFolder(ws: string, pid: string, tid: string, folderId: string | null): Promise<boolean> {
+    return this.patch(`${this.base(ws, pid)}/${tid}/`, { folder_id: folderId })
+      .then(() => true)
+      .catch(() => false);
+  }
+
   async createTable(ws: string, pid: string, data: { name: string; description?: string }): Promise<TSmartTable> {
     return this.post(`${this.base(ws, pid)}/`, data).then((r) => r?.data);
   }
@@ -241,7 +282,12 @@ class SmartTableService extends APIService {
     return this.get(`${this.base(ws, pid)}/${tid}/`).then((r) => r?.data);
   }
 
-  async updateTable(ws: string, pid: string, tid: string, data: Partial<{ name: string; description: string; shared_workspace: boolean; i18n: TSchemaI18n }>): Promise<TSmartTable> {
+  async updateTable(
+    ws: string,
+    pid: string,
+    tid: string,
+    data: Partial<{ name: string; description: string; shared_workspace: boolean; i18n: TSchemaI18n }>
+  ): Promise<TSmartTable> {
     return this.patch(`${this.base(ws, pid)}/${tid}/`, data).then((r) => r?.data);
   }
 
@@ -253,7 +299,9 @@ class SmartTableService extends APIService {
 
   // 爱酱一键翻译 schema(默认只填空槽; overwrite 覆盖)→ {filled: {lang: n}, terms}
   async translateTable(
-    ws: string, pid: string, tid: string,
+    ws: string,
+    pid: string,
+    tid: string,
     opts?: { targets?: string[]; overwrite?: boolean }
   ): Promise<{ filled: Record<string, number>; terms: number } | null> {
     return this.post(`${this.base(ws, pid)}/${tid}/translate/`, opts ?? {})
@@ -271,8 +319,11 @@ class SmartTableService extends APIService {
   // 共享范围: 全工作区 / 指定项目白名单 / 私有。收窄且有外部依赖时后端 409 + 报告 → {ok:false, ...};
   // confirm=true 二次确认放行(祖父化: 既有外项目绑定仍可经卡片写, 表不可见/不可新绑)
   async setTableShare(
-    ws: string, pid: string, tid: string,
-    scope: { shared_workspace: boolean; shared_projects: string[] }, confirm: boolean
+    ws: string,
+    pid: string,
+    tid: string,
+    scope: { shared_workspace: boolean; shared_projects: string[] },
+    confirm: boolean
   ): Promise<{ ok: boolean; foreign_bindings?: number; blueprints?: { name: string; project: string }[] }> {
     return this.patch(`${this.base(ws, pid)}/${tid}/`, { ...scope, confirm_unshare: confirm })
       .then(() => ({ ok: true }))
@@ -291,7 +342,13 @@ class SmartTableService extends APIService {
     return this.post(`${this.base(ws, pid)}/${tid}/columns/`, { deriver, name }).then((r) => r?.data);
   }
 
-  async updateColumn(ws: string, pid: string, tid: string, cid: string, data: Partial<TSmartColumn>): Promise<TSmartColumn> {
+  async updateColumn(
+    ws: string,
+    pid: string,
+    tid: string,
+    cid: string,
+    data: Partial<TSmartColumn>
+  ): Promise<TSmartColumn> {
     return this.patch(`${this.base(ws, pid)}/${tid}/columns/${cid}/`, data).then((r) => r?.data);
   }
 
@@ -306,11 +363,22 @@ class SmartTableService extends APIService {
       .catch(() => []);
   }
 
-  async createForm(ws: string, pid: string, tid: string, data: { name: string; fields?: TSmartFormField[] }): Promise<TSmartForm> {
+  async createForm(
+    ws: string,
+    pid: string,
+    tid: string,
+    data: { name: string; fields?: TSmartFormField[] }
+  ): Promise<TSmartForm> {
     return this.post(`${this.base(ws, pid)}/${tid}/forms/`, data).then((r) => r?.data);
   }
 
-  async updateForm(ws: string, pid: string, tid: string, fid: string, data: Partial<{ name: string; fields: TSmartFormField[]; position: number; i18n: TSchemaI18n }>): Promise<TSmartForm> {
+  async updateForm(
+    ws: string,
+    pid: string,
+    tid: string,
+    fid: string,
+    data: Partial<{ name: string; fields: TSmartFormField[]; position: number; i18n: TSchemaI18n }>
+  ): Promise<TSmartForm> {
     return this.patch(`${this.base(ws, pid)}/${tid}/forms/${fid}/`, data).then((r) => r?.data);
   }
 
@@ -323,7 +391,13 @@ class SmartTableService extends APIService {
     return this.post(`${this.base(ws, pid)}/${tid}/rows/`, { cells }).then((r) => r?.data);
   }
 
-  async updateRow(ws: string, pid: string, tid: string, rid: string, cells: Record<string, unknown>): Promise<TSmartRow> {
+  async updateRow(
+    ws: string,
+    pid: string,
+    tid: string,
+    rid: string,
+    cells: Record<string, unknown>
+  ): Promise<TSmartRow> {
     return this.patch(`${this.base(ws, pid)}/${tid}/rows/${rid}/`, { cells }).then((r) => r?.data);
   }
 
@@ -343,7 +417,9 @@ class SmartTableService extends APIService {
   }
 
   async instantiateBlueprint(
-    ws: string, pid: string, bid: string,
+    ws: string,
+    pid: string,
+    bid: string,
     data: { title: string; customer?: string; seed_cells?: Record<string, unknown>; parent_issue?: string }
   ): Promise<{ instance_id: string; issue_id: string; sequence_id: number; refs: Record<string, string> } | null> {
     return this.post(`/api/workspaces/${ws}/projects/${pid}/blueprints/${bid}/instantiate/`, data)
@@ -364,7 +440,9 @@ class SmartTableService extends APIService {
   }
 
   async patchBlueprint(
-    ws: string, pid: string, bid: string,
+    ws: string,
+    pid: string,
+    bid: string,
     data: Partial<{ title: string; enabled: boolean; definition: Record<string, unknown> }>
   ): Promise<boolean> {
     return this.patch(`/api/workspaces/${ws}/projects/${pid}/blueprints/${bid}/`, data)
@@ -372,7 +450,12 @@ class SmartTableService extends APIService {
       .catch(() => false);
   }
 
-  async publishBlueprint(ws: string, pid: string, bid: string, changelog?: string): Promise<{ published?: number; details?: string[] }> {
+  async publishBlueprint(
+    ws: string,
+    pid: string,
+    bid: string,
+    changelog?: string
+  ): Promise<{ published?: number; details?: string[] }> {
     return this.post(`/api/workspaces/${ws}/projects/${pid}/blueprints/${bid}/publish/`, { changelog })
       .then((r) => r?.data ?? {})
       .catch((e) => ({ details: e?.details ?? e?.response?.data?.details ?? ["publish failed"] }));
@@ -420,7 +503,9 @@ class SmartTableService extends APIService {
 
   // B-3e 管理员流程干预(Temporal Update 同步回执; 拒绝原因在 error)
   async flowIntervene(
-    ws: string, pid: string, iid: string,
+    ws: string,
+    pid: string,
+    iid: string,
     body: { verb: "set_parallelism" | "skip"; key: string; n?: number; reason: string }
   ): Promise<{ ok: boolean; msg?: string; error?: string }> {
     return this.post(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/flow-intervene/`, body)
@@ -428,29 +513,38 @@ class SmartTableService extends APIService {
       .catch((e) => ({ ok: false, error: e?.response?.data?.error || e?.error || "rejected" }));
   }
 
-  // B-4a 候选行操作: upsert(增改)/delete/adopt(采用→写主行) → {candidates, cells}
+  // Option A: 候选行已提升为 SmartRow — upsert(增改)/delete → {rows}
   async candidatesAction(
-    ws: string, pid: string, iid: string,
+    ws: string,
+    pid: string,
+    iid: string,
     body:
       | { action: "upsert"; candidate: { id?: string; values: Record<string, unknown> } }
       | { action: "delete"; id: string }
-      | { action: "adopt"; id: string }
-  ): Promise<{ candidates: TCandidate[]; cells: Record<string, unknown> } | null> {
+  ): Promise<{ rows: TSmartRow[] } | null> {
     return this.post(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/candidates/`, body)
       .then((r) => r?.data ?? null)
       .catch(() => null);
   }
 
   async setBinding(ws: string, pid: string, iid: string, tableId: string, rowId?: string): Promise<TSmartBinding> {
-    return this.put(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/`, { table_id: tableId, ...(rowId ? { row_id: rowId } : {}) }).then((r) => r?.data);
+    return this.put(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/`, {
+      table_id: tableId,
+      ...(rowId ? { row_id: rowId } : {}),
+    }).then((r) => r?.data);
   }
 
   async bindForm(ws: string, pid: string, iid: string, formId: string, rowId?: string): Promise<TSmartBinding> {
-    return this.put(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/`, { form_id: formId, ...(rowId ? { row_id: rowId } : {}) }).then((r) => r?.data);
+    return this.put(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/`, {
+      form_id: formId,
+      ...(rowId ? { row_id: rowId } : {}),
+    }).then((r) => r?.data);
   }
 
   async saveBindingRow(ws: string, pid: string, iid: string, cells: Record<string, unknown>): Promise<TSmartRow> {
-    return this.patch(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/`, { cells }).then((r) => r?.data);
+    return this.patch(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/smart-table-binding/`, { cells }).then(
+      (r) => r?.data
+    );
   }
 
   async clearBinding(ws: string, pid: string, iid: string): Promise<void> {

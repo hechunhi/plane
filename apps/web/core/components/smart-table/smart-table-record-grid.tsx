@@ -14,7 +14,15 @@ import {
 } from "@glideapps/glide-data-grid";
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 import type { TSmartColumn } from "@/services/smart-table.service";
-import { CUSTOM_RENDERERS, cellForColumn, coerceEditedValue, getGlideTheme, makeImageEditor, useGridWidth, useIsDark } from "./smart-table-cells";
+import {
+  CUSTOM_RENDERERS,
+  cellForColumn,
+  coerceEditedValue,
+  getGlideTheme,
+  makeImageEditor,
+  useGridWidth,
+  useIsDark,
+} from "./smart-table-cells";
 
 type Props = {
   columns: TSmartColumn[];
@@ -72,21 +80,39 @@ export function SmartTableRecordGrid({ columns, cells, editable = true, onEdit, 
         const label = `${nm}${f.required ? " *" : ""}`;
         // B-2o: label 列现代表单形态 — 透明底(去灰块)+ 三级文字 + 右对齐贴值
         return {
-          kind: GridCellKind.Text, data: label, displayData: label, allowOverlay: false,
+          kind: GridCellKind.Text,
+          data: label,
+          displayData: label,
+          allowOverlay: false,
           contentAlign: "right",
           themeOverride: { textDark: dark ? "#9a9ea1" : "#6b7075" },
         };
       }
-      let cell = cellForColumn(f, cells[f.key], dark, editable && f.source === "manual", zh ? "zh" : "ja");
+      let cell = cellForColumn(
+        f,
+        cells[f.key],
+        dark,
+        editable && f.editable !== false && f.source === "manual",
+        zh ? "zh" : "ja"
+      );
       // 表单形态: 值一律左对齐 — 右对齐是表格列惯例(纵向对位), 转置表单里会把数字甩到最右、撕裂横向扫读
       if (cell.contentAlign === "right") cell = { ...cell, contentAlign: "left" } as GridCell;
       // B-2o: 空值占位 — 全空表单不再像表格故障; 仅显示层, 编辑取原值
       if ("displayData" in cell && cell.displayData === "" && cell.kind === GridCellKind.Text)
-        cell = { ...cell, displayData: "—", themeOverride: { ...(cell.themeOverride ?? {}), textDark: dark ? "#5a5e61" : "#c2c6c9" } } as GridCell;
+        cell = {
+          ...cell,
+          displayData: "—",
+          themeOverride: { ...cell.themeOverride, textDark: dark ? "#5a5e61" : "#c2c6c9" },
+        } as GridCell;
       // 必填且空: 值格淡琥珀底 — 把「必須あと N 項目」落到具体格子上(显示层, 不阻塞)
       const v = cells[f.key];
-      if (f.required && editable && f.source === "manual" && (v == null || v === "" || (Array.isArray(v) && v.length === 0)))
-        cell = { ...cell, themeOverride: { ...(cell.themeOverride ?? {}), bgCell: dark ? "#272014" : "#fdf4e3" } } as GridCell;
+      if (
+        f.required &&
+        editable &&
+        f.source === "manual" &&
+        (v == null || v === "" || (Array.isArray(v) && v.length === 0))
+      )
+        cell = { ...cell, themeOverride: { ...cell.themeOverride, bgCell: dark ? "#272014" : "#fdf4e3" } } as GridCell;
       return cell;
     },
     [columns, cells, dark, editable, zh]
@@ -110,11 +136,19 @@ export function SmartTableRecordGrid({ columns, cells, editable = true, onEdit, 
   const persistLabelW = (newSize: number) => {
     const w = Math.max(80, Math.round(newSize));
     setLabelOverride(w);
-    try { window.localStorage.setItem("smart-table:record-label-w", String(w)); } catch { /* private mode */ }
+    try {
+      window.localStorage.setItem("smart-table:record-label-w", String(w));
+    } catch {
+      /* private mode */
+    }
   };
 
   return (
-    <div ref={wrapRef} className="smart-glide-scroll overflow-hidden rounded-md border border-subtle" style={{ height }}>
+    <div
+      ref={wrapRef}
+      className="smart-glide-scroll overflow-hidden rounded-md border border-subtle"
+      style={{ height }}
+    >
       <DataEditor
         columns={gridColumns}
         rows={columns.length}
@@ -129,8 +163,12 @@ export function SmartTableRecordGrid({ columns, cells, editable = true, onEdit, 
         rowMarkers="none"
         rowSelect="none"
         freezeColumns={1}
-        onColumnResize={(col, newSize) => { if (col.id === "__label") setLabelOverride(Math.max(80, Math.round(newSize))); }}
-        onColumnResizeEnd={(col, newSize) => { if (col.id === "__label") persistLabelW(newSize); }}
+        onColumnResize={(col, newSize) => {
+          if (col.id === "__label") setLabelOverride(Math.max(80, Math.round(newSize)));
+        }}
+        onColumnResizeEnd={(col, newSize) => {
+          if (col.id === "__label") persistLabelW(newSize);
+        }}
         width={innerW || "100%"}
         height="100%"
       />
