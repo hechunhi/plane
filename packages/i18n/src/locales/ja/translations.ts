@@ -1955,6 +1955,9 @@ export default {
         },
       },
     },
+    recurring: {
+      label: "定期タスク",
+    },
     automations: {
       label: "自動化",
       "auto-archive": {

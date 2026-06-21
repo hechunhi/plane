@@ -1913,6 +1913,9 @@ export default {
         remove_empty: "估算不能为空。请在每个字段中输入值或删除没有值的字段。",
       },
     },
+    recurring: {
+      label: "定期任务",
+    },
     automations: {
       label: "自动化",
       "auto-archive": {

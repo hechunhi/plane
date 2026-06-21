@@ -34,6 +34,12 @@ export const useIssueUnreadKind = (issueId: string | undefined): TUnreadKind => 
   return issueId ? unreadKindByIssueId(issueId) : "none";
 };
 
+/** 該当 issue に未読の「提醒」通知があるか（A3 看板紫呼吸点用）。 */
+export const useIssueUnreadHasReminder = (issueId: string | undefined): boolean => {
+  const { unreadHasReminderByIssueId } = useWorkspaceNotifications();
+  return issueId ? unreadHasReminderByIssueId(issueId) : false;
+};
+
 /** 複数 issue（看板1カラム）の未読合計（A2 列ヘッダ集計）。 */
 export const useGroupUnreadCount = (issueIds: string[]): number => {
   const { unreadCountForIssueIds } = useWorkspaceNotifications();
@@ -88,6 +94,7 @@ const KIND_TOOLTIP: Record<Exclude<TUnreadKind, "none">, (n: number) => string> 
   assigned: (n) => `担当に指定 ${n}件 / 指派给你 ${n}条`,
   comment: (n) => `新しいコメント ${n}件 / 新评论 ${n}条`,
   update: (n) => `更新 ${n}件 / 更新 ${n}条`,
+  reminder: (n) => `提醒通知 ${n}件 / 提醒通知 ${n}条`,
 };
 
 export const IssueUnreadBadge = observer(function IssueUnreadBadge(props: TIssueUnreadBadgeProps) {
@@ -125,10 +132,7 @@ export const IssueUnreadBadge = observer(function IssueUnreadBadge(props: TIssue
     : { ...dot, background: ACCENT, color: "#fff", boxShadow: `0 0 0 1px ${ACCENT}` };
 
   return (
-    <Tooltip
-      tooltipContent={KIND_TOOLTIP[kind as Exclude<TUnreadKind, "none">](count)}
-      isMobile={false}
-    >
+    <Tooltip tooltipContent={KIND_TOOLTIP[kind as Exclude<TUnreadKind, "none">](count)} isMobile={false}>
       <span
         aria-label={`${count} unread updates (${kind})`}
         className="relative ml-1.5 inline-flex h-2.5 w-2.5 flex-shrink-0 items-center justify-center align-middle"
@@ -140,9 +144,7 @@ export const IssueUnreadBadge = observer(function IssueUnreadBadge(props: TIssue
           />
         )}
         <span style={filled}>
-          {kind === "mention" && (
-            <span style={{ fontSize: 7, fontWeight: 800, lineHeight: 1, color: "#fff" }}>@</span>
-          )}
+          {kind === "mention" && <span style={{ fontSize: 7, fontWeight: 800, lineHeight: 1, color: "#fff" }}>@</span>}
         </span>
       </span>
     </Tooltip>

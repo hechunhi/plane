@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
-import { Clock } from "lucide-react";
+import { Clock, AlarmClock, Repeat } from "lucide-react";
 // plane imports
 import { Avatar, Row } from "@plane/ui";
 import { cn, calculateTimeAgo, renderFormattedDate, renderFormattedTime, getFileURL } from "@plane/utils";
@@ -40,8 +40,13 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   const issueId = notification?.data?.issue?.id || undefined;
   const workspace = getWorkspaceBySlug(workspaceSlug);
 
-  const notificationField = notification?.data?.issue_activity.field || undefined;
+  const notificationField = notification?.data?.issue_activity?.field || undefined;
   const notificationTriggeredBy = notification.triggered_by_details || undefined;
+  // BARSOUL: 提醒/定期 通知无 issue_activity → 原守卫会吞成空白。按 data.kind 放行 + 专属样式。
+  const _kind = (notification?.data as { kind?: string })?.kind;
+  const isReminder = _kind === "reminder";
+  const isRecurring = _kind === "recurring";
+  const isBell = isReminder || isRecurring;
 
   const handleNotificationIssuePeekOverview = async () => {
     if (workspaceSlug && projectId && issueId && !isSnoozeStateModalOpen && !customSnoozeModal) {
@@ -70,13 +75,20 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
     }
   };
 
-  if (!workspaceSlug || !notificationId || !notification?.id || !notificationField || !workspace?.id || !projectId)
+  if (
+    !workspaceSlug ||
+    !notificationId ||
+    !notification?.id ||
+    (!notificationField && !isBell) ||
+    !workspace?.id ||
+    !projectId
+  )
     return <></>;
 
   return (
     <Row
       className={cn(
-        "group relative flex cursor-pointer items-center gap-2 border-b border-subtle py-4 transition-all",
+        "group relative flex cursor-pointer items-center gap-2 overflow-hidden border-b border-subtle py-4 transition-all",
         {
           "bg-layer-1/30": currentSelectedNotificationId === notification?.id,
           "bg-accent-primary/5": notification.read_at === null,
@@ -85,19 +97,38 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
       onClick={handleNotificationIssuePeekOverview}
     >
       {notification.read_at === null && (
-        <div className="absolute top-[50%] left-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent-primary" />
+        <div className="absolute top-[50%] left-2 z-[2] h-1.5 w-1.5 flex-shrink-0 rounded-full bg-accent-primary" />
+      )}
+      {/* BARSOUL: 提醒/定期 专属水印(整行大而淡 ⏰/🔁)— 一眼区分「我的提醒」「系统生成」vs 同事动态 */}
+      {isBell && (
+        <div className="pointer-events-none absolute top-1/2 right-[-6px] z-0 -translate-y-1/2" aria-hidden="true">
+          {isReminder ? (
+            <AlarmClock style={{ width: 78, height: 78, color: "#7c5cff", opacity: 0.07 }} />
+          ) : (
+            <Repeat style={{ width: 78, height: 78, color: "#7a7d85", opacity: 0.06 }} />
+          )}
+        </div>
       )}
 
-      <div className="relative flex w-full gap-2">
-        <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-layer-1">
-          {notificationTriggeredBy && (
-            <Avatar
-              name={notificationTriggeredBy.display_name || notificationTriggeredBy?.first_name}
-              src={getFileURL(notificationTriggeredBy.avatar_url)}
-              size={42}
-              shape="circle"
-              className="bg-layer-1 text-body-sm-medium"
-            />
+      <div className="relative z-[1] flex w-full gap-2">
+        <div
+          className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-layer-1"
+          style={isReminder ? { background: "#f1edff" } : isRecurring ? { background: "#eef0f2" } : undefined}
+        >
+          {isReminder ? (
+            <AlarmClock style={{ width: 21, height: 21, color: "#7c5cff" }} />
+          ) : isRecurring ? (
+            <Repeat style={{ width: 20, height: 20, color: "#6b6f77" }} />
+          ) : (
+            notificationTriggeredBy && (
+              <Avatar
+                name={notificationTriggeredBy.display_name || notificationTriggeredBy?.first_name}
+                src={getFileURL(notificationTriggeredBy.avatar_url)}
+                size={42}
+                shape="circle"
+                className="bg-layer-1 text-body-sm-medium"
+              />
+            )
           )}
         </div>
 

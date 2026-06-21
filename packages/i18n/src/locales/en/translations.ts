@@ -1821,6 +1821,9 @@ export default {
         },
       },
     },
+    recurring: {
+      label: "Recurring tasks",
+    },
     automations: {
       label: "Automations",
       heading: "Automations",

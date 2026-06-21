@@ -292,6 +292,30 @@ a[href*="/settings/billing"] {
     animation: none;
   }
 }
+/* BARSOUL 2026-06-16: リマインダー 呼吸点(未読 red breath の紫版)— 看板で「提醒あり」を一発提示。 */
+@keyframes barsoul-remind-breath {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+    box-shadow: 0 0 0 0 rgba(124, 92, 255, 0.55);
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgba(124, 92, 255, 0);
+  }
+}
+.barsoul-remind-breath {
+  animation: barsoul-remind-breath 1.8s ease-in-out infinite;
+  transform-origin: center;
+  will-change: transform, opacity, box-shadow;
+}
+@media (prefers-reduced-motion: reduce) {
+  .barsoul-remind-breath {
+    animation: none;
+  }
+}
 
 /* BARSOUL 2026-06-07: 全站统一 emoji 选择器内核 emoji-mart(<em-emoji-picker>)向 Plane 靠拢。
    CSS 变量穿透其 shadow DOM;明暗主题本身由 EmojiRoot 的 theme prop 处理。仅此自定义元素命中。 */

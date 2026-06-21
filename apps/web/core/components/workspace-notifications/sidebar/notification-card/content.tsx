@@ -21,6 +21,9 @@ import {
   renderAdditionalValue,
   shouldShowConnector,
 } from "@/plane-web/components/workspace-notifications/notification-card/content";
+// BARSOUL: 提醒/定期 通知专属文案(无 issue_activity, 走自有渲染)
+import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
+import { useUser } from "@/hooks/store/user";
 
 // Types
 export type TNotificationFieldData = {
@@ -159,11 +162,45 @@ export function NotificationContent({
   projectId: string;
   renderCommentBox?: boolean;
 }) {
+  const zh = useZh();
+  const { data: currentUser } = useUser();
+  // BARSOUL: 提醒/定期 = 显示型通知(无 issue_activity)。专属文案 + 备忘直接显示(价值在通知本身,不骗点进卡)。
+  const ndata = notification.data as { kind?: string; reminder?: { note?: string; by_id?: string; by_name?: string } };
+  if (ndata?.kind === "reminder") {
+    const note = (ndata.reminder?.note || "").trim();
+    const byId = ndata.reminder?.by_id || "";
+    const byName = ndata.reminder?.by_name || "";
+    const self = !!byId && !!currentUser?.id && byId === currentUser.id;
+    const who = self
+      ? zh
+        ? "你设的"
+        : "自分で設定"
+      : byName
+        ? `${byName}${zh ? " 给你的" : "より"}`
+        : zh
+          ? "到点了"
+          : "時間です";
+    return (
+      <>
+        <span style={{ color: "#5b3fce", fontWeight: 500 }}>{zh ? "提醒" : "リマインダー"}</span>
+        <span className="text-tertiary"> · {who} </span>
+        <span className="font-medium text-primary">{note || (zh ? "回来看看这张卡" : "そろそろ対応を")}</span>
+      </>
+    );
+  }
+  if (ndata?.kind === "recurring") {
+    return (
+      <>
+        <span style={{ color: "#5f6168", fontWeight: 500 }}>{zh ? "定期任务" : "定期タスク"}</span>
+        <span className="text-tertiary"> · {zh ? "新一期已生成" : "新しい回が生成されました"}</span>
+      </>
+    );
+  }
   const { data, triggered_by_details: triggeredBy } = notification;
-  const notificationField = data?.issue_activity.field;
-  const newValue = data?.issue_activity.new_value;
-  const oldValue = data?.issue_activity.old_value;
-  const verb = data?.issue_activity.verb;
+  const notificationField = data?.issue_activity?.field;
+  const newValue = data?.issue_activity?.new_value;
+  const oldValue = data?.issue_activity?.old_value;
+  const verb = data?.issue_activity?.verb;
 
   const fieldData: TNotificationFieldData = {
     field: notificationField,
