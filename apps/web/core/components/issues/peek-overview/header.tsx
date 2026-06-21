@@ -28,6 +28,8 @@ import { IssueSubscription } from "../issue-detail/subscription";
 import { WorkItemDetailQuickActions } from "../issue-layouts/quick-action-dropdowns";
 import { NameDescriptionUpdateStatus } from "../issue-update-status";
 import { IconButton } from "@plane/propel/icon-button";
+// BARSOUL リマインダー: 详情动作栏固定「稍后提醒」按钮(挨订阅/复制链接)
+import { ReminderActionButton } from "@/components/recurring/recurring-card";
 
 export type TPeekModes = "side-peek" | "modal" | "full-screen";
 
@@ -125,6 +127,7 @@ export const IssuePeekOverviewHeader = observer(function IssuePeekOverviewHeader
         title: t("common.link_copied"),
         message: t("common.link_copied_to_clipboard"),
       });
+      return;
     });
   };
 
@@ -134,6 +137,7 @@ export const IssuePeekOverviewHeader = observer(function IssuePeekOverviewHeader
 
       return deleteIssue(workspaceSlug, projectId, issueId).then(() => {
         setPeekIssue(undefined);
+        return;
       });
     } catch (_error) {
       setToast({
@@ -204,6 +208,14 @@ export const IssuePeekOverviewHeader = observer(function IssuePeekOverviewHeader
         <div className="flex items-center gap-2">
           {currentUser && !isArchived && (
             <IssueSubscription workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
+          )}
+          {!isArchived && (
+            <ReminderActionButton
+              workspaceSlug={workspaceSlug}
+              projectId={projectId}
+              issueId={issueId}
+              isMobile={isMobile}
+            />
           )}
           <Tooltip tooltipContent={t("common.actions.copy_link")} isMobile={isMobile}>
             <IconButton variant="secondary" size="lg" onClick={handleCopyText} icon={CopyLinkIcon} />

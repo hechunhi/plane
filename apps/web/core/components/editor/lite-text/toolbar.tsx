@@ -112,7 +112,7 @@ function TextStyleDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
       {open && (
         <div className="absolute bottom-full left-0 z-20 mb-1 w-max min-w-44 space-y-2 rounded-md border-[0.5px] border-strong bg-surface-1 p-2 shadow-raised-200">
           <div className="space-y-0.5">
-            <p className="px-1 text-10 font-semibold uppercase tracking-wide text-placeholder">
+            <p className="px-1 text-10 font-semibold tracking-wide text-placeholder uppercase">
               {ja ? "段落スタイル" : "段落样式"}
             </p>
             {NODE_OPTIONS.map((n) => (
@@ -126,9 +126,9 @@ function TextStyleDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
               </button>
             ))}
           </div>
-          <div className="h-px bg-subtle" />
+          <div className="bg-subtle h-px" />
           <div className="space-y-1">
-            <p className="px-1 text-10 font-semibold uppercase tracking-wide text-placeholder">文字色</p>
+            <p className="px-1 text-10 font-semibold tracking-wide text-placeholder uppercase">文字色</p>
             <div className="flex items-center gap-1.5">
               {COLORS_LIST.map((c) => (
                 <button
@@ -151,7 +151,7 @@ function TextStyleDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
             </div>
           </div>
           <div className="space-y-1">
-            <p className="px-1 text-10 font-semibold uppercase tracking-wide text-placeholder">背景色</p>
+            <p className="px-1 text-10 font-semibold tracking-wide text-placeholder uppercase">背景色</p>
             <div className="flex items-center gap-1.5">
               {COLORS_LIST.map((c) => (
                 <button
@@ -215,9 +215,8 @@ function LinkDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
         </button>
       </Tooltip>
       {open && (
-        <div className="absolute bottom-full right-0 z-20 mb-1 flex w-56 items-center gap-1 rounded-md border-[0.5px] border-strong bg-surface-1 p-1.5 shadow-raised-200">
+        <div className="absolute right-0 bottom-full z-20 mb-1 flex w-56 items-center gap-1 rounded-md border-[0.5px] border-strong bg-surface-1 p-1.5 shadow-raised-200">
           <input
-            autoFocus
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => {
@@ -243,8 +242,31 @@ function LinkDropdown({ editorRef }: { editorRef: EditorRefApi | null }) {
   );
 }
 
+// BARSOUL(2026-06-15 i18n): 工具按钮 tooltip(item.name 来自 TOOLBAR_ITEMS 英文常量)的 zh/ja。
+// 不动共享常量(document 编辑器也用), 仅评论框 lite 工具条渲染时本地化; 未收录的回退英文。
+const TOOLBAR_NAME_I18N: Record<string, { zh: string; ja: string }> = {
+  Bold: { zh: "加粗", ja: "太字" },
+  Italic: { zh: "斜体", ja: "斜体" },
+  Underline: { zh: "下划线", ja: "下線" },
+  Strikethrough: { zh: "删除线", ja: "取り消し線" },
+  "Left align": { zh: "左对齐", ja: "左揃え" },
+  "Center align": { zh: "居中对齐", ja: "中央揃え" },
+  "Right align": { zh: "右对齐", ja: "右揃え" },
+  "Numbered list": { zh: "有序列表", ja: "番号付きリスト" },
+  "Bulleted list": { zh: "无序列表", ja: "箇条書き" },
+  "To-do list": { zh: "待办清单", ja: "ToDo リスト" },
+  Quote: { zh: "引用", ja: "引用" },
+  Code: { zh: "代码", ja: "コード" },
+  Image: { zh: "图片", ja: "画像" },
+};
+const ACCESS_I18N: Record<string, { zh: string; ja: string }> = {
+  Private: { zh: "私密", ja: "非公開" },
+  Public: { zh: "公开", ja: "公開" },
+};
+
 export function IssueCommentToolbar(props: Props) {
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
+  const ja = currentLocale === "ja";
   const {
     accessSpecifier,
     executeCommand,
@@ -296,7 +318,7 @@ export function IssueCommentToolbar(props: Props) {
             const isAccessActive = accessSpecifier === access.key;
 
             return (
-              <Tooltip key={access.key} tooltipContent={access.label}>
+              <Tooltip key={access.key} tooltipContent={ACCESS_I18N[access.label]?.[ja ? "ja" : "zh"] ?? access.label}>
                 <button
                   type="button"
                   onClick={() => handleAccessChange?.(access.key)}
@@ -332,7 +354,9 @@ export function IssueCommentToolbar(props: Props) {
                     key={item.renderKey}
                     tooltipContent={
                       <p className="flex flex-col gap-1 text-center text-11">
-                        <span className="font-medium">{item.name}</span>
+                        <span className="font-medium">
+                          {TOOLBAR_NAME_I18N[item.name]?.[ja ? "ja" : "zh"] ?? item.name}
+                        </span>
                         {item.shortcut && <kbd className="text-placeholder">{item.shortcut.join(" + ")}</kbd>}
                       </p>
                     }

@@ -37,7 +37,7 @@ import { AICurrentStateInline } from "@/components/issues/issue-layouts/kanban/a
 // BARSOUL ADR-029: 凍結カード banner(役割別)
 import { ApprovalHistory, FrozenBanner } from "./frozen-banner";
 import { IssueFlowContext } from "./issue-flow-context";
-import { RecurringContextBar, SnoozeBar } from "@/components/recurring/recurring-card";
+import { RecurringContextBar } from "@/components/recurring/recurring-card";
 import { IssueActivity } from "./issue-activity";
 import { KeiriOrderWidget } from "./keiri-order-widget";
 // BARSOUL B-4c(2026-06-15 移到主区): 子树台账汇总(横表) — 主内容区宽, 不被窄属性 sidebar 截
@@ -150,8 +150,7 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
         <IssueFlowContext issueId={issueId} />
         {/* BARSOUL 定期タスク: 该卡是某规则的当前实例 → 顶部上下文条回链规则(非实例则不渲染) */}
         {issue.project_id && <RecurringContextBar issueId={issueId} projectId={issue.project_id} />}
-        {/* BARSOUL フォローアップ・スヌーズ: スヌーズ中なら期日+解除を表示(非 snooze は不渲染) */}
-        {issue.project_id && <SnoozeBar issueId={issueId} projectId={issue.project_id} />}
+        {/* BARSOUL リマインダー入口は详情顶部动作栏(ReminderActionButton)に固定 — 独立 SnoozeBar 撤去(2026-06-16) */}
         <ApprovalHistory issueId={issueId} />
 
         <DescriptionInput
@@ -196,10 +195,10 @@ export const IssueMainContent = observer(function IssueMainContent(props: Props)
                 isRestoreDisabled: !isEditable || isArchived,
               }}
               fetchHandlers={{
-                listDescriptionVersions: (issueId) =>
-                  workItemVersionService.listDescriptionVersions(workspaceSlug, projectId, issueId),
-                retrieveDescriptionVersion: (issueId, versionId) =>
-                  workItemVersionService.retrieveDescriptionVersion(workspaceSlug, projectId, issueId, versionId),
+                listDescriptionVersions: (_issueId) =>
+                  workItemVersionService.listDescriptionVersions(workspaceSlug, projectId, _issueId),
+                retrieveDescriptionVersion: (_issueId, versionId) =>
+                  workItemVersionService.retrieveDescriptionVersion(workspaceSlug, projectId, _issueId, versionId),
               }}
               handleRestore={(descriptionHTML) => editorRef.current?.setEditorValue(descriptionHTML, true)}
               projectId={projectId}

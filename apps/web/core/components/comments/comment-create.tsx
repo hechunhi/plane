@@ -107,12 +107,13 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   const commentHTML = watch("comment_html");
   const isEmpty = isCommentEmpty(commentHTML ?? undefined);
 
-  // BARSOUL(2026-06-15): z-[4]→z-[20] — 评论框整体提到上方头像(z-[4])之上,
-  // 否则工具栏 T 下拉(向上弹)被头像盖住。sticky 评论框本就该浮在内容之上。
-  // (注: JSX 注释不能放在标签属性之间, 否则 esbuild 报空表达式 — 故移到 return 上方)
+  // BARSOUL(2026-06-15): 评论框 z-[20] 浮于上方评论头像(z-[4])之上, 否则工具栏 T 下拉
+  // (向上弹)被头像盖住。★关键真凶: 桌面必须 sm:relative 而非 sm:static —— z-index 对
+  // position:static 无效, sm:static 会让 z-[20] 在桌面(sm+)完全失效, 头像 z-4 反盖下拉。
   return (
     <div
-      className={cn("sticky bottom-0 z-[20] bg-surface-1 sm:static")}
+      className={cn("sticky bottom-0 z-[20] bg-surface-1 sm:relative")}
+      role="presentation"
       onKeyDown={(e) => {
         if (
           e.key === "Enter" &&

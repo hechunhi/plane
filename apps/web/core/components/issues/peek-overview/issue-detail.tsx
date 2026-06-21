@@ -19,6 +19,7 @@ import { ApprovalHistory, FrozenBanner } from "@/components/issues/issue-detail/
 // BARSOUL B-4c(2026-06-15 移到主区): 子树台账汇总(横表) — peek 主区比窄属性 sidebar 宽
 import { SmartTableSubtreeRollup } from "@/components/smart-table/smart-table-subtree-rollup";
 import { IssueFlowContext } from "@/components/issues/issue-detail/issue-flow-context";
+import { RecurringContextBar } from "@/components/recurring/recurring-card";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useMember } from "@/hooks/store/use-member";
@@ -144,6 +145,9 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
       {/* B-2j: 流程上下文条(站卡の迷子防止) — 両ツリー必須
           (B-2n v3: 兄弟樹は原生「子工作項」widget が親を根に描画) */}
       <IssueFlowContext issueId={issueId} />
+      {/* BARSOUL リマインダー/定期: 两棵树必挂 — peek 之前漏了, 提醒入口/状态全看不到(2026-06-16) */}
+      {issue.project_id && <RecurringContextBar issueId={issueId} projectId={issue.project_id} />}
+      {/* BARSOUL リマインダー入口は详情顶部动作栏(ReminderActionButton)に固定 — 独立 SnoozeBar 撤去(2026-06-16) */}
       <ApprovalHistory issueId={issueId} />
 
       {/* BARSOUL B-4c(移到主区): 子树台账汇总 — peek 主区宽, 横表不被窄属性 sidebar 截 */}
@@ -190,17 +194,17 @@ export const PeekOverviewIssueDetails = observer(function PeekOverviewIssueDetai
               isRestoreDisabled: disabled || isArchived,
             }}
             fetchHandlers={{
-              listDescriptionVersions: (issueId) =>
+              listDescriptionVersions: (_issueId) =>
                 workItemVersionService.listDescriptionVersions(
                   workspaceSlug,
                   issue.project_id?.toString() ?? "",
-                  issueId
+                  _issueId
                 ),
-              retrieveDescriptionVersion: (issueId, versionId) =>
+              retrieveDescriptionVersion: (_issueId, versionId) =>
                 workItemVersionService.retrieveDescriptionVersion(
                   workspaceSlug,
                   issue.project_id?.toString() ?? "",
-                  issueId,
+                  _issueId,
                   versionId
                 ),
             }}

@@ -15,6 +15,8 @@ import type { EFileAssetType, TNameDescriptionLoader } from "@plane/types";
 import { getDescriptionPlaceholderI18n } from "@plane/utils";
 // components
 import { RichTextEditor } from "@/components/editor/rich-text";
+import { LiteTextEditor } from "@/components/editor/lite-text";
+import { IssueFieldTranslate } from "@/components/issues/translate/issue-field-translate";
 // hooks
 import { useEditorAsset } from "@/hooks/store/use-editor-asset";
 import { useWorkspace } from "@/hooks/store/use-workspace";
@@ -224,7 +226,7 @@ export const DescriptionInput = observer(function DescriptionInput(props: Props)
 
   if (!localDescription.description_html) return <DescriptionInputLoader />;
 
-  return (
+  const editorNode = (
     <Controller
       name="description_html"
       control={control}
@@ -274,7 +276,7 @@ export const DescriptionInput = observer(function DescriptionInput(props: Props)
               return asset_id;
             } catch (error) {
               console.log("Error in uploading asset:", error);
-              throw new Error("Asset upload failed. Please try again later.");
+              throw new Error("Asset upload failed. Please try again later.", { cause: error });
             }
           }}
           duplicateFile={async (assetId: string) => {
@@ -293,5 +295,32 @@ export const DescriptionInput = observer(function DescriptionInput(props: Props)
         />
       )}
     />
+  );
+
+  // BARSOUL: 正文 表示翻訳(评论同逻辑, display-only — 绝不改 description_html)。
+  // 译文=只读 LiteTextEditor(与评论译文渲染一致, 保结构/图片/@mention)。
+  return (
+    <IssueFieldTranslate
+      workspaceSlug={workspaceSlug}
+      projectId={projectId ?? ""}
+      issueId={entityId}
+      field="description"
+      isHtml
+      source={initialValue}
+      renderTranslated={(html) => (
+        <LiteTextEditor
+          editable={false}
+          id={`${entityId}-tr`}
+          initialValue={html}
+          workspaceId={workspaceDetails.id}
+          workspaceSlug={workspaceSlug}
+          projectId={projectId?.toString()}
+          containerClassName={containerClassName}
+          parentClassName="border-none"
+        />
+      )}
+    >
+      {editorNode}
+    </IssueFieldTranslate>
   );
 });

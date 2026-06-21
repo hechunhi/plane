@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";
 import type { TNameDescriptionLoader } from "@plane/types";
@@ -14,6 +14,7 @@ import { TextArea } from "@plane/ui";
 import { cn } from "@plane/utils";
 import useDebounce from "@/hooks/use-debounce";
 import type { TIssueOperations } from "./issue-detail";
+import { IssueFieldTranslate } from "./translate/issue-field-translate";
 // hooks
 
 export type IssueTitleInputProps = {
@@ -110,7 +111,7 @@ export const IssueTitleInput = observer(function IssueTitleInput(props: IssueTit
         textarea.removeEventListener("blur", handleBlur);
       }
     };
-  }, [title, isSubmitting, setIsSubmitting]);
+  }, [title, isSubmitting, setIsSubmitting, value]);
 
   // Save on unmount if there are unsaved changes
   useEffect(
@@ -142,9 +143,24 @@ export const IssueTitleInput = observer(function IssueTitleInput(props: IssueTit
     [setIsSubmitting]
   );
 
-  if (disabled) return <div className="text-20 font-medium whitespace-pre-line">{title}</div>;
+  // BARSOUL: 标题 表示翻訳(评论同逻辑, display-only — 绝不改 name)。译文=同款大标题只读 div。
+  const translateWrap = (original: ReactNode) => (
+    <IssueFieldTranslate
+      workspaceSlug={workspaceSlug}
+      projectId={projectId}
+      issueId={issueId}
+      field="title"
+      isHtml={false}
+      source={value}
+      renderTranslated={(c) => <div className="px-3 text-20 font-medium whitespace-pre-line text-primary">{c}</div>}
+    >
+      {original}
+    </IssueFieldTranslate>
+  );
 
-  return (
+  if (disabled) return translateWrap(<div className="text-20 font-medium whitespace-pre-line">{title}</div>);
+
+  return translateWrap(
     <div className="flex flex-col gap-1.5">
       <div className={cn("relative", containerClassName)}>
         <TextArea
