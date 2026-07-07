@@ -34,6 +34,30 @@ type TNotificationQueryParamType = ENotificationQueryParamType;
 // > comment > update（"対応必須" ほど強い表現にする）。none = 未読なし。
 export type TUnreadKind = "mention" | "assigned" | "comment" | "update" | "reminder" | "none";
 
+/**
+ * BARSOUL: 未読通知1件の「種別」判定（単一の真実）。
+ * unreadKindByIssueId（カード未読バッジ）と actionRequiredUnreadCount
+ * （サイドバー行動バッジ）が共用し、分類ロジックのドリフトを防ぐ。
+ *   reminder … data.kind === "reminder"（提醒）
+ *   mention  … is_mentioned_notification（@あなた宛）
+ *   assigned … field === "assignees"（担当指定＝審批指派卡も含む）
+ *   comment  … field === "comment"（新コメント＝知会）
+ *   update   … その他（状態/ラベル等の軽微な更新＝知会）
+ */
+export const classifyUnreadKind = (n: INotification): Exclude<TUnreadKind, "none"> => {
+  const field = n.data?.issue_activity?.field;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (n.data as any)?.kind === "reminder"
+    ? "reminder"
+    : n.is_mentioned_notification
+      ? "mention"
+      : field === "assignees"
+        ? "assigned"
+        : field === "comment"
+          ? "comment"
+          : "update";
+};
+
 export interface IWorkspaceNotificationStore {
   // observables
   loader: TNotificationLoader;
@@ -53,6 +77,8 @@ export interface IWorkspaceNotificationStore {
   unreadHasReminderByIssueId: (issueId: string | undefined) => boolean;
   unreadCountForIssueIds: (issueIds: string[]) => number;
   unreadProjectIdSet: Set<string>;
+  // BARSOUL: サイドバー「収件箱」行動バッジ = 行動が要る未読のみの件数
+  actionRequiredUnreadCount: number;
   ensureBadgeNotifications: (workspaceSlug: string) => void;
   refreshBadgeNotifications: (workspaceSlug: string) => Promise<void>;
   markIssueNotificationsAsRead: (workspaceSlug: string, issueId: string | undefined) => Promise<void>;
@@ -253,17 +279,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       if (!n) continue;
       const nIssueId = n.data?.issue?.id || n.entity_identifier;
       if (nIssueId !== issueId || n.read_at || n.archived_at || n.snoozed_till) continue;
-      const field = n.data?.issue_activity?.field;
-      const kind: Exclude<TUnreadKind, "none"> =
-        (n.data as any)?.kind === "reminder"
-          ? "reminder"
-          : n.is_mentioned_notification
-            ? "mention"
-            : field === "assignees"
-              ? "assigned"
-              : field === "comment"
-                ? "comment"
-                : "update";
+      const kind = classifyUnreadKind(n);
       if (rank[kind] > best) {
         best = rank[kind];
         bestKind = kind;
@@ -329,6 +345,33 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       if (pid) s.add(String(pid));
     }
     return s;
+  }
+
+  /**
+   * BARSOUL(2026-07-07 · feat/inbox-action-count): サイドバー「収件箱」バッジの件数。
+   *
+   * redesign「Inbox = 決策隊列」の分类模型に従い、**行動が要る未読のみ**を数える:
+   *   kind ∈ {mention（@あなた宛）, assigned（担当指定＝審批指派卡含む）, reminder（提醒）}。
+   * comment / update は「知会」なのでバッジに数えない ＝ 数字を「本当に自分が
+   * 動く件数」に一致させ、角标=噪音 を解消する（従来は total_unread を表示していた）。
+   *
+   * 完全性は既存カードバッジ（unreadCountByIssueId 等）と同一 store（直近~300件）に
+   * 依拠。>300 未読という稀ケースでは下界を穏当に示す（クラッシュしない）。
+   * 逾期(overdue) は通知種別でなくここでは数えない（別ビュー「今日/逾期」の担当）。
+   * 読取投影のみ・SoR 不変更。
+   */
+  get actionRequiredUnreadCount(): number {
+    void this.unreadNotificationsCount.total_unread_notifications_count;
+    void this._notifUpdateSeq;
+    if (isEmpty(this.notifications)) return 0;
+    let count = 0;
+    for (const n of Object.values(this.notifications || {})) {
+      if (!n) continue;
+      if (n.read_at || n.archived_at || n.snoozed_till) continue;
+      const kind = classifyUnreadKind(n);
+      if (kind === "mention" || kind === "assigned" || kind === "reminder") count++;
+    }
+    return count;
   }
 
   /**
