@@ -516,13 +516,11 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
        列がヘッダの分だけ溢れる。占めるのは **残り** なので flex-1 + min-h-0。 */
     <div className="flex min-h-0 flex-1 flex-col">
       {/* tailwind-config が ::-webkit-scrollbar を全部 hidden にしているので、
-          overflow-y-auto だけだと「スクロールはするがバーが見えない」画面になる。
-          .vertical-scrollbar + scrollbar-sm が house idiom(週報側の列と同じ)。 */}
-      <div
-        ref={listRef}
-        onScroll={onScroll}
-        className="vertical-scrollbar scrollbar-sm min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4"
-      >
+          overflow-y-auto だけでは「スクロールはするがバーが見えない」画面になる。
+          house idiom の .vertical-scrollbar でも thumb が黒 10%/実効 6px で
+          この面では視認できなかったため、globals.css の .weekly-chat-scroll
+          (常設トラック + border-strong の thumb)を使う。 */}
+      <div ref={listRef} onScroll={onScroll} className="weekly-chat-scroll min-h-0 flex-1 px-3 py-3 sm:px-4">
         {!msgs.length ? (
           <div className="grid h-full place-items-center px-4">
             <div className="flex max-w-xs flex-col items-center gap-2 text-center">
@@ -636,7 +634,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                                 void saveEdit(m);
                               } else if (e.key === "Escape") setEditingId(null);
                             }}
-                            className="vertical-scrollbar scrollbar-xs max-h-60 w-full resize-none rounded-md border border-accent-strong bg-layer-transparent px-2.5 py-1.5 text-14 leading-relaxed text-primary outline-none"
+                            className="weekly-chat-scroll-auto max-h-60 w-full resize-none rounded-md border border-accent-strong bg-layer-transparent px-2.5 py-1.5 text-14 leading-relaxed text-primary outline-none"
                           />
                           <div className="mt-1 flex items-center gap-2">
                             <button
@@ -943,7 +941,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                 }
               }}
               placeholder={t("weekly.chat.placeholder")}
-              className="vertical-scrollbar scrollbar-xs max-h-32 min-h-6 flex-1 resize-none bg-transparent text-14 leading-relaxed text-primary outline-none placeholder:text-placeholder"
+              className="weekly-chat-scroll-auto max-h-32 min-h-6 flex-1 resize-none bg-transparent text-14 leading-relaxed text-primary outline-none placeholder:text-placeholder"
             />
             <button
               type="button"

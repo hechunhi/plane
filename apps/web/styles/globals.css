@@ -326,6 +326,42 @@ em-emoji-picker {
   max-width: 100%;
 }
 
+/* BARSOUL 週次発言 2026-07-25: 発言一覧のスクロールバーを「見える」ようにする。
+   .vertical-scrollbar の既定 thumb は --scrollbar-thumb = alpha-*-200(黒 10%)で、
+   さらに scrollbar-sm が 3px の透明ボーダーを噛ませるため、実効 6px / 10% —
+   明るい面ではほぼ視認できない(= 用户が繰り返し「滚动条が無い」と報告した所)。
+   会議中に「まだ上に発言がある」を見落とすのは実害なので、この列だけ:
+     ・トラックを常設(overflow-y: scroll)して出没によるガタつきを消す
+     ・thumb を border-strong まで濃くする
+   全体規則は触らない(他画面の見た目を変えない)。 */
+/* 一覧はトラック常設。入力欄(-auto)は溢れた時だけ — 1 行の箱に常設ガターは重い。 */
+.weekly-chat-scroll {
+  overflow-y: scroll;
+}
+.weekly-chat-scroll-auto {
+  overflow-y: auto;
+}
+.weekly-chat-scroll::-webkit-scrollbar,
+.weekly-chat-scroll-auto::-webkit-scrollbar {
+  display: block;
+  width: 10px;
+}
+.weekly-chat-scroll::-webkit-scrollbar-track,
+.weekly-chat-scroll-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+.weekly-chat-scroll::-webkit-scrollbar-thumb,
+.weekly-chat-scroll-auto::-webkit-scrollbar-thumb {
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-color: var(--border-color-strong);
+}
+.weekly-chat-scroll::-webkit-scrollbar-thumb:hover,
+.weekly-chat-scroll-auto::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-color-tertiary);
+}
+
 /* BARSOUL 智能表 2026-06-11: glide-data-grid 内部滚动容器(.dvn-scroller)拿回滚动条。
    Plane 在 tailwind-config 全局 ::-webkit-scrollbar{display:none},glide 自建 DOM 挂不上
    .horizontal-scrollbar 工具类 → 列/行超出时滚动条被全局规则杀光:零 affordance,
