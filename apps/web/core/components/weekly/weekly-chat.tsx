@@ -67,6 +67,21 @@ const readKey = (meetingId: string) => `weekly-chat-read:${meetingId}`;
 /** タブバッジの登録キー。審批(priority 10)より右に出す。 */
 const CHAT_BADGE_KEY = "weekly-chat";
 
+/**
+ * textarea を rows で固定すると「2 行目から先が見えない箱」になる。
+ * 高さを中身に追わせ、天井は CSS の max-h に任せる — そこから先はスクロール。
+ *
+ * 併せて textarea 側に .vertical-scrollbar を明示すること:
+ * tailwind-config が ::-webkit-scrollbar を全部 hidden にしているので、
+ * overflow が出るだけではバーは **見えない**。バーが無いと、書いている本人にも
+ * 「まだ上下に文字がある」ことが伝わらない(= 入力欄が壊れているように見える)。
+ */
+const growToFit = (el: HTMLTextAreaElement | null) => {
+  if (!el) return;
+  el.style.height = "0px";
+  el.style.height = `${el.scrollHeight}px`;
+};
+
 const ts = (iso: string | null | undefined) => (iso ? new Date(iso).getTime() : NaN);
 
 /** サーバ(assets v2)が受ける型と 5MB 上限に合わせる。手前で弾いて理由を出す方が親切。 */
@@ -176,6 +191,11 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
   const lastReadRef = useRef<string>("");
   /** 上げている最中に別の画像を貼られたら、古い方の結果は捨てる。 */
   const uploadTokenRef = useRef(0);
+
+  // 送信や下書き投入で value が外から変わった時も高さを合わせ直す(onChange は走らない)。
+  useEffect(() => {
+    growToFit(composerRef.current);
+  }, [text]);
 
   const { data, mutate } = useSWR(
     workspaceSlug && meetingId ? ["weekly-chat", workspaceSlug, meetingId] : null,
@@ -492,7 +512,9 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    /* 親(aside)はヘッダ行を持つ列。ここで h-full を使うと「親と同じ高さ」を要求して
+       列がヘッダの分だけ溢れる。占めるのは **残り** なので flex-1 + min-h-0。 */
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* tailwind-config が ::-webkit-scrollbar を全部 hidden にしているので、
           overflow-y-auto だけだと「スクロールはするがバーが見えない」画面になる。
           .vertical-scrollbar + scrollbar-sm が house idiom(週報側の列と同じ)。 */}
@@ -603,14 +625,18 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                             autoFocus
                             rows={2}
                             value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
+                            ref={growToFit}
+                            onChange={(e) => {
+                              setEditText(e.target.value);
+                              growToFit(e.currentTarget);
+                            }}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                                 e.preventDefault();
                                 void saveEdit(m);
                               } else if (e.key === "Escape") setEditingId(null);
                             }}
-                            className="w-full resize-none rounded-md border border-accent-strong bg-layer-transparent px-2.5 py-1.5 text-14 leading-relaxed text-primary outline-none"
+                            className="vertical-scrollbar scrollbar-xs max-h-60 w-full resize-none rounded-md border border-accent-strong bg-layer-transparent px-2.5 py-1.5 text-14 leading-relaxed text-primary outline-none"
                           />
                           <div className="mt-1 flex items-center gap-2">
                             <button
@@ -876,11 +902,12 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
       </div>
 
       {readOnly ? (
-        <p className="border-t border-subtle px-4 py-3 text-11 leading-relaxed text-tertiary">
+        <p className="shrink-0 border-t border-subtle px-4 py-3 text-11 leading-relaxed text-tertiary">
           {t("weekly.chat.closed")}
         </p>
       ) : (
-        <div className="border-t border-subtle p-3 sm:p-4">
+        /* 入力欄は縮ませない — 一覧が伸びても最後まで残るのはここ。 */
+        <div className="shrink-0 border-t border-subtle p-3 sm:p-4">
           {replyingTo && (
             /* 「誰の何に返すか」を打つ前に見せる。X で解除。 */
             <div className="mb-1.5 flex items-center gap-2 rounded-md border-l-2 border-accent-strong bg-layer-2 px-2 py-1">
@@ -904,7 +931,10 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
               ref={composerRef}
               rows={1}
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value);
+                growToFit(e.currentTarget);
+              }}
               onKeyDown={(e) => {
                 // Enter で送信。会議のテンポでは Ctrl+Enter は遅い。改行は Shift+Enter。
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -913,7 +943,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                 }
               }}
               placeholder={t("weekly.chat.placeholder")}
-              className="max-h-32 min-h-6 flex-1 resize-none bg-transparent text-14 leading-relaxed text-primary outline-none placeholder:text-placeholder"
+              className="vertical-scrollbar scrollbar-xs max-h-32 min-h-6 flex-1 resize-none bg-transparent text-14 leading-relaxed text-primary outline-none placeholder:text-placeholder"
             />
             <button
               type="button"
