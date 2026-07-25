@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from plane.db.models import WeeklyReportEntry
 from plane.utils.weekly_llm import generate as llm_generate
+from plane.utils.weekly_llm import lang_of as llm_lang_of
 from plane.utils.weekly_rt import push as rt_push
 
 
@@ -29,9 +30,11 @@ def _entry_status_payload(entry):
 @shared_task
 def generate_weekly_drafts(meeting_id, entry_ids=None):
     """指定エントリの下書きを順に生成する。**content_html には一切触れない。**"""
+    # member__profile まで引くのは生成言語(本人の UI 言語)を読む為 — 人数分の
+    # 追加 query を出さない。
     qs = WeeklyReportEntry.objects.filter(
         meeting_id=meeting_id, deleted_at__isnull=True
-    ).select_related("member")
+    ).select_related("member", "member__profile")
     if entry_ids:
         qs = qs.filter(id__in=entry_ids)
     entries = list(qs.order_by("member__display_name"))
@@ -49,7 +52,12 @@ def generate_weekly_drafts(meeting_id, entry_ids=None):
 
         member = entry.member
         name = (member.display_name or member.email) if member else ""
-        html, model = llm_generate(entry.stats or {}, sources, name)
+        # 起草は **本人の言語** で。課題が日本語でも中国語ユーザには中国語で
+        # 書く — 本人が二次修正する物なので、慣れた言語でないと手が止まる。
+        # Profile 未作成(招待直後等)は lang_of の既定へ落ちる。
+        profile = getattr(member, "profile", None) if member else None
+        lang = llm_lang_of(getattr(profile, "language", ""))
+        html, model = llm_generate(entry.stats or {}, sources, name, lang=lang)
 
         if html:
             entry.draft_html = html

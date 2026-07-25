@@ -21,7 +21,9 @@ logger = logging.getLogger("plane.weekly")
 # 要約は文脈保持が要る → 専用 MT(hy-mt2)ではなく主脳グループを使う。
 # litellm 側の別名。既定 "default"(= qwen3.6-35b-a3b)。
 WEEKLY_MODEL = os.environ.get("LLM_WEEKLY_MODEL", "default").strip()
-# 下書きの生成言語。もう一方の言語は既存の翻訳モジュール経由で表示時に得る。
+# 下書きの既定生成言語(本人の設定が読めなかった時のみ使う)。実際の生成言語は
+# **エントリの本人の UI 言語**で決める — lang_of() 参照。もう一方の言語は既存の
+# 翻訳モジュール経由で表示時に得る。
 WEEKLY_LANG = os.environ.get("LLM_WEEKLY_LANG", "ja").strip()
 # worker で回すので長めに取る(実測 12 出処 ≈ 69s、上限一杯で 3 分前後)。
 _TIMEOUT = int(os.environ.get("LLM_WEEKLY_TIMEOUT", "300"))
@@ -80,6 +82,27 @@ _SCHEMA_HINT = (
     '"progress":[{"text":"…","refs":[3]}],'
     '"discussion":[{"text":"…","refs":[4]}]}'
 )
+
+
+def lang_of(profile_language):
+    """Plane の `Profile.language` → 下書きの生成言語。
+
+    下書きは **本人が二次修正する物** なので、課題自体が何語であっても
+    **本人の UI 言語で起草する**(BARSOUL 2026-07-25 hechun)。日本語の課題を
+    中国語ユーザに日本語で起草しても、直すのに一段の翻訳が挟まって手が止まる。
+    他者が読む時は既存の表示時翻訳(ContentTranslation)で補われる。
+
+    週報モジュールは設計上 ja/zh の 2 言語空間 — 訳文キャッシュの target_lang も
+    ("ja","zh") に限る。よって zh-TW も簡体プロンプトに寄せる(繁体専用は訳文層
+    まで広がる別件)。それ以外の言語は既定へ落とす — 対応プロンプトが無いので
+    黙って英語で書かせるより、既定言語 + 表示時翻訳の方が読める。
+    """
+    code = (profile_language or "").strip().lower()
+    if code.startswith("zh"):
+        return "zh"
+    if code.startswith("ja"):
+        return "ja"
+    return WEEKLY_LANG if WEEKLY_LANG in _SYS else "ja"
 
 
 def _pick(sources, cap=None):
