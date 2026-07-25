@@ -440,7 +440,14 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           <Button
             variant={chatOpen ? "secondary" : "ghost"}
             size="base"
-            onClick={() => setChatOpen((v) => !v)}
+            onClick={() =>
+              setChatOpen((v) => {
+                // 畳む時は最大化も解く。解かないと週報列の lg:hidden が残って
+                // 「発言を閉じたら白紙」になる(実害あり)。
+                if (v) setChatMax(false);
+                return !v;
+              })
+            }
             disabled={!meeting}
             aria-label={t("weekly.chat.title")}
             prependIcon={<MessagesSquare />}
@@ -500,8 +507,11 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           className={cn(
             "vertical-scrollbar scrollbar-md min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6",
             /* 発言を最大化している間だけ週報列を退かす。unmount はしない —
-               戻した時にスクロール位置と編集途中のテキストが消えるのが最悪だから。 */
-            chatMax && "lg:hidden"
+               戻した時にスクロール位置と編集途中のテキストが消えるのが最悪だから。
+               **必ず chatOpen も見る**:最大化したまま発言を閉じると、退けた週報列が
+               戻らず画面が真っ白になる(退場の条件は「最大化の記憶」ではなく
+               「今まさに発言が場所を占めているか」)。 */
+            chatOpen && chatMax && "lg:hidden"
           )}
         >
           <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
@@ -610,7 +620,10 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
               </button>
               <button
                 type="button"
-                onClick={() => setChatOpen(false)}
+                onClick={() => {
+                  setChatMax(false);
+                  setChatOpen(false);
+                }}
                 aria-label={t("weekly.chat.close")}
                 className="grid size-6 shrink-0 place-items-center rounded-md text-tertiary transition-colors hover:bg-layer-1"
               >
