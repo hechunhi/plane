@@ -36,6 +36,7 @@ import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { AlertModalCore, CustomMenu, Tooltip } from "@plane/ui";
 import { cn } from "@plane/utils";
 import { peerSync, type PeerOp } from "@/components/core/peer-sync";
+import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
@@ -86,6 +87,7 @@ function StatCards({ entries }: { entries: TWeeklyEntry[] }) {
 export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { workspaceSlug: string }) {
   const { t } = useTranslation();
   const { setPeekIssue } = useIssueDetail();
+  const { sidebarCollapsed, toggleSidebar } = useAppTheme();
   const { joinedProjectIds, getProjectById } = useProject();
   const { allowPermissions } = useUserPermissions();
   // GUEST は閲覧のみ(API 側も同じ線引き)。押せないボタンを見せない。
@@ -119,6 +121,18 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
     if (meetingId || !meetings?.length) return;
     setMeetingId((meetings.find((m) => m.status === "OPEN") || meetings[0]).id);
   }, [meetings, meetingId]);
+
+  /**
+   * グローバル左サイドバーは幅 768px 未満で自動的に畳まれる(sidebar-wrapper.tsx)。
+   * それ自体は他画面では正しい挙動だが、この画面は「同じ URL を開いた人ごとに
+   * サイドバー有無で見た目が変わる」のを避けたい(会議中に画面共有で指す画面)。
+   * マウント時に一度だけ強制的に畳んでおけば、ウィンドウ幅に関わらず毎回同じ
+   * 見た目から始まる。手動で開き直すのは妨げない(閉じ続けさせるわけではない)。
+   */
+  useEffect(() => {
+    if (sidebarCollapsed !== true) toggleSidebar(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     data: meeting,
