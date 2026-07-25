@@ -18,6 +18,8 @@
 import {
   ArrowDown,
   Check,
+  ChevronDown,
+  ChevronUp,
   CornerUpLeft,
   ImagePlus,
   Loader,
@@ -85,7 +87,23 @@ type PendingImage = {
 const pickImage = (files: FileList | null | undefined): File | null =>
   Array.from(files || []).find((f) => f.type.startsWith("image/")) ?? null;
 
-type Line = { primary: string; secondary: string | null };
+/**
+ * 貼り付け原稿(求人票など)には空行が 3 連続で入っている事がある。
+ * whitespace-pre-wrap はそれを全部出すので、22rem のドックでは巨大な余白になる。
+ * **表示だけ** 2 行に詰める — SoR(原文)も編集欄(m.text 直読み)も触らない。
+ */
+const squeeze = (s: string) => (s || "").replace(/\n{3,}/g, "\n\n").trim();
+
+/**
+ * この文字数を超えたら畳む。
+ * 発言は「テンポで流れる短文」の想定だが、実際には長文が来る — 双語で全展開すると
+ * 1 発言で 1 画面を食い潰し、他の発言も composer も視界から消える
+ * (実測: 原文 443 字 + 訳文 397 字 = 840 字 / 幅 22rem)。
+ */
+const LONG_TEXT_CHARS = 160;
+
+/** 従言語が「訳文」なのか「原文」なのかは見る人の言語で入れ替わる — 記号を出し分ける為に持つ。 */
+type Line = { primary: string; secondary: string | null; secondaryIsSource: boolean };
 
 /**
  * 見る人の言語を主、もう片方を従にする。
@@ -94,17 +112,24 @@ type Line = { primary: string; secondary: string | null };
 function lines(m: TMeetingChatMessage, viewer: "ja" | "zh"): Line {
   const other = viewer === "ja" ? "zh" : "ja";
   const tr = m.translations || {};
-  if (!m.source_lang) return { primary: m.text, secondary: null };
-  if (m.source_lang === viewer) return { primary: m.text, secondary: tr[other] || null };
-  return { primary: tr[viewer] || m.text, secondary: tr[viewer] ? m.text : null };
+  const src = squeeze(m.text);
+  if (!m.source_lang) return { primary: src, secondary: null, secondaryIsSource: false };
+  // 自分の言語で書かれた発言 → 主 = 原文、従 = 訳文。
+  if (m.source_lang === viewer)
+    return { primary: src, secondary: squeeze(tr[other] || "") || null, secondaryIsSource: false };
+  // 相手の言語で書かれた発言 → 主 = 訳文、従 = **原文**。従に翻訳記号を付けると嘘になる。
+  const mine = squeeze(tr[viewer] || "");
+  return { primary: mine || src, secondary: mine ? src : null, secondaryIsSource: !!mine };
 }
 
 /** 引用チップは 1 行だけ — 見る人の言語で読める方を出す(主言語ロジックの縮約版)。 */
 function quoteText(r: TMeetingChatReply, viewer: "ja" | "zh"): string {
-  const txt = r.text || "";
+  // 1 行に truncate するので改行は空白へ — pre-wrap でない場所に \n を渡すと詰まって見える。
+  const flat = (s: string) => squeeze(s).replace(/\s*\n+\s*/g, " ");
+  const txt = flat(r.text || "");
   if (!r.source_lang) return txt;
   if (r.source_lang === viewer) return txt;
-  return (r.translations || {})[viewer] || txt;
+  return flat((r.translations || {})[viewer] || "") || txt;
 }
 
 type Props = {
@@ -129,6 +154,8 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null); // 送信中の発言(二度押し防止)
+  // 長文で畳んでいるものを開いた集合。既定は畳む(1 発言が画面を占領しないこと優先)。
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [replyingTo, setReplyingTo] = useState<TMeetingChatMessage | null>(null); // 引用返信の対象
   const [flashId, setFlashId] = useState<string | null>(null); // 引用元へ跳んだ時の一瞬のハイライト
   /**
@@ -466,7 +493,14 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4">
+      {/* tailwind-config が ::-webkit-scrollbar を全部 hidden にしているので、
+          overflow-y-auto だけだと「スクロールはするがバーが見えない」画面になる。
+          .vertical-scrollbar + scrollbar-sm が house idiom(週報側の列と同じ)。 */}
+      <div
+        ref={listRef}
+        onScroll={onScroll}
+        className="vertical-scrollbar scrollbar-sm min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4"
+      >
         {!msgs.length ? (
           <div className="grid h-full place-items-center px-4">
             <div className="flex max-w-xs flex-col items-center gap-2 text-center">
@@ -482,11 +516,14 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                 !!prev &&
                 prev.author?.id === m.author?.id &&
                 new Date(m.at).getTime() - new Date(prev.at).getTime() < SAME_AUTHOR_WINDOW_MS;
-              const { primary, secondary } = lines(m, viewer);
+              const { primary, secondary, secondaryIsSource } = lines(m, viewer);
               const mine = !!myId && m.author?.id === myId;
               const editing = editingId === m.id;
               const reactions = m.reactions || [];
               const canAct = !readOnly && !editing;
+              // 長文は既定で畳む。従言語は畳んでいる間は出さない — 主言語だけで概要は掴める。
+              const isLong = !editing && primary.length + (secondary?.length || 0) > LONG_TEXT_CHARS;
+              const clamped = isLong && !expanded[m.id];
               const divider = m.id === firstUnreadId && (
                 /* 「ここから未読」の線。位置の目印なので accent 青(琥珀は行動信号の専用色)。 */
                 <li aria-hidden className="mt-3 flex items-center gap-2 first:mt-0" data-unread-divider>
@@ -523,7 +560,8 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                     </span>
                     <div className="min-w-0 flex-1">
                       {!grouped && (
-                        <p className="flex items-baseline gap-2">
+                        /* max-sm では操作列が常時表示なので、名前と時刻の場所を空けておく。 */
+                        <p className={cn("flex items-baseline gap-2", canAct && "max-sm:pr-28")}>
                           <span className="truncate text-12 font-medium text-secondary">
                             {m.author?.display_name || "—"}
                           </span>
@@ -598,7 +636,12 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                         <>
                           {/* 画像だけの発言もある(会議では「これ見て」の一枚が本文になる)→ 空の行は出さない。 */}
                           {(!!primary || !!m.edited_at) && (
-                            <p className="text-14 leading-relaxed whitespace-pre-wrap break-words text-primary">
+                            <p
+                              className={cn(
+                                "text-14 leading-relaxed whitespace-pre-wrap break-words text-primary",
+                                clamped && "line-clamp-5"
+                              )}
+                            >
                               {primary}
                               {m.edited_at && (
                                 <span className="ml-1.5 align-baseline text-11 text-placeholder">
@@ -607,14 +650,41 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                               )}
                             </p>
                           )}
-                          {secondary && (
-                            /* 従言語。原文/訳文のどちらであれ「もう片方」— 記号で由来を示す。 */
+                          {secondary && !clamped && (
+                            /* 従言語。**原文か訳文かは見る人の言語で入れ替わる** ので記号も出し分ける —
+                               相手の言語で書かれた発言では、ここに出ているのは訳文ではなく原文。 */
                             <p className="mt-1 flex gap-1.5 border-l border-subtle pl-2 text-12 leading-relaxed whitespace-pre-wrap break-words text-tertiary">
-                              <span className="pt-0.5">
-                                <TranslateGlyph />
+                              <span className="shrink-0 pt-0.5">
+                                {secondaryIsSource ? (
+                                  <span className="text-11 font-medium text-placeholder">
+                                    {t("weekly.chat.original")}
+                                  </span>
+                                ) : (
+                                  <TranslateGlyph />
+                                )}
                               </span>
                               <span className="min-w-0">{secondary}</span>
                             </p>
+                          )}
+                          {isLong && (
+                            /* 畳んでいる事自体が見えないと「切れている」と読まれる。位置の目印なので accent 青。 */
+                            <button
+                              type="button"
+                              onClick={() => setExpanded((s) => ({ ...s, [m.id]: !s[m.id] }))}
+                              className="mt-1 flex items-center gap-1 text-11 font-medium text-accent-primary hover:underline"
+                            >
+                              {clamped ? (
+                                <>
+                                  <ChevronDown className="size-3" strokeWidth={2.5} />
+                                  {t("weekly.chat.expand")}
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronUp className="size-3" strokeWidth={2.5} />
+                                  {t("weekly.chat.collapse")}
+                                </>
+                              )}
+                            </button>
                           )}
                         </>
                       )}
@@ -690,7 +760,9 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                     {canAct && (
                       <div
                         className={cn(
-                          "absolute -top-2 right-0 flex items-center gap-0.5 rounded-md border border-subtle bg-layer-1 p-0.5 shadow-sm transition-opacity",
+                          /* top-0 = **自分の** 発言の右上に重ねる。-top-2 だと連続発言(mt-0)で
+                             1 つ上の発言の最終行に被る — 特に max-sm は常時表示なので実害が出る。 */
+                          "absolute right-0 top-0 z-10 flex items-center gap-0.5 rounded-md border border-subtle bg-layer-1 p-0.5 shadow-sm transition-opacity",
                           activeId === m.id || pickerFor === m.id || confirmDel === m.id
                             ? "opacity-100"
                             : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100"
@@ -745,7 +817,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
 
                     {/* 絵文字パレット(固定セット)。操作列の下に開く — 上端で切れないため。 */}
                     {pickerFor === m.id && canAct && (
-                      <div className="absolute right-0 top-5 z-20 flex gap-0.5 rounded-lg border border-subtle bg-layer-1 p-1 shadow-md">
+                      <div className="absolute right-0 top-8 z-20 flex gap-0.5 rounded-lg border border-subtle bg-layer-1 p-1 shadow-md">
                         {QUICK_REACTIONS.map((emoji) => (
                           <button
                             key={emoji}
@@ -761,7 +833,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
 
                     {/* 取消の確認。押し間違いで発言が消えないように一手挟む。 */}
                     {confirmDel === m.id && canAct && (
-                      <div className="absolute right-0 top-5 z-20 flex items-center gap-2 rounded-lg border border-subtle bg-layer-1 px-2.5 py-1.5 shadow-md">
+                      <div className="absolute right-0 top-8 z-20 flex items-center gap-2 rounded-lg border border-subtle bg-layer-1 px-2.5 py-1.5 shadow-md">
                         <span className="text-11 text-secondary">{t("weekly.chat.delete_confirm")}</span>
                         <button
                           type="button"

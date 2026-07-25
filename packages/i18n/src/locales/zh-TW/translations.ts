@@ -112,6 +112,11 @@ export default {
       image_too_large: "圖片最大 5MB",
       image_unsupported: "只支援 PNG / JPEG / WebP / GIF",
       image_remove: "移除圖片",
+      original: "原文",
+      expand: "顯示全文",
+      collapse: "收起",
+      maximize: "最大化",
+      restore: "恢復原大小",
     },
     actions: {
       open: "新開一期",

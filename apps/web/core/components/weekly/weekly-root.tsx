@@ -15,7 +15,9 @@ import {
   ChevronDown,
   ExternalLink,
   Lock,
+  Maximize2,
   MessagesSquare,
+  Minimize2,
   NotebookPen,
   Pencil,
   Plus,
@@ -100,6 +102,8 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  /** 22rem のドックでは長い発言が読めない。**コンテナ内**で最大化する — 画面遷移も別窓もしない。 */
+  const [chatMax, setChatMax] = useState(false);
   // 会期名。新規会期は無名で始まるので日付だけになる — 会議中に口で指せない。
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -492,7 +496,14 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <div className="vertical-scrollbar scrollbar-md min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
+        <div
+          className={cn(
+            "vertical-scrollbar scrollbar-md min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6",
+            /* 発言を最大化している間だけ週報列を退かす。unmount はしない —
+               戻した時にスクロール位置と編集途中のテキストが消えるのが最悪だから。 */
+            chatMax && "lg:hidden"
+          )}
+        >
           <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
           {/* 確定済みは「書けない」ではなく「なぜ書けないか + 戻し方」を出す。
               ボタンを黙って消すと、壊れた画面にしか見えない。 */}
@@ -570,14 +581,33 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           <aside
             className={cn(
               "flex min-h-0 flex-col bg-surface-1",
-              "fixed inset-0 z-20",
-              "lg:static lg:z-auto lg:w-[22rem] lg:shrink-0 lg:border-l lg:border-subtle xl:w-[24rem]"
+              /* 全面シートは #main-sidebar(z-20)と ExtendedProjectSidebar(z-[21])より
+                 上に載せる — 同値だと DOM 順次第で左側がサイドバーに食われる。
+                 lg 以上でも static(z-auto)に戻さず relative + z-[22] を維持する:
+                 static だとサイドバー側の positioned 要素が上に描かれ得る。 */
+              "fixed inset-0 z-[22]",
+              "lg:relative lg:inset-auto lg:z-[22] lg:shrink-0 lg:border-l lg:border-subtle",
+              chatMax ? "lg:w-full" : "lg:w-[22rem] xl:w-[24rem]"
             )}
           >
             {/* 全面表示のとき閉じる導線はここしか無い。畳めない画面を作らない。 */}
             <div className="flex items-center gap-2 border-b border-subtle px-3 py-2">
               <MessagesSquare className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
               <h3 className="min-w-0 flex-1 truncate text-12 font-medium text-secondary">{t("weekly.chat.title")}</h3>
+              {/* 狭い画面は既に全面なので出さない — 押しても何も変わらないボタンは置かない。 */}
+              <button
+                type="button"
+                onClick={() => setChatMax((v) => !v)}
+                aria-label={t(chatMax ? "weekly.chat.restore" : "weekly.chat.maximize")}
+                title={t(chatMax ? "weekly.chat.restore" : "weekly.chat.maximize")}
+                className="hidden size-6 shrink-0 place-items-center rounded-md text-tertiary transition-colors hover:bg-layer-1 lg:grid"
+              >
+                {chatMax ? (
+                  <Minimize2 className="size-3.5" strokeWidth={2} />
+                ) : (
+                  <Maximize2 className="size-3.5" strokeWidth={2} />
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => setChatOpen(false)}

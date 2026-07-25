@@ -72,12 +72,17 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
           {quickActions}
         </div>
 
+        {/* この列は flex-col。ここに h-full(size-full)を置くと flex item の既定 min-height:auto と
+            組み合わさって「中身より縮めない」ブロックになり、列が親を溢れて下の h-12 フッターを押し出し、
+            スクローラー自身も高さが決まらないので伸び続ける(= サイドバーが他の UI に浮いて見える)。
+            overflow-y-auto を足しても直らない。効くのは min-h-0 + flex-1 の方。
+            実際のスクロールは base-ui の Viewport が持つので、Root に overflow は不要。 */}
         <ScrollArea
           orientation="vertical"
           scrollType="hover"
           size="sm"
-          rootClassName="size-full overflow-x-hidden overflow-y-auto"
-          viewportClassName="flex flex-col gap-3 overflow-x-hidden h-full w-full overflow-y-auto px-3 pt-3 pb-0.5"
+          rootClassName="min-h-0 w-full flex-1 overflow-hidden"
+          viewportClassName="flex flex-col gap-3 overflow-x-hidden px-3 pt-3 pb-0.5"
         >
           {children}
         </ScrollArea>

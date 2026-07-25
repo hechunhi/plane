@@ -115,6 +115,11 @@ export default {
       image_too_large: "画像は 5MB までです",
       image_unsupported: "PNG / JPEG / WebP / GIF のみ貼れます",
       image_remove: "画像を外す",
+      original: "原文",
+      expand: "全文を表示",
+      collapse: "畳む",
+      maximize: "最大化",
+      restore: "元のサイズに戻す",
     },
     actions: {
       open: "新しい会期",
