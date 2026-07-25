@@ -626,8 +626,8 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                           <textarea
                             autoFocus
                             rows={2}
-                            value={editText}
                             ref={growToFit}
+                            value={editText}
                             onChange={(e) => {
                               setEditText(e.target.value);
                               growToFit(e.currentTarget);
@@ -928,7 +928,54 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
               </button>
             </div>
           )}
-          <div className="flex items-end gap-2 rounded-lg border border-subtle bg-layer-transparent px-2.5 py-2 focus-within:border-accent-strong">
+          {pending && (
+            /* 送る前の一枚。上げ終わるまで送信は待つ — 半端な発言を出さないため。 */
+            <div className="mb-1.5 flex items-center gap-2 rounded-md border border-subtle bg-layer-2 p-1.5">
+              <img
+                src={pending.preview}
+                alt={pending.name}
+                className="size-12 shrink-0 rounded object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                {pending.name && <p className="truncate text-11 text-secondary">{pending.name}</p>}
+                {uploading && (
+                  <p className="flex items-center gap-1 text-11 text-tertiary">
+                    <Loader className="size-3 animate-spin" strokeWidth={2} />
+                    {t("weekly.chat.image_uploading")}
+                  </p>
+                )}
+                {pending.failed && <p className="text-11 text-red-500">{t("weekly.chat.image_failed")}</p>}
+              </div>
+              <button
+                type="button"
+                aria-label={t("weekly.chat.image_remove")}
+                onClick={dropPending}
+                className="grid size-5 shrink-0 place-items-center rounded text-tertiary hover:bg-layer-3"
+              >
+                <X className="size-3" strokeWidth={2.5} />
+              </button>
+            </div>
+          )}
+          <div
+            onDragOver={(e) => {
+              // 画像を落とせる場所だと分かるように、枠を光らせる。
+              if (!Array.from(e.dataTransfer?.types || []).includes("Files")) return;
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              const file = pickImage(e.dataTransfer?.files);
+              setDragOver(false);
+              if (!file) return;
+              e.preventDefault();
+              void attachImage(file);
+            }}
+            className={cn(
+              "flex items-end gap-2 rounded-lg border bg-layer-transparent px-2.5 py-2",
+              dragOver ? "border-accent-strong bg-accent-primary/5" : "border-subtle focus-within:border-accent-strong"
+            )}
+          >
             <textarea
               ref={composerRef}
               rows={1}
@@ -936,6 +983,13 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
               onChange={(e) => {
                 setText(e.target.value);
                 growToFit(e.currentTarget);
+              }}
+              onPaste={(e) => {
+                // ⌘⇧4 で撮って ⌘V — 会議中の共有はこれが最短。
+                const file = pickImage(e.clipboardData?.files);
+                if (!file) return;
+                e.preventDefault();
+                void attachImage(file);
               }}
               onKeyDown={(e) => {
                 // Enter で送信。会議のテンポでは Ctrl+Enter は遅い。改行は Shift+Enter。
@@ -947,14 +1001,35 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
               placeholder={t("weekly.chat.placeholder")}
               className="weekly-chat-scroll-auto max-h-32 min-h-6 flex-1 resize-none bg-transparent text-14 leading-relaxed text-primary outline-none placeholder:text-placeholder"
             />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              hidden
+              onChange={(e) => {
+                const file = pickImage(e.target.files);
+                // 同じファイルを選び直しても change が出るように毎回空にする。
+                e.target.value = "";
+                if (file) void attachImage(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              aria-label={t("weekly.chat.attach_image")}
+              title={t("weekly.chat.attach_image")}
+              className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary transition-colors hover:bg-layer-2 hover:text-secondary"
+            >
+              <ImagePlus className="size-3.5" strokeWidth={2} />
+            </button>
             <button
               type="button"
               onClick={() => void send()}
-              disabled={!text.trim() || sending}
+              disabled={(!text.trim() && !sendableImage) || sending || uploading}
               aria-label={t("weekly.chat.send")}
               className={cn(
                 "grid size-7 shrink-0 place-items-center rounded-md transition-colors",
-                text.trim() && !sending
+                (text.trim() || sendableImage) && !sending && !uploading
                   ? "bg-accent-primary text-white hover:opacity-90"
                   : "cursor-not-allowed bg-layer-2 text-placeholder"
               )}
