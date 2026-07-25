@@ -387,9 +387,7 @@ class WeeklyReportEntryEndpoint(BaseAPIView):
             e.edited_at = timezone.now()
             e.edited_by = request.user
             # 本文が変われば訳文キャッシュは無効 — 消せば次の表示で作り直される
-            ContentTranslation.objects.filter(
-                entity="weekly_entry", object_id=e.id
-            ).delete()
+            _ct_purge(entity="weekly_entry", object_id=e.id)
         e.save()
         return Response(_entry_json(e), status=status.HTTP_200_OK)
 
@@ -486,7 +484,7 @@ class MeetingChatMessageEndpoint(BaseAPIView):
         msg.edited_at = timezone.now()
         msg.save(update_fields=["text", "source_lang", "edited_at", "updated_at"])
         # 古い訳は捨ててから引き直す(原文が変わったのに古い訳が残るのが最悪)。
-        ContentTranslation.objects.filter(entity="chat_message", object_id=msg.id).delete()
+        _ct_purge(entity="chat_message", object_id=msg.id)
         _translate_chat_message(ws, msg)
 
         parent = msg.reply_to if msg.reply_to_id and msg.reply_to.deleted_at is None else None
@@ -512,7 +510,7 @@ class MeetingChatMessageEndpoint(BaseAPIView):
         msg.deleted_at = timezone.now()
         msg.save(update_fields=["deleted_at", "updated_at"])
         # 訳(派生)も一緒に消す。原文が消える以上、残す意味がない。
-        ContentTranslation.objects.filter(entity="chat_message", object_id=msg.id).delete()
+        _ct_purge(entity="chat_message", object_id=msg.id)
         # 画像も配信を止める。発言を取り消したのに URL を知る人には見え続ける、を作らない。
         if msg.attachment_id:
             FileAsset.objects.filter(id=msg.attachment_id).update(
@@ -570,7 +568,7 @@ def _translate_chat_message(ws, msg):
     out = _call_llm(msg.text, src, tgt)
     if not out:
         return
-    ContentTranslation.objects.update_or_create(
+    _ct_upsert(
         entity="chat_message", object_id=msg.id, field="text", target_lang=tgt,
         defaults={
             "workspace_id": ws.id, "source_lang": src, "text": out,
@@ -585,6 +583,34 @@ def _translations_for(entity, object_ids):
     for t in ContentTranslation.objects.filter(entity=entity, object_id__in=object_ids):
         out.setdefault(str(t.object_id), {})[t.target_lang] = t.text
     return out
+
+
+def _ct_upsert(**kwargs):
+    """訳文キャッシュの upsert。**必ず all_objects 経由**。
+
+    BARSOUL 2026-07-25(hechun): ContentTranslation は AuditModel=SoftDeleteModel。
+    既定 manager(objects)は deleted_at IS NULL で絞るのに、uniq_content_translation
+    (entity,object_id,field,target_lang) は deleted_at を見ない。よって一度 soft
+    delete された行が残っていると objects.update_or_create は
+      get() → DoesNotExist → force_insert → 一意制約違反(IntegrityError)
+    となり、base.py が 400 {"error":"The payload is not valid"} に丸めるため
+    **その組合せは以後永久に翻訳不能**になる(実測: weekly_entry/draft/zh)。
+    all_objects なら墓標行も掴めるので、deleted_at=None で復活させて更新する。
+    """
+    defaults = dict(kwargs.pop("defaults", {}))
+    defaults["deleted_at"] = None  # 墓標行を掴んだ場合は復活させる
+    return ContentTranslation.all_objects.update_or_create(defaults=defaults, **kwargs)
+
+
+def _ct_purge(**kwargs):
+    """訳文キャッシュの無効化は **物理削除**。
+
+    header ② の通り ContentTranslation は再生成可能な派生。soft delete で墓標を
+    残すと一意制約と噛み合って上記の永久 400 を招くだけで、得るものが何も無い。
+    all_objects(素の Manager)の delete() は真の DELETE。既に soft delete され
+    ていた行もここで一緒に掃除される。
+    """
+    return ContentTranslation.all_objects.filter(**kwargs).delete()
 
 
 def _reactions_for(message_ids, me_id=None):
@@ -734,7 +760,7 @@ class ContentTranslateEndpoint(BaseAPIView):
         if not out:
             return Response({"error": "translate_failed"}, status=status.HTTP_502_BAD_GATEWAY)
 
-        ContentTranslation.objects.update_or_create(
+        _ct_upsert(
             entity=entity, object_id=object_id, field=field, target_lang=tgt,
             defaults={
                 "workspace_id": ws.id, "source_lang": src, "text": out,
