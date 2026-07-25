@@ -512,15 +512,19 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
   };
 
   return (
-    /* 親(aside)はヘッダ行を持つ列。ここで h-full を使うと「親と同じ高さ」を要求して
-       列がヘッダの分だけ溢れる。占めるのは **残り** なので flex-1 + min-h-0。 */
-    <div className="flex min-h-0 flex-1 flex-col">
+    /* **grid の 2 行で持つ。flex + flex-1 + min-h-0 にはしない。**
+       flex だと「一覧が伸びない」保証が min-height:auto の連鎖に依存し、上位の
+       どこか 1 段でも min-h-0 が欠けると一覧が伸びて入力欄が画面外へ落ちる
+       (実際に「全画面にしたら入力欄が見えない」で踏んだ)。
+       grid-rows-[minmax(0,1fr)_auto] なら一覧の行は自分の取り分を超えられず、
+       入力欄の auto 行は必ず先に確保される — 連鎖に関係なく成立する。 */
+    <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       {/* tailwind-config が ::-webkit-scrollbar を全部 hidden にしているので、
           overflow-y-auto だけでは「スクロールはするがバーが見えない」画面になる。
           house idiom の .vertical-scrollbar でも thumb が黒 10%/実効 6px で
           この面では視認できなかったため、globals.css の .weekly-chat-scroll
           (常設トラック + border-strong の thumb)を使う。 */}
-      <div ref={listRef} onScroll={onScroll} className="weekly-chat-scroll min-h-0 flex-1 px-3 py-3 sm:px-4">
+      <div ref={listRef} onScroll={onScroll} className="weekly-chat-scroll min-h-0 px-3 py-3 sm:px-4">
         {!msgs.length ? (
           <div className="grid h-full place-items-center px-4">
             <div className="flex max-w-xs flex-col items-center gap-2 text-center">
@@ -900,12 +904,12 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
       </div>
 
       {readOnly ? (
-        <p className="shrink-0 border-t border-subtle px-4 py-3 text-11 leading-relaxed text-tertiary">
+        <p className="border-t border-subtle px-4 py-3 text-11 leading-relaxed text-tertiary">
           {t("weekly.chat.closed")}
         </p>
       ) : (
-        /* 入力欄は縮ませない — 一覧が伸びても最後まで残るのはここ。 */
-        <div className="shrink-0 border-t border-subtle p-3 sm:p-4">
+        /* grid の auto 行。行の高さは中身が決めるので shrink-0 は要らない。 */
+        <div className="border-t border-subtle p-3 sm:p-4">
           {replyingTo && (
             /* 「誰の何に返すか」を打つ前に見せる。X で解除。 */
             <div className="mb-1.5 flex items-center gap-2 rounded-md border-l-2 border-accent-strong bg-layer-2 px-2 py-1">

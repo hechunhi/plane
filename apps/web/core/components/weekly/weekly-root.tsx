@@ -593,7 +593,10 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
              揺れる方が「発言だけ見たい」を素直に満たすより厄介だった。 */
           <aside
             className={cn(
-              "flex min-h-0 flex-col overflow-hidden bg-surface-1",
+              /* ヘッダ行 + 本体行の 2 行。本体は minmax(0,1fr) — 中身が何行あっても
+                 この行を超えられないので、本体側(weekly-chat)の入力欄が
+                 画面外へ押し出されない。flex-col + min-h-0 では上位の連鎖に依存する。 */
+              "grid min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface-1",
               /* 全面シートは #main-sidebar(z-20)と ExtendedProjectSidebar(z-[21])より
                  上に載せる — 同値だと DOM 順次第で左側がサイドバーに食われる。
                  lg 以上でも static(z-auto)に戻さず relative + z-[22] を維持する:
@@ -604,7 +607,7 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
             )}
           >
             {/* 全面表示のとき閉じる導線はここしか無い。畳めない画面を作らない。 */}
-            <div className="flex shrink-0 items-center gap-2 border-b border-subtle px-3 py-2">
+            <div className="flex items-center gap-2 border-b border-subtle px-3 py-2">
               <MessagesSquare className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
               <h3 className="min-w-0 flex-1 truncate text-12 font-medium text-secondary">{t("weekly.chat.title")}</h3>
               <button
