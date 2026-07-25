@@ -3013,6 +3013,7 @@ export default {
     analyze_btn: "愛ちゃんに下書き",
     instruction_ph: "何を承認してほしいか一言(例: 請求書1本の支払い承認)",
     need_instruction: "下書きするには一言入力してください",
+    err_need_other_approver: "発起人以外の審査者が最低1名必要です",
   },
   aichan_approval: {
     button_tooltip: "愛ちゃんに審査を依頼",

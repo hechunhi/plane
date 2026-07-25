@@ -658,6 +658,28 @@ _AIBOT_BASE = os.environ.get("AIBOT_URL", "http://host.docker.internal:8098").rs
 _CARDS_INTERNAL_TOKEN = os.environ.get("CARDS_INTERNAL_TOKEN", "").strip()
 
 
+def _approvers_excluding_actor(raw, actor_id):
+    """審批闸门の芯: 発起人は自分の審査者になれない(自己承認禁止)。
+
+    紅線「托管=审批闸门」= 独立した第三者の交差確認。発起人を審査者列から
+    必ず外し、順序保存で重複を除き、先頭 10 件に切る。独立した審査者が最低
+    1 名残れば sanitized list を、残らなければ None を返す(呼び出し側で 400)。
+    工作项経路と独立経路で同一に効かせる —— どちらも発起境界(Django)で閉じ、
+    engine/Temporal/SoR には一切触れない。"""
+    actor_id = str(actor_id)
+    seen = set()
+    out = []
+    for a in (raw or []):
+        sid = str(a).strip()
+        if not sid or sid == actor_id or sid in seen:
+            continue
+        seen.add(sid)
+        out.append(sid)
+        if len(out) >= 10:
+            break
+    return out or None
+
+
 class IssueAIApprovalEndpoint(BaseAPIView):
     """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-approval/
     Body: {action:"compose"|"analyze"|"blocks"|"invoke"|"decide"|"chat",
@@ -709,13 +731,20 @@ class IssueAIApprovalEndpoint(BaseAPIView):
             if not isinstance(approver_ids, list) or not approver_ids:
                 return Response({"error": "approver_ids required"},
                                 status=status.HTTP_400_BAD_REQUEST)
+            actor_id = str(request.user.id)
+            # 自己承認禁止(審批闸门): 発起人を外して独立審査者が最低1名残るか。
+            clean_approvers = _approvers_excluding_actor(approver_ids, actor_id)
+            if clean_approvers is None:
+                return Response({"error": "at least one approver other than the initiator is required",
+                                 "code": "need_other_approver"},
+                                status=status.HTTP_400_BAD_REQUEST)
             actor_name = (getattr(request.user, "display_name", "")
                           or getattr(request.user, "first_name", "")
                           or str(getattr(request.user, "email", "") or "")).strip()
             body = {
-                "actor_id": str(request.user.id),    # ★ 服务端解析, 不信前端
+                "actor_id": actor_id,    # ★ 服务端解析, 不信前端
                 "actor_name": actor_name,
-                "approver_ids": [str(a) for a in approver_ids][:10],
+                "approver_ids": clean_approvers,
                 "subject": (data.get("subject") or "").strip()[:200],
                 "detail": (data.get("detail") or "").strip()[:4000],
                 "text": (data.get("text") or "").strip()[:4000],
@@ -857,13 +886,21 @@ class WorkspaceAIApprovalsEndpoint(BaseAPIView):
             if not isinstance(approver_ids, list) or not approver_ids:
                 return Response({"error": "approver_ids required"},
                                 status=status.HTTP_400_BAD_REQUEST)
+            actor_id = str(request.user.id)
+            # 自己承認禁止(審批闸门): 発起人を外して独立審査者が最低1名残るか。
+            # 独立発起は dup-check が無く発起人=審査者の自演が成立しうる → ここで塞ぐ。
+            clean_approvers = _approvers_excluding_actor(approver_ids, actor_id)
+            if clean_approvers is None:
+                return Response({"error": "at least one approver other than the initiator is required",
+                                 "code": "need_other_approver"},
+                                status=status.HTTP_400_BAD_REQUEST)
             actor_name = (getattr(request.user, "display_name", "")
                           or getattr(request.user, "first_name", "")
                           or str(getattr(request.user, "email", "") or "")).strip()
             body = {
-                "actor_id": str(request.user.id),    # ★ 服务端解析, 不信前端
+                "actor_id": actor_id,    # ★ 服务端解析, 不信前端
                 "actor_name": actor_name,
-                "approver_ids": [str(a) for a in approver_ids][:10],
+                "approver_ids": clean_approvers,
                 "subject": (data.get("subject") or "").strip()[:200],
                 "detail": (data.get("detail") or "").strip()[:4000],
                 "text": (data.get("text") or "").strip()[:4000],

@@ -23,6 +23,8 @@ import { Tooltip } from "@plane/propel/tooltip";
 import { Avatar, EModalPosition, EModalWidth, Input, Loader, ModalCore, TabList, TextArea } from "@plane/ui";
 // components
 import { MemberDropdown } from "@/components/dropdowns/member/dropdown";
+// hooks
+import { useUser } from "@/hooks/store/user";
 // BARSOUL: 審査カードの原子構成エディタ（2026-07-25）
 import { ApprovalAtomComposer, pruneAtoms, type TAtom } from "./approval-atoms";
 
@@ -60,12 +62,7 @@ const Sparkle = ({ className }: { className?: string }) => (
   </svg>
 );
 
-async function callAiApproval(
-  ws: string,
-  pid: string,
-  iid: string,
-  body: Record<string, unknown>
-): Promise<any> {
+async function callAiApproval(ws: string, pid: string, iid: string, body: Record<string, unknown>): Promise<any> {
   const r = await fetch(`/api/workspaces/${ws}/projects/${pid}/issues/${iid}/ai-approval/`, {
     method: "POST",
     credentials: "include",
@@ -78,13 +75,19 @@ async function callAiApproval(
   } catch {
     /* non-json */
   }
-  if (!r.ok || !j?.ok) throw new Error(j?.error || j?.msg || "request failed");
+  if (!r.ok || !j?.ok) {
+    const err = new Error(j?.error || j?.msg || "request failed");
+    // Django が返す機械コード(例: need_other_approver)を呼び出し側に運ぶ。
+    if (j?.code) (err as { code?: string }).code = j.code;
+    throw err;
+  }
   return j;
 }
 
 export const AichanApprovalButton = observer(function AichanApprovalButton(props: Props) {
   const { workspaceSlug, projectId, issueId, variant = "icon" } = props;
   const { t, currentLocale } = useTranslation();
+  const { data: currentUser } = useUser();
   const lang = currentLocale === "ja" ? "ja" : "zh";
 
   // B-5b: controlled 変体は open を外(発起流程下拉)が持つ — modal が下拉の
@@ -234,6 +237,12 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
       setError(t("aichan_approval.err_need_approver"));
       return;
     }
+    // 自己承認禁止(審批闸门): 発起人以外の審査者が最低1名必要。往復前に弾く。
+    const uid = currentUser?.id ? String(currentUser.id) : "";
+    if (uid && !approvers.some((a) => String(a) !== uid)) {
+      setError(t("approval_inbox.err_need_other_approver"));
+      return;
+    }
     setSubmitting(true);
     try {
       // 構成を一度でも見た人には、**見たものをそのまま**焼く。
@@ -250,7 +259,12 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
       });
       setDoneNo(j.no || "—");
     } catch (e: any) {
-      setError(e?.message || t("aichan_approval.err_generic"));
+      // Django の機械コードは i18n メッセージへ翻訳(生の英文を出さない)。
+      setError(
+        e?.code === "need_other_approver"
+          ? t("approval_inbox.err_need_other_approver")
+          : e?.message || t("aichan_approval.err_generic")
+      );
     } finally {
       setSubmitting(false);
     }
@@ -306,16 +320,16 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
           </Button>
         </div>
       ) : (
-      <Tooltip tooltipContent={t("aichan_approval.button_tooltip")}>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="grid aspect-square place-items-center rounded-xs p-1 text-placeholder transition-colors hover:bg-layer-1 hover:text-accent-primary"
-          aria-label={t("aichan_approval.button_tooltip")}
-        >
-          <Sparkle className="h-3.5 w-3.5" />
-        </button>
-      </Tooltip>
+        <Tooltip tooltipContent={t("aichan_approval.button_tooltip")}>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="grid aspect-square place-items-center rounded-xs p-1 text-placeholder transition-colors hover:bg-layer-1 hover:text-accent-primary"
+            aria-label={t("aichan_approval.button_tooltip")}
+          >
+            <Sparkle className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       )}
 
       <ModalCore
@@ -334,8 +348,10 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
                   <CheckCircle2 className="size-5" aria-hidden />
                 </span>
                 <div>
-                  <h3 className="text-base font-semibold text-primary">{t("aichan_approval.success", { no: doneNo })}</h3>
-                  <p className="mt-1 text-sm text-secondary">{t("aichan_approval.success_hint")}</p>
+                  <h3 className="text-base font-semibold text-primary">
+                    {t("aichan_approval.success", { no: doneNo })}
+                  </h3>
+                  <p className="text-sm mt-1 text-secondary">{t("aichan_approval.success_hint")}</p>
                 </div>
               </div>
               <div className="flex justify-end border-t-[0.5px] border-subtle px-5 py-4">
@@ -349,15 +365,15 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
               {/* ── header ── */}
               <div className="flex items-center gap-2.5 p-5">
                 <Avatar name="愛" fallbackBackgroundColor="#028375" size="md" shape="circle" showTooltip={false} />
-                <h3 className="flex-1 text-base font-semibold text-primary">{t("aichan_approval.modal_title")}</h3>
+                <h3 className="text-base flex-1 font-semibold text-primary">{t("aichan_approval.modal_title")}</h3>
               </div>
 
               {/* ── body (scrollable) ── */}
               <div className="vertical-scrollbar scrollbar-sm max-h-[58vh] space-y-4 overflow-y-auto px-5">
                 {/* 爱酱分析卡 */}
-                <div className="rounded-md border border-accent-primary/20 bg-accent-primary/5 p-3">
+                <div className="border-accent-primary/20 rounded-md border bg-accent-primary/5 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-sm font-medium text-accent-primary">
+                    <div className="text-sm flex items-center gap-1.5 font-medium text-accent-primary">
                       <Sparkle className="size-3.5" /> {t("aichan_approval.draft_section_title")}
                     </div>
                     <Button
@@ -375,7 +391,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
                     value={instruction}
                     onChange={(e) => setInstruction(e.target.value)}
                     placeholder={t("aichan_approval.instruction_ph")}
-                    className="mt-2 w-full bg-transparent text-sm"
+                    className="text-sm mt-2 w-full bg-transparent"
                   />
                   {analyzing && (
                     <Loader className="mt-3 space-y-2">
@@ -389,7 +405,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
                 {/* 风险 callout(命中才显示;amber 内联样式确保任何主题都渲染) */}
                 {riskFlags.length > 0 && (
                   <div
-                    className="flex gap-2 rounded-md border p-3 text-sm"
+                    className="text-sm flex gap-2 rounded-md border p-3"
                     style={{
                       borderColor: "rgba(245,158,11,0.35)",
                       backgroundColor: "rgba(245,158,11,0.10)",
@@ -403,7 +419,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
                         {riskFlags.map((f) => (
                           <span
                             key={f}
-                            className="rounded-full px-2 py-0.5 text-xs"
+                            className="text-xs rounded-full px-2 py-0.5"
                             style={{ backgroundColor: "rgba(245,158,11,0.20)" }}
                           >
                             {riskLabel(f)}
@@ -418,7 +434,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
 
                 {/* clarify(爱酱想确认) */}
                 {clarify && (
-                  <div className="flex gap-2 rounded-md bg-layer-1 p-3 text-sm text-secondary">
+                  <div className="text-sm flex gap-2 rounded-md bg-layer-1 p-3 text-secondary">
                     <span aria-hidden>🤔</span>
                     <div>
                       <span className="font-medium">{t("aichan_approval.clarify_label")}: </span>
@@ -451,10 +467,10 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
 
                 {/* 审批人(爱酱建议预选) */}
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-sm font-medium text-secondary">
+                  <label className="text-sm flex items-center gap-1.5 font-medium text-secondary">
                     {t("aichan_approval.approvers_label")}
                     {suggestedApprovers.length > 0 && (
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-accent-primary/10 px-1.5 py-0.5 text-xs font-normal text-accent-primary">
+                      <span className="text-xs font-normal inline-flex items-center gap-0.5 rounded-full bg-accent-primary/10 px-1.5 py-0.5 text-accent-primary">
                         <Sparkle className="size-2.5" /> {t("aichan_approval.suggested_tag")}
                       </span>
                     )}
@@ -472,22 +488,17 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
 
                 {/* 模式(segmented + 建议 + 一句说明) */}
                 <div className="space-y-1.5">
-                  <label className="flex items-center gap-1.5 text-sm font-medium text-secondary">
+                  <label className="text-sm flex items-center gap-1.5 font-medium text-secondary">
                     {t("aichan_approval.mode_label")}
                     {suggestedMode && (
-                      <span className="inline-flex items-center gap-0.5 rounded-full bg-accent-primary/10 px-1.5 py-0.5 text-xs font-normal text-accent-primary">
+                      <span className="text-xs font-normal inline-flex items-center gap-0.5 rounded-full bg-accent-primary/10 px-1.5 py-0.5 text-accent-primary">
                         <Sparkle className="size-2.5" /> {t("aichan_approval.suggested_tag")}
                       </span>
                     )}
                   </label>
                   {/* autoWrap 必须为 true(默认): TabList 内部 <Tab.List> 需要 <Tab.Group>
                       包裹; autoWrap=false 会缺父级 → 运行时崩。视觉选中由 selectedTab 驱动。 */}
-                  <TabList
-                    tabs={modeTabs}
-                    selectedTab={mode}
-                    onTabChange={(k) => setMode(k as Mode)}
-                    size="md"
-                  />
+                  <TabList tabs={modeTabs} selectedTab={mode} onTabChange={(k) => setMode(k as Mode)} size="md" />
                   <p className="text-xs text-tertiary">{t(`aichan_approval.mode_desc_${mode.toLowerCase()}`)}</p>
                 </div>
 
@@ -510,7 +521,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
 
               {/* ── error ── */}
               {error && (
-                <div className="flex items-center gap-1.5 px-5 pt-3 text-sm text-red-500">
+                <div className="text-sm text-red-500 flex items-center gap-1.5 px-5 pt-3">
                   <AlertCircle className="size-4 shrink-0" /> <span>{error}</span>
                 </div>
               )}

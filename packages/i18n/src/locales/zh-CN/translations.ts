@@ -2952,6 +2952,7 @@ export default {
     analyze_btn: "让爱酱起草",
     instruction_ph: "一句话说明要审批什么(例:一张发票的付款审批)",
     need_instruction: "起草前请先输入一句说明",
+    err_need_other_approver: "至少需要一名发起人以外的审批人",
   },
   aichan_approval: {
     button_tooltip: "委托爱酱发起审批",

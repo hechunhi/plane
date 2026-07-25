@@ -2969,6 +2969,7 @@ export default {
     analyze_btn: "讓愛醬起草",
     instruction_ph: "一句話說明要審批什麼(例:一張發票的付款審批)",
     need_instruction: "起草前請先輸入一句說明",
+    err_need_other_approver: "至少需要一名發起人以外的審批人",
   },
   aichan_approval: {
     button_tooltip: "委託愛醬發起審批",

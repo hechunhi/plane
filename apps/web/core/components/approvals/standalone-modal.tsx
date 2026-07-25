@@ -27,6 +27,7 @@ import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
 import { Avatar, EModalPosition, EModalWidth, Input, Loader, ModalCore, TabList, TextArea } from "@plane/ui";
 import { MemberDropdown } from "@/components/dropdowns/member/dropdown";
+import { useUser } from "@/hooks/store/user";
 import { ApprovalAtomComposer, pruneAtoms, type TAtom } from "@/components/comments/approval-atoms";
 import { approvalsService } from "@/services/approvals.service";
 
@@ -63,6 +64,7 @@ export const StandaloneApprovalModal = observer(function StandaloneApprovalModal
   onCreated,
 }: Props) {
   const { t, currentLocale } = useTranslation();
+  const { data: currentUser } = useUser();
   const lang = currentLocale === "ja" ? "ja" : "zh";
 
   const [instruction, setInstruction] = useState("");
@@ -175,6 +177,12 @@ export const StandaloneApprovalModal = observer(function StandaloneApprovalModal
       setError(t("aichan_approval.err_need_approver"));
       return;
     }
+    // 自己承認禁止(審批闸门): 発起人以外の審査者が最低1名必要。往復前に弾く。
+    const uid = currentUser?.id ? String(currentUser.id) : "";
+    if (uid && !approvers.some((a) => String(a) !== uid)) {
+      setError(t("approval_inbox.err_need_other_approver"));
+      return;
+    }
     setSubmitting(true);
     try {
       const blocks = atomsLoaded ? pruneAtoms(atoms) : [];
@@ -192,7 +200,13 @@ export const StandaloneApprovalModal = observer(function StandaloneApprovalModal
         setError(r.msg || t("aichan_approval.err_generic"));
       }
     } catch (e) {
-      setError((e as { error?: string; msg?: string })?.error || t("aichan_approval.err_generic"));
+      // Django の機械コードは i18n メッセージへ翻訳(生の英文を出さない)。
+      const err = e as { error?: string; msg?: string; code?: string };
+      setError(
+        err?.code === "need_other_approver"
+          ? t("approval_inbox.err_need_other_approver")
+          : err?.error || t("aichan_approval.err_generic")
+      );
     } finally {
       setSubmitting(false);
     }

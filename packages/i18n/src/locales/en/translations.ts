@@ -2957,6 +2957,7 @@ export default {
     analyze_btn: "Draft with Aichan",
     instruction_ph: "One line on what to approve (e.g. payment approval for one invoice)",
     need_instruction: "Enter a line before drafting",
+    err_need_other_approver: "At least one approver other than the initiator is required",
   },
   aichan_approval: {
     button_tooltip: "Ask Ai-chan to start an approval",
