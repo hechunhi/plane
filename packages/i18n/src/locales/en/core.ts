@@ -115,8 +115,6 @@ export default {
       original: "Original",
       expand: "Show full text",
       collapse: "Collapse",
-      maximize: "Maximize",
-      restore: "Restore size",
     },
     actions: {
       open: "New meeting",

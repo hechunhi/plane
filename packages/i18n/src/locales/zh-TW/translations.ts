@@ -115,8 +115,6 @@ export default {
       original: "原文",
       expand: "顯示全文",
       collapse: "收起",
-      maximize: "最大化",
-      restore: "恢復原大小",
     },
     actions: {
       open: "新開一期",

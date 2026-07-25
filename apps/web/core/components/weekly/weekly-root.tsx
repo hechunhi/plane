@@ -15,9 +15,7 @@ import {
   ChevronDown,
   ExternalLink,
   Lock,
-  Maximize2,
   MessagesSquare,
-  Minimize2,
   NotebookPen,
   Pencil,
   Plus,
@@ -103,9 +101,9 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
   // 確定は「会期を閉じる」終端操作。押した瞬間に全員の編集が止まるので、必ず訊く。
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  /** 22rem のドックだと長い発言が読めない問題を「常に最大化」で解消。
+   *  ドック/最大化のトグルはもう無い — 開けば常にコンテナ内いっぱい。 */
   const [chatOpen, setChatOpen] = useState(false);
-  /** 22rem のドックでは長い発言が読めない。**コンテナ内**で最大化する — 画面遷移も別窓もしない。 */
-  const [chatMax, setChatMax] = useState(false);
   // 会期名。新規会期は無名で始まるので日付だけになる — 会議中に口で指せない。
   const [renaming, setRenaming] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -454,14 +452,7 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           <Button
             variant={chatOpen ? "secondary" : "ghost"}
             size="base"
-            onClick={() =>
-              setChatOpen((v) => {
-                // 畳む時は最大化も解く。解かないと週報列の lg:hidden が残って
-                // 「発言を閉じたら白紙」になる(実害あり)。
-                if (v) setChatMax(false);
-                return !v;
-              })
-            }
+            onClick={() => setChatOpen((v) => !v)}
             disabled={!meeting}
             aria-label={t("weekly.chat.title")}
             prependIcon={<MessagesSquare />}
@@ -520,12 +511,10 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
         <div
           className={cn(
             "vertical-scrollbar scrollbar-md min-w-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6",
-            /* 発言を最大化している間だけ週報列を退かす。unmount はしない —
-               戻した時にスクロール位置と編集途中のテキストが消えるのが最悪だから。
-               **必ず chatOpen も見る**:最大化したまま発言を閉じると、退けた週報列が
-               戻らず画面が真っ白になる(退場の条件は「最大化の記憶」ではなく
-               「今まさに発言が場所を占めているか」)。 */
-            chatOpen && chatMax && "lg:hidden"
+            /* 発言を開いている間だけ週報列を退かす(常に最大化なので同居しない)。
+               unmount はしない — 戻した時にスクロール位置と編集途中のテキストが
+               消えるのが最悪だから。 */
+            chatOpen && "lg:hidden"
           )}
         >
           <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
@@ -600,8 +589,8 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
         </div>
 
         {chatOpen && meeting && (
-          /* 広い画面 = 右に常設ドック(週報と発言を同時に見る)。
-             狭い画面 = 全面シート — 会議中のスマホは「発言だけ見たい」が実際に多い。 */
+          /* 画面幅に関わらず常に全面 — ドックと最大化の 2 モードで見た目が
+             揺れる方が「発言だけ見たい」を素直に満たすより厄介だった。 */
           <aside
             className={cn(
               "flex min-h-0 flex-col overflow-hidden bg-surface-1",
@@ -611,33 +600,16 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
                  static だとサイドバー側の positioned 要素が上に描かれ得る。 */
               "fixed inset-0 z-[22]",
               "lg:relative lg:inset-auto lg:z-[22] lg:shrink-0 lg:border-l lg:border-subtle",
-              chatMax ? "lg:w-full" : "lg:w-[22rem] xl:w-[24rem]"
+              "lg:w-full"
             )}
           >
             {/* 全面表示のとき閉じる導線はここしか無い。畳めない画面を作らない。 */}
             <div className="flex shrink-0 items-center gap-2 border-b border-subtle px-3 py-2">
               <MessagesSquare className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
               <h3 className="min-w-0 flex-1 truncate text-12 font-medium text-secondary">{t("weekly.chat.title")}</h3>
-              {/* 狭い画面は既に全面なので出さない — 押しても何も変わらないボタンは置かない。 */}
               <button
                 type="button"
-                onClick={() => setChatMax((v) => !v)}
-                aria-label={t(chatMax ? "weekly.chat.restore" : "weekly.chat.maximize")}
-                title={t(chatMax ? "weekly.chat.restore" : "weekly.chat.maximize")}
-                className="hidden size-6 shrink-0 place-items-center rounded-md text-tertiary transition-colors hover:bg-layer-1 lg:grid"
-              >
-                {chatMax ? (
-                  <Minimize2 className="size-3.5" strokeWidth={2} />
-                ) : (
-                  <Maximize2 className="size-3.5" strokeWidth={2} />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setChatMax(false);
-                  setChatOpen(false);
-                }}
+                onClick={() => setChatOpen(false)}
                 aria-label={t("weekly.chat.close")}
                 className="grid size-6 shrink-0 place-items-center rounded-md text-tertiary transition-colors hover:bg-layer-1"
               >

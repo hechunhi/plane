@@ -118,8 +118,6 @@ export default {
       original: "原文",
       expand: "全文を表示",
       collapse: "畳む",
-      maximize: "最大化",
-      restore: "元のサイズに戻す",
     },
     actions: {
       open: "新しい会期",
