@@ -20,6 +20,7 @@ from plane.utils.html_processor import strip_tags
 from plane.db.mixins import SoftDeletionManager
 from plane.utils.exception_logger import log_exception
 from .project import ProjectBaseModel
+from .base import BaseModel
 from plane.utils.uuid import convert_uuid_to_integer
 from .description import Description
 from plane.db.mixins import ChangeTrackerMixin
@@ -994,3 +995,35 @@ class IssueAIStateCorrection(ProjectBaseModel):
 
     def __str__(self):
         return f"{self.issue_id}:correction:{self.created_at}"
+
+
+# BARSOUL Inbox Phase3 (hechun 2026-07-07): 个人收件箱分流状态 (per-user, per-issue 派生投影)。
+# 「我的工作」digest の 完成/归档/Snooze/Pin/Mute 的落点。纯个人视图状态 → 读时投影:
+# digest 过滤 done_at/archived_at/未来 snoozed_till, pinned 置顶。**绝不写 SoR**:
+# Issue.snoozed_until 是全局字段(snooze 一次全队都看不到该卡)→ 严禁复用; 个人 snooze 只落本表。
+# 审批/托管中卡的冻结: ①审批组永远从 ai-bot 权威渲染, 本表无法隐藏它 ②triage 服务层对隐藏动作
+# 查 ai-bot my-pending 命中则拒(fail-open, 渲染层已兜底)。每 (user, issue) 唯一一行, upsert。
+class InboxState(BaseModel):
+    workspace = models.ForeignKey("db.Workspace", related_name="inbox_states", on_delete=models.CASCADE)
+    project = models.ForeignKey("db.Project", related_name="inbox_states", on_delete=models.CASCADE)
+    user = models.ForeignKey("db.User", related_name="inbox_states", on_delete=models.CASCADE)
+    issue = models.ForeignKey(Issue, related_name="inbox_states", on_delete=models.CASCADE)
+    read_at = models.DateTimeField(null=True, blank=True)
+    done_at = models.DateTimeField(null=True, blank=True)       # 用户「完成/清出队」标记(不改 issue SoR 状态)
+    archived_at = models.DateTimeField(null=True, blank=True)   # 知会类看过归档(可搜回)
+    snoozed_till = models.DateTimeField(null=True, blank=True)  # 个人 snooze 到某时刻回队
+    pinned = models.BooleanField(default=False)
+    muted = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Inbox State"
+        verbose_name_plural = "Inbox States"
+        db_table = "inbox_states"
+        ordering = ("-updated_at",)
+        unique_together = ("user", "issue")
+        indexes = [
+            models.Index(fields=["user", "workspace"], name="inbox_user_ws_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.issue_id}"

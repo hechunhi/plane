@@ -53,6 +53,11 @@ const KANA_STRICT_G = /[ぁ-ゟァ-ヺ]/g; // 中日共用の ・(30FB) ー(30FC
 // → 日文が繁体/異体で書く【简体字専属】字だけに厳選(在会当和示是有為要能 は除外)。
 // バックエンド _is_mixed_cn_ja と同字種・同閾値。
 const CN_CHARS_G = /[们给让报对问关优现务应单这东车书长门说请帮过还没钱样亿仅从仓职业图]/g;
+// BARSOUL 2026-07-09 (hechun, BS-369): 助詞(が/は/を/に/で/と/の/も/か)。漢字語
+// だらけの短い日文コメント(業務連絡等)は kana 比率が 0.2 を割り込み zh 誤判 →
+// 訳方向が狂う。バックエンド _detect_src / issue-field-translate.tsx と対称に、
+// 助詞 2 個以上で比率を待たず ja 確定する。
+const JA_PARTICLE_G = /[がはをにでとのもか]/g;
 function isMixedCnJa(text: string): boolean {
   const kana = (text.match(KANA_STRICT_G) || []).length;
   if (kana < 6) return false; // 日文素材が薄い → 従来判定でよい
@@ -63,6 +68,7 @@ function detectSrc(text: string): "ja" | "zh" | null {
   // 混合(中文地の文 + 日文素材)は地の文=中文 → src=zh(「翻訳元」も訳方向も
   // 中文起点に。読み手が日本人なら zh→ja で日本語化される)。
   if (isMixedCnJa(text)) return "zh";
+  if ((text.match(JA_PARTICLE_G) || []).length >= 2) return "ja";
   const kana = (text.match(HK_RE_G) || []).length;
   const han = (text.match(HAN_RE_G) || []).length;
   const total = kana + han;

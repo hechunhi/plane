@@ -34,6 +34,7 @@ from .issue import (
     IssueTranslation,
     IssueAIState,
     IssueAIStateCorrection,
+    InboxState,
     Issue,
     IssueActivity,
     IssueAssignee,
@@ -110,3 +111,12 @@ from .device import Device, DeviceSession
 from .sticky import Sticky
 
 from .description import Description, DescriptionVersion
+
+# BARSOUL 週次ミーティング支援 (2026-07-21)
+from .weekly import (
+    WeeklyMeeting,
+    WeeklyReportEntry,
+    MeetingChatMessage,
+    MeetingChatReaction,
+    ContentTranslation,
+)

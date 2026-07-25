@@ -125,6 +125,13 @@ const Command = Extension.create<SlashCommandOptions>({
 
 export type TExtensionProps = Pick<IEditorProps, "disabledExtensions" | "flaggedExtensions"> & {
   additionalOptions?: TSlashCommandAdditionalOption[];
+  /**
+   * BARSOUL(2026-07-25 hechun): 指定時は **この commandKey だけ** を出す許可リスト。
+   * コメント欄は H1〜H6 / 表 / 画像といった本文用の書式命令を出したくない
+   * (書式は常駐ツールバー担当)ので、渡した項目だけのメニューに絞るために使う。
+   * 未指定なら従来どおり全項目 —— 既存エディタの挙動は一切変わらない。
+   */
+  allowedCommandKeys?: TEditorCommands[];
 };
 
 export function SlashCommands(props: TExtensionProps) {

@@ -44,7 +44,7 @@ import {
 // plane editor extensions
 import { coreEditorAdditionalSlashCommandOptions } from "@/plane-editor/extensions";
 // types
-import type { CommandProps, ISlashCommandItem, TSlashCommandSectionKeys } from "@/types";
+import type { CommandProps, ISlashCommandItem, TEditorCommands, TSlashCommandSectionKeys } from "@/types";
 // local types
 import type { TExtensionProps, TSlashCommandAdditionalOption } from "./root";
 
@@ -57,7 +57,12 @@ export type TSlashCommandSection = {
 export const getSlashCommandFilteredSections =
   (args: TExtensionProps) =>
   ({ query }: { query: string }): TSlashCommandSection[] => {
-    const { additionalOptions: externalAdditionalOptions, disabledExtensions, flaggedExtensions } = args;
+    const {
+      additionalOptions: externalAdditionalOptions,
+      allowedCommandKeys,
+      disabledExtensions,
+      flaggedExtensions,
+    } = args;
     const SLASH_COMMAND_SECTIONS: TSlashCommandSection[] = [
       {
         key: "general",
@@ -319,9 +324,13 @@ export const getSlashCommandFilteredSections =
       }
     });
 
+    // BARSOUL: 許可リストが渡されたときだけ、その commandKey に絞る(コメント欄用)。
+    const allowSet = allowedCommandKeys?.length ? new Set<TEditorCommands>(allowedCommandKeys) : null;
+
     const filteredSlashSections = SLASH_COMMAND_SECTIONS.map((section) => ({
       ...section,
       items: section.items.filter((item) => {
+        if (allowSet && !allowSet.has(item.commandKey)) return false;
         if (typeof query !== "string") return;
 
         const lowercaseQuery = query.toLowerCase();

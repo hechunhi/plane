@@ -87,6 +87,21 @@ export const coreRoutes: RouteConfigEntry[] = [
           route(":workspaceSlug/notifications", "./(all)/[workspaceSlug]/(projects)/notifications/page.tsx"),
         ]),
 
+        // BARSOUL BS-216 Path A: My Work（工作区级「我的工作」= 跨项目 DIS 作业台）
+        layout("./(all)/[workspaceSlug]/(projects)/my-work/layout.tsx", [
+          route(":workspaceSlug/my-work", "./(all)/[workspaceSlug]/(projects)/my-work/page.tsx"),
+        ]),
+
+        // BARSOUL 週次ミーティング支援（会期ごとの週報 + 出処 + 確定版）
+        layout("./(all)/[workspaceSlug]/(projects)/weekly/layout.tsx", [
+          route(":workspaceSlug/weekly", "./(all)/[workspaceSlug]/(projects)/weekly/page.tsx"),
+        ]),
+
+        // BARSOUL 2026-07-25 審査を一等市民に·受信箱（ワークスペース級「審査」= 待我处理/我发起/全部）
+        layout("./(all)/[workspaceSlug]/(projects)/approvals/layout.tsx", [
+          route(":workspaceSlug/approvals", "./(all)/[workspaceSlug]/(projects)/approvals/page.tsx"),
+        ]),
+
         // Profile
         layout("./(all)/[workspaceSlug]/(projects)/profile/[userId]/layout.tsx", [
           route(":workspaceSlug/profile/:userId", "./(all)/[workspaceSlug]/(projects)/profile/[userId]/page.tsx"),

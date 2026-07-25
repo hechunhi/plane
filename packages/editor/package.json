@@ -30,9 +30,12 @@
     "check:format": "oxfmt --check .",
     "fix:lint": "oxlint --fix .",
     "fix:format": "oxfmt .",
-    "clean": "rm -rf .turbo && rm -rf .next && rm -rf node_modules && rm -rf dist"
+    "clean": "rm -rf .turbo && rm -rf .next && rm -rf node_modules && rm -rf dist",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@a2ui/react": "0.9.1",
+    "@a2ui/web_core": "0.9.2",
     "@floating-ui/dom": "^1.7.1",
     "@floating-ui/react": "^0.26.4",
     "@headlessui/react": "^1.7.3",
@@ -81,7 +84,8 @@
     "y-indexeddb": "^9.0.12",
     "y-prosemirror": "^1.2.15",
     "y-protocols": "^1.0.6",
-    "yjs": "^13.6.20"
+    "yjs": "^13.6.20",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@plane/tailwind-config": "workspace:*",
@@ -92,7 +96,8 @@
     "@types/react-dom": "catalog:",
     "postcss": "^8.4.38",
     "tsdown": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "^4.0.8"
   },
   "peerDependencies": {
     "react": "catalog:",

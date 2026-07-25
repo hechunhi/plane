@@ -42,6 +42,9 @@ class FileAsset(BaseModel):
         DRAFT_ISSUE_ATTACHMENT = "DRAFT_ISSUE_ATTACHMENT"
         DRAFT_ISSUE_DESCRIPTION = "DRAFT_ISSUE_DESCRIPTION"
         SMART_TABLE_CELL = "SMART_TABLE_CELL"  # BARSOUL: 智能表图片单元格(归属 project, 不绑特定实体)
+        # BARSOUL: 週次ミーティングチャットの画像(会議は project に属さない = workspace 直下。
+        # entity_identifier に meeting_id を持たせる — project FK が無いので唯一の紐付け)。
+        MEETING_CHAT = "MEETING_CHAT"
 
     attributes = models.JSONField(default=dict)
     asset = models.FileField(upload_to=get_upload_path, max_length=800)
@@ -100,5 +103,9 @@ class FileAsset(BaseModel):
             self.EntityTypeContext.SMART_TABLE_CELL,
         ]:
             return f"/api/assets/v2/workspaces/{self.workspace.slug}/projects/{self.project_id}/{self.id}/"
+
+        # BARSOUL: 会議チャット画像は project を持たない → workspace 直下の署名 URL を返す。
+        if self.entity_type == self.EntityTypeContext.MEETING_CHAT:
+            return f"/api/assets/v2/workspaces/{self.workspace.slug}/{self.id}/"
 
         return None

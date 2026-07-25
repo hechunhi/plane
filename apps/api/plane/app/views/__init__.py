@@ -139,14 +139,16 @@ from .issue.attachment import (
     IssueAttachmentV2Endpoint,
 )
 
-from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueTranslateOnDemandEndpoint, IssueAIApprovalEndpoint
+from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueTranslateOnDemandEndpoint, IssueAIApprovalEndpoint, WorkspaceAIApprovalsEndpoint
 
 from .issue.ai_state import (
     IssueAIStateBatchEndpoint,
+    IssueAIStateWorkspaceEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
     IssueAIStateRederiveEndpoint,
     IssueAIStateUrgeEndpoint,
+    InboxTriageEndpoint,
 )
 
 from .smart_table import (
@@ -279,3 +281,15 @@ from .notification.base import MarkAllReadNotificationViewSet
 from .user.base import AccountEndpoint, ProfileEndpoint, UserSessionEndpoint
 
 from .timezone.base import TimezoneEndpoint
+
+# BARSOUL 週次ミーティング支援 (2026-07-21)
+from .weekly import (
+    WeeklyMeetingListEndpoint,
+    WeeklyMeetingDetailEndpoint,
+    WeeklyMeetingActionEndpoint,
+    WeeklyReportEntryEndpoint,
+    MeetingChatEndpoint,
+    MeetingChatMessageEndpoint,
+    MeetingChatReactionEndpoint,
+    ContentTranslateEndpoint,
+)

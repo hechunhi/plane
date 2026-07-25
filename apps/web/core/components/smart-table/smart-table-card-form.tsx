@@ -41,6 +41,9 @@ export function SmartTableCardForm({ workItemId, projectId, workspaceSlug, isEdi
   const [rows, setRows] = useState<TSmartRow[]>([]);
   const [picking, setPicking] = useState(false);
   const rowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // BS-328: 每行待落盘字段累积缓冲。共享单定时器会丢掉除最后一格外的所有编辑,
+  // 改为按行累积 values, 防抖到点后逐行整体 upsert(配合后端 merge, 不丢任一字段)。
+  const pendingRef = useRef<Map<string, Record<string, unknown>>>(new Map());
 
   const T = zh
     ? {
@@ -122,21 +125,46 @@ export function SmartTableCardForm({ workItemId, projectId, workspaceSlug, isEdi
   }, [workspaceSlug, projectId, workItemId]);
 
   // Option A 行操作: upsert 乐观更新 + 防抖落盘; delete/add 立即刷新
+  // BS-328: 防抖到点时把每行累积的字段一次性落盘(逐行 upsert),失败回灌待重试,不静默丢。
+  const flushPending = useCallback(() => {
+    if (rowTimer.current) {
+      clearTimeout(rowTimer.current);
+      rowTimer.current = null;
+    }
+    const batch = Array.from(pendingRef.current.entries());
+    pendingRef.current = new Map();
+    for (const [id, values] of batch) {
+      smartTableService
+        .candidatesAction(workspaceSlug, projectId, workItemId, {
+          action: "upsert",
+          candidate: { id, values },
+        })
+        .catch(() => {
+          // 落盘失败: 把本次字段回灌缓冲(已有更新者优先),下次编辑/卸载时重试
+          const cur = pendingRef.current.get(id) || {};
+          pendingRef.current.set(id, { ...values, ...cur });
+        });
+    }
+  }, [workspaceSlug, projectId, workItemId]);
+
   const rowUpsert = useCallback(
     (id: string, values: Record<string, unknown>) => {
       setRows((prev) => prev.map((r) => (r.id === id ? { ...r, cells: { ...r.cells, ...values } } : r)));
+      const prev = pendingRef.current.get(id) || {};
+      pendingRef.current.set(id, { ...prev, ...values });
       if (rowTimer.current) clearTimeout(rowTimer.current);
-      rowTimer.current = setTimeout(() => {
-        smartTableService
-          .candidatesAction(workspaceSlug, projectId, workItemId, {
-            action: "upsert",
-            candidate: { id, values },
-          })
-          .catch(() => {});
-      }, 500);
+      rowTimer.current = setTimeout(flushPending, 500);
     },
-    [workspaceSlug, projectId, workItemId]
+    [flushPending]
   );
+
+  // 卸载(关卡片)前把未落盘的编辑冲掉,杜绝「填了又关→丢」
+  useEffect(() => {
+    return () => {
+      if (rowTimer.current) clearTimeout(rowTimer.current);
+      flushPending();
+    };
+  }, [flushPending]);
 
   const rowAdd = useCallback(async () => {
     const r = await smartTableService.candidatesAction(workspaceSlug, projectId, workItemId, {

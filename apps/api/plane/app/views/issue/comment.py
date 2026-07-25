@@ -197,6 +197,14 @@ _HTML_STRIP = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")
 _HK_RE = re.compile(r"[぀-ゟ゠-ヿ]")  # ひらがな/カタカナ (findall 用)
 _HAN_RE = re.compile(r"[一-鿿]")
+# BARSOUL 2026-07-09 (hechun): 日本語の助詞(が/は/を/に/で/と/の/も/か)。
+# 漢字語(集荷予定・発送手続き 等)が多い短い業務タイトルは kana 比率が 0.2 を
+# 下回りやすく(実例:「物流会社が午後に45箱を集荷予定（FedEx発送）」kana比率
+# 0.1875)、下の比率判定だけでは zh 誤判 → zh→ja 翻訳要求 → hy-mt2 は既に日本語
+# なので原文まま返す → no-op(identical-to-source)判定 → 502 事故になる。
+# 助詞は中文の文中には(BS-127 の様な埋め込み日本人名/短句とは違い)実質出現し
+# ない構造信号 → 2 個以上あれば比率を無視して ja 確定してよい。
+_JA_PARTICLE_RE = re.compile(r"[がはをにでとのもか]")
 # BARSOUL 2026-05-27 (hechun): 段落構造保持. Plane の comment_html は
 # <p>...</p><p>...</p> や <br> で論理段落を分けるが、旧 _strip は
 # 全空白を単スペース 1 個に潰すため、LLM 入力時点で段落破壊が確定し
@@ -247,6 +255,13 @@ def _detect_src(text):
     # (フロント detectSrc と対称)。混合判定は _is_mixed_cn_ja に集約。
     if _is_mixed_cn_ja(text):
         return "zh"
+    # BARSOUL 2026-07-09 (hechun): 助詞 2 個以上は中文には実質出ない構造信号
+    # → 比率(0.2)を待たず ja 確定。漢字語だらけの短い業務タイトル
+    # (「物流会社が午後に45箱を集荷予定（FedEx発送）」kana比率0.1875で旧ロジック
+    # は zh 誤判)の 502 事故対策。BS-127 の埋め込み日本人名ケースは助詞を伴わない
+    # 短句が多く、_is_mixed_cn_ja または下の比率判定で従来通り zh 側に落ちる。
+    if len(_JA_PARTICLE_RE.findall(text)) >= 2:
+        return "ja"
     kana = len(_HK_RE.findall(text))
     han = len(_HAN_RE.findall(text))
     total = kana + han
@@ -323,7 +338,12 @@ def _looks_like_noop(text, out, tgt):
     # 保持される)。旧 regex [゠-ヿ] が ・ を kana 扱い → ja→zh の良訳を no-op 誤判
     # → 502 "translation failed" を量産(・ を含む業務コメントが全滅)。U+30FB を除外。
     has_kana = bool(_re.search(r"[぀-ゟ゠-ヺー-ヿ]", out))
-    if tgt == "ja" and not has_kana:
+    # BARSOUL 2026-07-09 (hechun): 短い業務タイトル(「确认」→「確認」、「库存确认」
+    # →「在庫確認」等)は正当な訳でも助詞が出ず**カナ 0 個**になるのが普通 —
+    # 旧ロジックは無条件で no-op 扱いし、卡片標題の即点即译が高頻度で 502 化していた
+    # (中日は共有漢字が多く短文ほど顕著)。長文(助詞が現れるはずの分量)でのみ
+    # 「カナ皆無 = 未翻訳」を疑う。閾値は経験則(短いタイトル/フレーズを除外)。
+    if tgt == "ja" and not has_kana and len(out.strip()) > 12:
         return True
     # BARSOUL 2026-06-05 (hechun, BS-226): tgt=zh で「假名が1つでもあれば no-op」は
     # 誤判が酷い。中訳でも商品名/ブランド名(モノタロウ, Shaken等のカナ表記)や
@@ -395,15 +415,16 @@ def _try_one_model(url, model, sys_msg, text, tgt="zh", context=""):
             voice_rule = ""
             if tgt == "zh":
                 voice_rule = (
-                    "翻译时注意日语的“谁对谁做”关系：\n"
-                    "・省略主语时按敬语和上下文判断施动者（常是对话中提到的第三者，不是说话人）；\n"
-                    "・「〜ように言われた／〜とのこと」是转述他人的指示，执行者是被指示的一方；\n"
-                    "・「Xに〜られる／言われる」是被动，主语是承受方，保留“被”的语气；\n"
-                    "・定语从句（〜してた方／〜した人）要完整译出，不要压缩合并。\n")
+                    "日译中注意施动关系：\n"
+                    "・主语省略时按敬语推断施动者（多为第三者，非说话人）；\n"
+                    "・「〜ように言われた／〜とのこと」＝转述他人指示，执行者是被指示方；\n"
+                    "・「Xに〜られる／言われる」＝被动，主语为承受方，保留“被”；\n"
+                    "・定语从句（〜してた方／〜した人）完整译出，勿压缩；\n"
+                    "・职场多义词：「見送り」＝取消/暂不执行，「〜分」＝份额（非“每~”）。\n")
             # 官方 Hy-MT2-Translator skill 整合: basic mode(指示最小)が反流ゼロ +
             # 段落自然保持(761字8段で para 8/8)。temp 0.1 + 余分な sampling 無し。
             usr = (f"{voice_rule}{ctx_prefix}将以下文本翻译为{tgt_name}，"
-                   f"注意只需要输出翻译后的结果，不要额外解释：\n\n{text[:1800]}")
+                   f"只输出译文：\n\n{text[:1800]}")
             payload = {
                 "model": model,
                 "messages": [{"role": "user", "content": usr}],
@@ -639,10 +660,13 @@ _CARDS_INTERNAL_TOKEN = os.environ.get("CARDS_INTERNAL_TOKEN", "").strip()
 
 class IssueAIApprovalEndpoint(BaseAPIView):
     """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-approval/
-    Body: {action:"compose"|"invoke", approver_ids?, mode?, subject?, detail?, text?, lang?}
+    Body: {action:"compose"|"analyze"|"blocks"|"invoke"|"decide"|"chat",
+           approver_ids?, mode?, subject?, detail?, text?, blocks?, messages?, lang?}
     认证代理: 浏览器永不持内部 token; actor 由 Plane session 服务端解析。
       action=compose → 爱酱按 issue 上下文预填 subject/detail(给表单回填)。
-      action=invoke  → 发起审批(create_approval → Temporal; 裁决走 barsoulCard)。"""
+      action=blocks  → 卡片构成预览(只读; 爱酱选出的原子列, 供发起 UI 组合)。
+      action=invoke  → 发起审批(create_approval → Temporal; 裁决走 barsoulCard)。
+      action=chat    → 爱酱私聊(只读问答; 不写评论/不发起审批 —— 公开只走 invoke)。"""
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def post(self, request, slug, project_id, issue_id):
@@ -668,6 +692,18 @@ class IssueAIApprovalEndpoint(BaseAPIView):
                 "lang": (data.get("lang") or "ja").strip()[:5],
             }
             ep = "/ai/analyze-approval"
+        elif action == "blocks":
+            # BARSOUL 2026-07-25(hechun「原子組件を組める」): 発起 UI の
+            # カード構成プレビュー。**読むだけ** — 起票も投稿もしない。
+            # 人はこの原子列を UI で組み替え、確定分を invoke.blocks で返す。
+            body = {
+                "subject": (data.get("subject") or "").strip()[:200],
+                "detail": (data.get("detail") or "").strip()[:4000],
+                "text": (data.get("text") or "").strip()[:4000],
+                "project_id": str(project_id), "issue_id": str(issue_id),
+                "workspace_slug": slug,
+            }
+            ep = "/ai/blocks"
         elif action == "invoke":
             approver_ids = data.get("approver_ids") or []
             if not isinstance(approver_ids, list) or not approver_ids:
@@ -687,6 +723,12 @@ class IssueAIApprovalEndpoint(BaseAPIView):
                 "project_id": str(project_id), "issue_id": str(issue_id),
                 "workspace_slug": slug,
             }
+            # BARSOUL 2026-07-25: 人が組んだカード構成(原子列)。渡された分
+            # だけを載せる — 中身の検疫は ai-bot の sanitize_content_blocks
+            # (LLM 経路と同一の唯一の関所)が行う。ここは形だけ見る。
+            blocks = data.get("blocks")
+            if isinstance(blocks, list) and blocks:
+                body["blocks"] = [b for b in blocks if isinstance(b, dict)][:40]
             ep = "/ai/invoke"
         elif action == "decide":
             # B-2e(2026-06-10): 審査バナーの承認/却下ボタン → apply_decision。
@@ -708,14 +750,159 @@ class IssueAIApprovalEndpoint(BaseAPIView):
                 "workspace_slug": slug,
             }
             ep = "/ai/decide-approval"
+        elif action == "chat":
+            # BARSOUL 2026-07-25 (hechun「審査を一等市民に」): 愛ちゃん私聊。
+            # コメント欄で愛ちゃんに頼むと全員に飛ぶ → 頼み事は自分だけの経路へ。
+            # ここは **読むだけ**: 課題の文脈を踏まえて返答を返す。書き込み
+            # (コメント投稿/審査発起)は一切しない —— 公開は人が明示的に押した
+            # ときだけ既存の action=invoke を通る。認可は他 action と同一。
+            msgs = data.get("messages") or []
+            if not isinstance(msgs, list) or not msgs:
+                return Response({"error": "messages required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            clean = []
+            for m in msgs[-20:]:
+                if not isinstance(m, dict):
+                    continue
+                role = (m.get("role") or "").strip().lower()
+                content = (m.get("content") or "").strip()[:4000]
+                if role in ("user", "assistant") and content:
+                    clean.append({"role": role, "content": content})
+            if not clean:
+                return Response({"error": "messages required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            actor_name = (getattr(request.user, "display_name", "")
+                          or getattr(request.user, "first_name", "")
+                          or str(getattr(request.user, "email", "") or "")).strip()
+            body = {
+                "actor_id": str(request.user.id),    # ★ 服务端解析, 不信前端
+                "actor_name": actor_name,
+                "messages": clean,
+                "project_id": str(project_id), "issue_id": str(issue_id),
+                "workspace_slug": slug,
+                "lang": (data.get("lang") or "ja").strip()[:5],
+            }
+            ep = "/ai/chat"
         else:
-            return Response({"error": "action must be analyze|compose|invoke|decide"},
+            return Response({"error": "action must be analyze|compose|invoke|decide|chat"},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
             r = _req.post(_AIBOT_BASE + ep, json=body, headers=headers, timeout=60)
             j = r.json()
         except Exception as e:
             logger.exception("ai-approval proxy failed")
+            return Response({"error": f"ai-bot unreachable: {type(e).__name__}"},
+                            status=status.HTTP_502_BAD_GATEWAY)
+        if r.status_code != 200 or not isinstance(j, dict) or not j.get("ok"):
+            msg = (j.get("msg") if isinstance(j, dict) else None) or "ai-bot error"
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(j)
+
+
+class WorkspaceAIApprovalsEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/ai-approvals/
+    Body: {action:"list"|"decide"|"analyze"|"blocks"|"invoke", …}
+    ワークスペース級「審査」受信箱 + **独立(issue 無し)発起** の入口。
+    認可 = ワークスペース成員(level=WORKSPACE)。listing は必ず
+    actor_id=request.user.id で絞る → 自分が発起 or 審査者の審査だけ返る
+    (§X.3 可归因; 他人の審査は覗けない)。
+      action=list    → 受信箱データ(待我处理/我发起/全部 × 未終結/終結/全部)。
+      action=decide  → 既存 /ai/decide-approval を再利用(actor は session 解析)。
+      action=analyze → 独立発起の下書き支援(自由文 → 件名/詳細/審査者/方式/リスク)。
+      action=blocks  → 独立発起のカード構成プレビュー(**読むだけ**)。
+      action=invoke  → 独立審査を発起(create_approval → Temporal; issue 無し)。
+    独立発起は project_id/issue_id を送らない → ai-bot 側で scope="独立"。
+    engine は工作项経路と完全共有(create_approval は scope-generic)。
+    浏览器永不持内部 token; 代理が同源 Django で actor を服务端解析。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
+    def post(self, request, slug):
+        if not _CARDS_INTERNAL_TOKEN:
+            return Response({"error": "ai-bot bridge not configured"},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        data = request.data or {}
+        action = (data.get("action") or "list").strip().lower()
+        headers = {"X-Cards-Token": _CARDS_INTERNAL_TOKEN}
+        if action == "list":
+            scope = (data.get("scope") or "assigned").strip().lower()[:12]
+            status_filter = (data.get("status") or "open").strip().lower()[:8]
+            body = {
+                "actor_id": str(request.user.id),    # ★ 服务端解析, 不信前端
+                "workspace_slug": slug,
+                "scope": scope,
+                "status": status_filter,
+            }
+            ep = "/ai/approvals"
+        elif action == "analyze":
+            # 独立発起: 課題文脈が無い → 依頼者の自由文だけで愛ちゃんが起票支援。
+            body = {
+                "workspace_slug": slug,
+                "text": (data.get("text") or "").strip()[:2000],
+                "lang": (data.get("lang") or "ja").strip()[:5],
+            }
+            ep = "/ai/analyze-approval"
+        elif action == "blocks":
+            # 独立発起のカード構成プレビュー。**読むだけ** — 起票も投稿もしない。
+            body = {
+                "subject": (data.get("subject") or "").strip()[:200],
+                "detail": (data.get("detail") or "").strip()[:4000],
+                "text": (data.get("text") or "").strip()[:4000],
+                "workspace_slug": slug,
+            }
+            ep = "/ai/blocks"
+        elif action == "invoke":
+            # 独立審査発起。project_id/issue_id を送らない → scope="独立"。
+            # engine(create_approval → Temporal)は工作项経路と完全共有。
+            approver_ids = data.get("approver_ids") or []
+            if not isinstance(approver_ids, list) or not approver_ids:
+                return Response({"error": "approver_ids required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            actor_name = (getattr(request.user, "display_name", "")
+                          or getattr(request.user, "first_name", "")
+                          or str(getattr(request.user, "email", "") or "")).strip()
+            body = {
+                "actor_id": str(request.user.id),    # ★ 服务端解析, 不信前端
+                "actor_name": actor_name,
+                "approver_ids": [str(a) for a in approver_ids][:10],
+                "subject": (data.get("subject") or "").strip()[:200],
+                "detail": (data.get("detail") or "").strip()[:4000],
+                "text": (data.get("text") or "").strip()[:4000],
+                "mode": (data.get("mode") or "").strip().upper()[:12],
+                "workspace_slug": slug,
+                # ★ 独立: project_id/issue_id は付けない(ai-bot 側で None → 独立)。
+            }
+            # 人が組んだカード構成(原子列)。検疫は ai-bot の
+            # sanitize_content_blocks(LLM 経路と同一の唯一の関所)。
+            blocks = data.get("blocks")
+            if isinstance(blocks, list) and blocks:
+                body["blocks"] = [b for b in blocks if isinstance(b, dict)][:40]
+            ep = "/ai/invoke"
+        elif action == "decide":
+            no = (data.get("no") or "").strip()[:120]
+            decision = (data.get("decision") or "").strip().upper()
+            if not no or decision not in ("OK", "NO"):
+                return Response({"error": "no + decision(OK|NO) required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            actor_name = (getattr(request.user, "display_name", "")
+                          or getattr(request.user, "first_name", "")
+                          or str(getattr(request.user, "email", "") or "")).strip()
+            body = {
+                "actor_id": str(request.user.id),
+                "actor_name": actor_name,
+                "no": no,
+                "decision": decision,
+                "reason": (data.get("reason") or "").strip()[:500],
+                "workspace_slug": slug,
+            }
+            ep = "/ai/decide-approval"
+        else:
+            return Response({"error": "action must be list|decide|analyze|blocks|invoke"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            r = _req.post(_AIBOT_BASE + ep, json=body, headers=headers, timeout=60)
+            j = r.json()
+        except Exception as e:
+            logger.exception("ai-approvals proxy failed")
             return Response({"error": f"ai-bot unreachable: {type(e).__name__}"},
                             status=status.HTTP_502_BAD_GATEWAY)
         if r.status_code != 200 or not isinstance(j, dict) or not j.get("ok"):

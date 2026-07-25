@@ -1036,9 +1036,18 @@ class IssueSmartBindingCandidatesEndpoint(BaseAPIView):
             cid = (cand.get("id") or "").strip()
             if cid:
                 # update existing row (must belong to this issue/table)
-                SmartRow.objects.filter(
+                # 合并而非整体替换: 单 cell upsert 不得冲掉同行其它字段 (BS-328)。
+                # 与 PATCH 路径 (saveBindingRow) 的 merged.update 语义保持一致。
+                existing = SmartRow.objects.filter(
                     pk=cid, source_issue_id=issue_id, table_id=b.table_id, deleted_at__isnull=True,
-                ).update(cells=values, updated_by_id=uid, updated_at=now)
+                ).first()
+                if existing:
+                    merged = dict(existing.cells or {})
+                    merged.update(values)
+                    existing.cells = merged
+                    existing.updated_by_id = uid
+                    existing.updated_at = now
+                    existing.save(update_fields=["cells", "updated_by_id", "updated_at"])
             else:
                 SmartRow.objects.create(
                     table_id=b.table_id, source_issue_id=issue_id,

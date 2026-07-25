@@ -14,11 +14,14 @@ from plane.app.views import (
     CommentTranslateOnDemandEndpoint,
     IssueTranslateOnDemandEndpoint,
     IssueAIApprovalEndpoint,
+    WorkspaceAIApprovalsEndpoint,
     IssueAIStateBatchEndpoint,
+    IssueAIStateWorkspaceEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
     IssueAIStateRederiveEndpoint,
     IssueAIStateUrgeEndpoint,
+    InboxTriageEndpoint,
     IssueActivityEndpoint,
     IssueArchiveViewSet,
     IssueCommentViewSet,
@@ -196,12 +199,25 @@ urlpatterns = [
         IssueAIApprovalEndpoint.as_view(),
         name="project-issue-ai-approval",
     ),
+    # BARSOUL 2026-07-25: 審査を一等市民に·受信箱(ワークスペース級「審査」ビュー
+    # → 認証代理 → ai-bot list_approvals / decide-approval を再利用, workspace member)
+    path(
+        "workspaces/<str:slug>/ai-approvals/",
+        WorkspaceAIApprovalsEndpoint.as_view(),
+        name="workspace-ai-approvals",
+    ),
     ## End IssueComments
     # BARSOUL: 派生卡片当前态 (DIS) 批量读取(看板卡顶状态行, cookie auth, project member)
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/ai-states/",
         IssueAIStateBatchEndpoint.as_view(),
         name="project-issue-ai-states",
+    ),
+    # BARSOUL: 工作区级「我的工作」作业台 の DIS 集約(跨在籍プロジェクト, workspace member)
+    path(
+        "workspaces/<str:slug>/my-work/ai-states/",
+        IssueAIStateWorkspaceEndpoint.as_view(),
+        name="workspace-my-work-ai-states",
     ),
     # BARSOUL DIS: 人工纠正/补充(向 AI 补足背景 → 双语留痕 + 触发重判)
     path(
@@ -226,6 +242,12 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/urge/",
         IssueAIStateUrgeEndpoint.as_view(),
         name="project-issue-ai-state-urge",
+    ),
+    # BARSOUL Inbox Phase3: 个人收件箱分流(完成/归档/Snooze/Pin/Mute → per-user inbox_states,绝不碰 SoR)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/inbox/triage/",
+        InboxTriageEndpoint.as_view(),
+        name="project-issue-inbox-triage",
     ),
     # Issue Subscribers
     path(

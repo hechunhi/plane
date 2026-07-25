@@ -14,6 +14,7 @@ import requests
 
 # Django imports
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.db.models import Q
 from django.core.serializers.json import DjangoJSONEncoder
 
@@ -24,7 +25,7 @@ from rest_framework import status
 # Module imports
 from .. import BaseAPIView
 from plane.app.permissions import allow_permission, ROLE
-from plane.db.models import IssueAIState, IssueAIStateCorrection, Issue, IssueComment, User
+from plane.db.models import IssueAIState, IssueAIStateCorrection, InboxState, Issue, IssueComment, User, ProjectMember
 from plane.bgtasks.issue_activities_task import issue_activity
 from plane.utils.host import base_host
 
@@ -82,6 +83,33 @@ def _post_audit_comment(request, issue, project_id, note, by):
         logger.warning("ai-state correct: 留痕评论发布失败 (非致命)", exc_info=True)
 
 
+def _inbox_state_dict(s):
+    """个人分流态投影(s 可为 None → 全默认)。digest 前端据此过滤/置顶/计数。"""
+    return {
+        "read_at": s.read_at.isoformat() if s and s.read_at else None,
+        "done_at": s.done_at.isoformat() if s and s.done_at else None,
+        "archived_at": s.archived_at.isoformat() if s and s.archived_at else None,
+        "snoozed_till": s.snoozed_till.isoformat() if s and s.snoozed_till else None,
+        "pinned": bool(s and s.pinned),
+        "muted": bool(s and s.muted),
+    }
+
+
+def _approval_frozen(user_id, issue_id):
+    """审批/托管中冻结: 隐藏类分流(done/archive/snooze)对其 no-op(feedback_approval_state_lock)。
+    审批 SoR 在 ai-bot(/api/approval/my-pending);命中 = 该用户是待裁决审批人 → 冻结。
+    fail-open: ai-bot 不可达时放行——渲染层审批组永远从 ai-bot 权威渲染, inbox_state 无法
+    隐藏它, 已兜底; 不让 ai-bot 抖动堵住整个分流。"""
+    try:
+        r = requests.get(f"{_AIBOT}/api/approval/my-pending", params={"user": str(user_id)}, timeout=2)
+        if r.ok:
+            items = (r.json() or {}).get("items") or []
+            return any(str(it.get("issue_id")) == str(issue_id) for it in items)
+    except Exception:
+        logger.warning("inbox triage: approval-frozen check failed (fail-open)", exc_info=True)
+    return False
+
+
 def _serialize(row):
     issue = row.issue
     st = getattr(issue, "state", None)
@@ -90,6 +118,10 @@ def _serialize(row):
         # issue meta(待我处理 digest 用; 卡面行忽略)
         "name": issue.name if issue else "",
         "sequence_id": issue.sequence_id if issue else None,
+        # project_id(UUID): 工作区级作业台で各カードが異なる project に属する →
+        # フロントが「そのカード自身の project」へ action(催促/改担当/peek/再判)を
+        # ルーティングするのに必須。project_identifier は表示用(BS-123 の接頭辞)。
+        "project_id": str(row.project_id) if row.project_id else "",
         "project_identifier": row.project.identifier if row.project_id else "",
         "state_group": st.group if st else None,
         "state": row.state,
@@ -161,6 +193,47 @@ class IssueAIStateBatchEndpoint(BaseAPIView):
         out = {}
         for row in qs:
             out[str(row.issue_id)] = _serialize(row)
+        return Response(out, status=status.HTTP_200_OK)
+
+
+class IssueAIStateWorkspaceEndpoint(BaseAPIView):
+    """GET /api/workspaces/{slug}/my-work/ai-states/
+    工作区级「我的工作」作业台 の DIS データ源。**当前ユーザーが在籍(active member)する
+    全プロジェクト** を横断し、派生済みの活跃卡(Todo/Doing、または needs_info)を返す。
+    返 {issue_id: DerivedIssueState}(項目級 batch と同一 shape → フロント再利用)。上限 1000。
+
+    セキュリティ: project_id__in=在籍プロジェクト で絞る = **未在籍プロジェクトのカードは
+    一切返さない**(横断集約でも越权漏れゼロ)。派生表 issue_ai_states の読取専用、SoR 不触。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
+    def get(self, request, slug):
+        member_project_ids = ProjectMember.objects.filter(
+            workspace__slug=slug, member=request.user, is_active=True
+        ).values_list("project_id", flat=True)
+        qs = (
+            IssueAIState.objects.filter(
+                # 活跃卡(Todo/Doing) + needs_info(状态変更の留痕缺口 → 完了/取消でも見せる)。
+                # 項目級 batch と同一口径 → 看板と作业台で表示ロジックが乖離しない。
+                Q(issue__state__group__in=["unstarted", "started"]) | Q(needs_info=True),
+                workspace__slug=slug,
+                project_id__in=member_project_ids,
+                # 软删カードの残留派生 row を除外(項目級と同じ既知バグ対策)。
+                issue__deleted_at__isnull=True,
+            )
+            .select_related("issue", "issue__state", "project", "rep_child")
+            .order_by("-updated_at")[:1000]
+        )
+        rows = list(qs)
+        # 个人分流态: 一次批量取当前用户在这些卡上的 inbox_states → 附到每卡(digest 读时过滤/置顶/计数用)。
+        inbox_map = {
+            s.issue_id: s
+            for s in InboxState.objects.filter(user=request.user, issue_id__in=[r.issue_id for r in rows])
+        }
+        out = {}
+        for row in rows:
+            d = _serialize(row)
+            d["inbox"] = _inbox_state_dict(inbox_map.get(row.issue_id))
+            out[str(row.issue_id)] = d
         return Response(out, status=status.HTTP_200_OK)
 
 
@@ -302,3 +375,68 @@ class IssueAIStateRederiveEndpoint(BaseAPIView):
             return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
         _trigger_rederive(project_id, issue_id)
         return Response({"ok": True}, status=status.HTTP_202_ACCEPTED)
+
+
+class InboxTriageEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/inbox/triage/
+    Body: {action, snoozed_till?, value?}
+      action = read | done | archive | snooze | pin | mute | reset
+    个人收件箱分流。只写 per-user inbox_states 派生投影,**绝不碰 SoR**(不改 issue 状态,
+    不写全局 Issue.snoozed_until)。隐藏类(done/archive/snooze)对审批/托管中卡拒绝(409, 服务层冻结)。
+    返回该卡最新个人分流态(前端乐观更新的权威回执)。"""
+
+    HIDE_ACTIONS = {"done", "archive", "snooze"}
+    VALID_ACTIONS = {"read", "done", "archive", "snooze", "pin", "mute", "reset"}
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        body = request.data or {}
+        action = (body.get("action") or "").strip().lower()
+        if action not in self.VALID_ACTIONS:
+            return Response({"error": "invalid action"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # 托管=审批闸门: 审批未完成须冻结,不可静默清出收件箱(feedback_approval_state_lock)
+        if action in self.HIDE_ACTIONS and _approval_frozen(request.user.id, issue_id):
+            return Response(
+                {"error": "frozen", "reason": "審批/托管中,不可清出收件箱(需先完成审批)"},
+                status=status.HTTP_409_CONFLICT)
+
+        uid = request.user.id
+        row, _created = InboxState.objects.get_or_create(
+            user_id=uid, issue=issue,
+            defaults={"workspace_id": issue.workspace_id, "project_id": project_id,
+                      "created_by_id": uid, "updated_by_id": uid})
+        now = timezone.now()
+        if action == "read":
+            row.read_at = row.read_at or now
+        elif action == "done":
+            row.done_at = now
+            row.read_at = row.read_at or now
+        elif action == "archive":
+            row.archived_at = now
+            row.read_at = row.read_at or now
+        elif action == "snooze":
+            raw = (body.get("snoozed_till") or "").strip()
+            dt = parse_datetime(raw) if raw else None
+            if not dt:
+                return Response({"error": "snoozed_till required (iso)"}, status=status.HTTP_400_BAD_REQUEST)
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
+            row.snoozed_till = dt
+            row.read_at = row.read_at or now
+        elif action == "pin":
+            row.pinned = bool(body.get("value")) if "value" in body else (not row.pinned)
+        elif action == "mute":
+            row.muted = bool(body.get("value")) if "value" in body else (not row.muted)
+        elif action == "reset":
+            # 回队: 清 done/archive/snooze(read/pin/mute 保留)
+            row.done_at = None
+            row.archived_at = None
+            row.snoozed_till = None
+        row.updated_by_id = uid
+        row.save()
+        return Response(_inbox_state_dict(row), status=status.HTTP_200_OK)

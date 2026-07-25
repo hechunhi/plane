@@ -27,3 +27,16 @@ export * from "@/types";
 
 // additional exports
 export { TrailingNode } from "./core/extensions/trailing-node";
+
+// BARSOUL: コメント欄スラッシュ命令(審査 / 愛ちゃん私聊)
+export {
+  COMMENT_INTENT_EVENT,
+  buildCommentSlashOptions,
+  dispatchCommentIntent,
+} from "./core/extensions/barsoul-comment-commands";
+export type {
+  TCommentCommandLabel,
+  TCommentCommandLabels,
+  TCommentIntentDetail,
+  TCommentIntentKind,
+} from "./core/extensions/barsoul-comment-commands";

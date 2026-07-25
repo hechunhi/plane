@@ -243,6 +243,30 @@ export const WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS: Record<string, IWorkspac
     access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER, EUserWorkspaceRoles.GUEST],
     highlight: (pathname: string, url: string) => pathname.includes(url),
   },
+  // BARSOUL BS-216 Path A:「我的工作」= 跨项目 DIS 决策队列(常显、Home 正下方、GUEST 亦可)
+  "my-work": {
+    key: "my-work",
+    labelTranslationKey: "sidebar.my_work",
+    href: `/my-work/`,
+    access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER, EUserWorkspaceRoles.GUEST],
+    highlight: (pathname: string, url: string) => pathname.includes(url),
+  },
+  // BARSOUL 週次ミーティング支援:会期ごとの週報 + 出処 + 確定版(常显、我的工作の下)
+  weekly: {
+    key: "weekly",
+    labelTranslationKey: "sidebar.weekly",
+    href: `/weekly/`,
+    access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER, EUserWorkspaceRoles.GUEST],
+    highlight: (pathname: string, url: string) => pathname.includes(url),
+  },
+  // BARSOUL 2026-07-25 審査を一等市民に·受信箱:待我处理/我发起/全部(常显、GUEST 亦可)
+  approvals: {
+    key: "approvals",
+    labelTranslationKey: "sidebar.approvals",
+    href: `/approvals/`,
+    access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER, EUserWorkspaceRoles.GUEST],
+    highlight: (pathname: string, url: string) => pathname.includes(url),
+  },
   "your-work": {
     key: "your_work",
     labelTranslationKey: "your_work",
@@ -275,6 +299,12 @@ export const WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS: Record<string, IWorkspac
 
 export const WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS_LINKS: IWorkspaceSidebarNavigationItem[] = [
   WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["home"],
+  // BARSOUL BS-216 Path A:紧随 Home 的常显个人工作入口
+  WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["my-work"],
+  // BARSOUL 週次ミーティング支援:週 1 回だが「探して辿り着く」導線だと開かれない
+  WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["weekly"],
+  // BARSOUL 2026-07-25 審査を一等市民に:毎日開く「決めるべきこと」の入口
+  WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["approvals"],
 ];
 
 export const WORKSPACE_SIDEBAR_STATIC_PINNED_NAVIGATION_ITEMS_LINKS: IWorkspaceSidebarNavigationItem[] = [

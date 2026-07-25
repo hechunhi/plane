@@ -235,6 +235,13 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
         # BARSOUL: 智能表图片单元格 — 归属 project(entity_identifier=project_id), 不绑特定实体
         if entity_type == FileAsset.EntityTypeContext.SMART_TABLE_CELL:
             return {"project_id": entity_id}
+
+        # BARSOUL: 会議チャット画像 — 会議は project に属さないので FK は張らず、
+        # meeting_id を entity_identifier(索引済み)に残す。実際の紐付けは
+        # MeetingChatMessage.attachment 側の FK が持つ。
+        if entity_type == FileAsset.EntityTypeContext.MEETING_CHAT:
+            # entity_identifier は未指定だと False が来る(POST の既定値)→ "False" を焼かない。
+            return {"entity_identifier": str(entity_id)} if entity_id else {}
         return {}
 
     def asset_delete(self, asset_id):
@@ -421,12 +428,21 @@ class WorkspaceFileAssetEndpoint(BaseAPIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        # BARSOUL: 会議チャット画像は「見るもの」= inline。発言を取り消したら配信も止める
+        # (URL を知っている人に見え続けるのを防ぐ)。他の entity_type の挙動は変えない。
+        is_meeting_chat = asset.entity_type == FileAsset.EntityTypeContext.MEETING_CHAT
+        if is_meeting_chat and asset.is_deleted:
+            return Response(
+                {"error": "The requested asset could not be found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         # Get the presigned URL
         storage = S3Storage(request=request)
         # Generate a presigned URL to share an S3 object
         signed_url = storage.generate_presigned_url(
             object_name=asset.asset.name,
-            disposition="attachment",
+            disposition="inline" if is_meeting_chat else "attachment",
             filename=asset.attributes.get("name"),
         )
         # Redirect to the signed URL

@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+export * from "./barsoul-comment-commands";
 export * from "./callout";
 export * from "./code";
 export * from "./code-inline";

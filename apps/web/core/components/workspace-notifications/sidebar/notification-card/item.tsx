@@ -18,6 +18,7 @@ import { useWorkspace } from "@/hooks/store/use-workspace";
 // local imports
 import { NotificationContent } from "./content";
 import { NotificationOption } from "./options";
+import { NotificationTimeFooter } from "./time-footer";
 
 type TNotificationItem = {
   workspaceSlug: string;
@@ -173,6 +174,9 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
               )}
             </div>
           </div>
+
+          {/* BARSOUL BS-216 ②時効染色: 逾期/停滞/球在対方 の脚注（DIS 派生・失敗安全）。*/}
+          <NotificationTimeFooter workspaceSlug={workspaceSlug} projectId={projectId} issueId={issueId} />
         </div>
       </div>
     </Row>

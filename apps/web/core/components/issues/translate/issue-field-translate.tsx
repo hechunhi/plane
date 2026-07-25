@@ -16,14 +16,23 @@ const HK_RE_G = /[぀-ゟ゠-ヿ]/g;
 const HAN_RE_G = /[一-鿿]/g;
 const KANA_STRICT_G = /[ぁ-ゟァ-ヺ]/g;
 const CN_CHARS_G = /[们给让报对问关优现务应单这东车书长门说请帮过还没钱样亿仅从仓职业图]/g;
+// BARSOUL 2026-07-09 (hechun, BS-369): 助詞(が/は/を/に/で/と/の/も/か)。
+// 漢字語だらけの短い業務タイトル(「物流会社が午後に45箱を集荷予定（FedEx発送）」
+// kana比率0.1875)は比率判定だけだと zh 誤判 → 「查看日语译文」ボタンが誤表示され、
+// クリックすると既に日文の題名を"翻訳"要求して 502/空振り。バックエンド _detect_src
+// と対称に、助詞 2 個以上で比率を待たず ja 確定する。
+const JA_PARTICLE_G = /[がはをにでとのもか]/g;
 function isMixedCnJa(text: string): boolean {
   const kana = (text.match(KANA_STRICT_G) || []).length;
   if (kana < 6) return false;
   const cn = (text.match(CN_CHARS_G) || []).length;
   return cn >= 2;
 }
-function detectSrc(text: string): "ja" | "zh" | null {
+// BARSOUL 2026-07-24: 週報/会議チャットからも同じ判定を使う(訳語と挙動をチームで
+// 揃えるため)。判定ロジックの正本はここ 1 箇所 — 複製して分岐させない。
+export function detectSrc(text: string): "ja" | "zh" | null {
   if (isMixedCnJa(text)) return "zh";
+  if ((text.match(JA_PARTICLE_G) || []).length >= 2) return "ja";
   const kana = (text.match(HK_RE_G) || []).length;
   const han = (text.match(HAN_RE_G) || []).length;
   const total = kana + han;
@@ -32,7 +41,7 @@ function detectSrc(text: string): "ja" | "zh" | null {
   if (han > 0) return "zh";
   return null;
 }
-function htmlToPlain(html: string): string {
+export function htmlToPlain(html: string): string {
   if (typeof window === "undefined") return (html || "").replace(/<[^>]+>/g, " ");
   try {
     const d = new DOMParser().parseFromString(html || "", "text/html");
@@ -54,7 +63,7 @@ function readAutoTr(): boolean {
   if (typeof window === "undefined") return true;
   return window.localStorage.getItem(AUTO_TR_KEY) !== "0";
 }
-function useAutoTranslatePref(): [boolean, (v: boolean) => void] {
+export function useAutoTranslatePref(): [boolean, (v: boolean) => void] {
   const [v, setV] = useState<boolean>(readAutoTr);
   useEffect(() => {
     const h = () => setV(readAutoTr());
@@ -73,7 +82,7 @@ function useAutoTranslatePref(): [boolean, (v: boolean) => void] {
   return [v, set];
 }
 
-const TranslateGlyph = () => (
+export const TranslateGlyph = () => (
   <svg
     width="11"
     height="11"

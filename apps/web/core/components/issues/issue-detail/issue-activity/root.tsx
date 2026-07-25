@@ -122,9 +122,11 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
         activityOperations={activityOperations}
         showToolbarInitially
         projectId={projectId}
+        // BARSOUL: 愛ちゃん私聊パネルが「何を読んだ上で答えているか」を明示するためだけに渡す。
+        entityTitle={issue?.name}
       />
     ),
-    [workspaceSlug, issueId, activityOperations, projectId]
+    [workspaceSlug, issueId, activityOperations, projectId, issue?.name]
   );
   if (!project) return <></>;
 

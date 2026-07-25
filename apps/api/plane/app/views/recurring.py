@@ -264,6 +264,20 @@ class IssueSnoozeEndpoint(BaseAPIView):
     hide=True → snoozed_until 使卡从 active 视图隐藏(IssueManager); hide=False → 卡留视图(前端显徽章)。
     到点由高频 Beat(reminder_sweep)给受众响铃(零评论); daily=每日续提醒至卡完成或解除。"""
 
+    def _can_team_hide(self, i, request, slug, project_id):
+        """カードを「全員から」盤面から消せるのは作成者 or プロジェクト/WS 管理者のみ。
+        (誰でも他人のカードを隠せるのは不合理 — hechun 2026-06-21)。"""
+        if i.created_by_id is not None and i.created_by_id == request.user.id:
+            return True
+        from plane.db.models import ProjectMember, WorkspaceMember
+        return ProjectMember.objects.filter(
+            project_id=project_id, member=request.user,
+            role=ROLE.ADMIN.value, is_active=True,
+        ).exists() or WorkspaceMember.objects.filter(
+            workspace__slug=slug, member=request.user,
+            role=ROLE.ADMIN.value, is_active=True,
+        ).exists()
+
     def _state(self, i):
         if not i.remind_at:
             return {"set": False}
@@ -282,16 +296,19 @@ class IssueSnoozeEndpoint(BaseAPIView):
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
     def get(self, request, slug, project_id, issue_id):
         i = Issue.objects.select_related("snoozed_by").get(pk=issue_id, project_id=project_id, workspace__slug=slug)
+        can_hide = self._can_team_hide(i, request, slug, project_id)
         if i.remind_at:
             audience = i.remind_audience or "self"
             uid = request.user.id
             if audience == "self" and i.snoozed_by_id != uid:
-                return Response({"set": False}, status=status.HTTP_200_OK)
+                return Response({"set": False, "can_hide": can_hide}, status=status.HTTP_200_OK)
             if audience == "assignees" and i.snoozed_by_id != uid:
                 from plane.db.models import IssueAssignee
                 if not IssueAssignee.objects.filter(issue_id=issue_id, assignee_id=uid).exists():
-                    return Response({"set": False}, status=status.HTTP_200_OK)
-        return Response(self._state(i), status=status.HTTP_200_OK)
+                    return Response({"set": False, "can_hide": can_hide}, status=status.HTTP_200_OK)
+        state = self._state(i)
+        state["can_hide"] = can_hide
+        return Response(state, status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER])
     def post(self, request, slug, project_id, issue_id):
@@ -307,11 +324,22 @@ class IssueSnoozeEndpoint(BaseAPIView):
             # P3: 解除 → 取消 Temporal ReminderWorkflow(cancel signal)
             from plane.bgtasks.recurring_task import _cancel_reminder_workflow
             _cancel_reminder_workflow(issue_id)
-            return Response({"set": False}, status=status.HTTP_200_OK)
+            return Response(
+                {"set": False, "can_hide": self._can_team_hide(i, request, slug, project_id)},
+                status=status.HTTP_200_OK,
+            )
         remind_at = _remind_at_utc(data, i, now_jst_date(timezone.now()))
         if not remind_at or remind_at <= timezone.now():
             return Response({"error": "未来の日時を指定してください"}, status=status.HTTP_400_BAD_REQUEST)
         hide = bool(data.get("hide"))
+        # BARSOUL 2026-06-21: カードを「全員から」隠す減算的権力は作成者 or プロジェクト/WS 管理者のみ。
+        # (誰でも他人のカードを盤面から消せると不合理 — hechun)。個人専用の非表示(自分だけ)は別表が要る別機能で後回し。
+        # 既に非表示のカード(remind_hide)を別の人が編集(時刻変更等)して hide を保つのは許可 — 新規に隠す遷移だけを gate。
+        if hide and not i.remind_hide and not self._can_team_hide(i, request, slug, project_id):
+            return Response(
+                {"error": "カードを全員から隠せるのは作成者またはプロジェクト管理者のみです"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         intensity = data.get("intensity") if data.get("intensity") in ("once", "daily") else "once"
         audience = data.get("audience") if data.get("audience") in ("self", "assignees", "members") else "self"
         # 新 remind_at 設定時に既存の未読提醒通知を削除 — 即リフレッシュで紫が出ないよう。
@@ -335,7 +363,9 @@ class IssueSnoozeEndpoint(BaseAPIView):
         from plane.bgtasks.recurring_task import _schedule_reminder_workflow
         _schedule_reminder_workflow(i, slug)
         i = Issue.objects.select_related("snoozed_by").get(pk=i.pk)
-        return Response(self._state(i), status=status.HTTP_200_OK)
+        state = self._state(i)
+        state["can_hide"] = self._can_team_hide(i, request, slug, project_id)
+        return Response(state, status=status.HTTP_200_OK)
 
 
 class RecurringRuleActionEndpoint(BaseAPIView):

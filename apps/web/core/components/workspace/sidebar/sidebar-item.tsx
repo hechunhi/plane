@@ -49,6 +49,9 @@ export const SidebarItemBase = observer(function SidebarItemBase({
 
   const staticItems = [
     "home",
+    "my-work", // BARSOUL BS-216 Path A:常显个人工作入口(不走 pin/preference 门控)
+    "weekly", // BARSOUL 週次ミーティング支援:同じく常显
+    "approvals", // BARSOUL 2026-07-25 審査を一等市民に·受信箱:同じく常显
     "pi_chat",
     "projects",
     "your_work",

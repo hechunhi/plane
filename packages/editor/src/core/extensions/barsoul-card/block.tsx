@@ -12,7 +12,16 @@
  */
 import type { NodeViewProps } from "@tiptap/react";
 import { NodeViewWrapper } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+// R5: A2UI v0.9 試験導入（摘要部のみ・フラグ既定 OFF）。詳細は ./a2ui/ 配下。
+import type { AtomicActionHandlers } from "./a2ui";
+import {
+  AtomicPresentationSurface,
+  leadingPresentationCount,
+  readA2uiAtomsFlag,
+  safeExternalHref,
+  subscribeA2uiAtomsFlag,
+} from "./a2ui";
 
 type Blk = Record<string, any>;
 type Theme = Record<string, string>;
@@ -92,6 +101,38 @@ export function BarsoulCardBlock(props: NodeViewProps) {
     }
   }, [load]);
 
+  /* ── R5: A2UI v0.9 試験導入 ────────────────────────────────────────────
+   * 対象は先頭から連続する **表示専用** ブロックだけ（R4 系の presentation-only
+   * 原子＋header/kv/modebadge/detail）。chain / actions_grouped / form / timeline
+   * など決裁に関わるブロックは従来描画のまま。A2UI は「記述と描画」だけを担い、
+   * 取得・権限・状態・業務判断は既存経路のまま一切触らない。
+   * フラグ OFF もしくは A2UI 側が失敗 → a2uiSplit=0 → 従来 UI が全部描く。
+   * ──────────────────────────────────────────────────────────────────── */
+  const a2uiOn = useSyncExternalStore(subscribeA2uiAtomsFlag, readA2uiAtomsFlag, () => false);
+  const [a2uiFailed, setA2uiFailed] = useState(false);
+  const onA2uiFail = useCallback(() => setA2uiFailed(true), []);
+  const a2uiSurfaceId = useMemo(() => `barsoul-card:${ref || "unknown"}`, [ref]);
+  const a2uiSplit = a2uiOn && !a2uiFailed && data ? leadingPresentationCount(data.blocks) : 0;
+  // ホワイトリスト Action の実処理。すべて **既存の** 経路へ委譲する。
+  const a2uiHandlers: AtomicActionHandlers = useMemo(() => ({
+    // 遷移：context.href があれば spec の link/ref 先（scheme 検査済）、
+    // 無ければ err 分岐と同じ署名付き進捗 URL。可否はサーバ側が判定する。
+    openAtomicComponent: (ctx) => {
+      const target = safeExternalHref(ctx.href) ?? (ref ? `/c/${encodeURIComponent(ref)}?as=view` : "");
+      if (!target) return;
+      window.open(target, "_blank", "noopener,noreferrer");
+    },
+    // 詳細(md)の開閉：従来と同じくローカル表示状態のみ。
+    editAtomicComponent: (ctx) =>
+      setOpenDetail((cur) => (typeof ctx.open === "boolean" ? ctx.open : !cur)),
+    // 決裁：従来と同じ確認条 →署名 /__act（runAction）。ここでは権限判断をしない。
+    changeStatus: (ctx) => {
+      const href = typeof ctx.href === "string" ? ctx.href : "";
+      if (!href) return;
+      setConfirm({ href, label: String(ctx.label ?? ""), ok: ctx.act === "approve" });
+    },
+  }), [ref]);
+
   const t = data?.theme || FALLBACK;
   const S = useMemo(() => ({
     // 文字は選択/コピー可（userSelect は付けない）。青い節点選択背景は
@@ -163,7 +204,19 @@ export function BarsoulCardBlock(props: NodeViewProps) {
           {ref && <a style={S.link} target="_blank" rel="noopener noreferrer"
             href={`/c/${encodeURIComponent(ref)}?as=view`}> 進捗を開く</a>}</div>)}
         {!data && !err && <div style={S.note}>読み込み中…</div>}
+        {/* R5: フラグ ON のときだけ表示専用区間を A2UI で描く。失敗すれば onA2uiFail →
+            a2uiSplit が 0 に戻り、下の従来描画が全ブロックを描く（要件 9）。 */}
+        {data && a2uiSplit > 0 && (
+          <AtomicPresentationSurface
+            surfaceId={a2uiSurfaceId}
+            blocks={data.blocks}
+            detailOpen={openDetail}
+            handlers={a2uiHandlers}
+            onFail={onA2uiFail}
+          />
+        )}
         {data && data.blocks.map((b, i) => {
+          if (i < a2uiSplit) return null; // A2UI が描いた摘要部は従来側では描かない
           const ty = b.type;
           if (ty === "header") return (
             <div key={i}>

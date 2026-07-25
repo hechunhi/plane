@@ -73,6 +73,7 @@ export type TSnoozeState = {
   audience?: TReminderAudience;
   note?: string; // 备忘: 到时提醒我做什么
   by?: { id: string; display_name: string } | null;
+  can_hide?: boolean; // 当前用户能否「全员隐藏」此卡(作成者 or 项目/WS 管理者); 后端权威, 前端据此 gate 复选框
 };
 export type TReminderInput = {
   at?: string; // ISO datetime(绝対, 优先)

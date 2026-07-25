@@ -5,7 +5,8 @@
  */
 
 import { useCallback, useMemo } from "react";
-import { XCircle, ArchiveRestoreIcon, Clock, Repeat } from "lucide-react";
+import { mutate as globalMutate } from "swr";
+import { XCircle, ArchiveRestoreIcon, Calendar, Clock, Moon, Repeat, Sunrise } from "lucide-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
 import { LinkIcon, CopyIcon, NewTabIcon, EditIcon, ArchiveIcon, TrashIcon } from "@plane/propel/icons";
@@ -16,30 +17,38 @@ import { copyUrlToClipboard, generateWorkItemLink } from "@plane/utils";
 // types
 import { createCopyMenuWithDuplication } from "@/plane-web/components/issues/issue-layouts/quick-action-dropdowns";
 // BARSOUL フォローアップ・スヌーズ / 定期化(用户: 这些做进卡片右键菜单, 不进卡也能点; 删掉杵着的独立按钮)
-import { recurringService, type TSnoozePreset } from "@/services/recurring.service";
+import { recurringService, type TReminderInput } from "@/services/recurring.service";
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 
-// snooze 预设的显示日期(客户端只为 label; 服务端按 JST 营业日权威计算)
-function _bizAdd(d: Date, n: number): Date {
-  const r = new Date(d);
-  let c = 0;
-  while (c < n) {
-    r.setDate(r.getDate() + 1);
-    const wd = r.getDay();
-    if (wd !== 0 && wd !== 6) c++;
+// BARSOUL リマインダー快捷预设: 与详情页 ReminderActionButton(recurring-card.tsx)同源。
+// 客户端只算"相对时刻 / 日历起点"; 服务端按 JST 权威落地。绝不写 SoR。
+const _pad = (n: number) => String(n).padStart(2, "0");
+const _ymd = (d: Date) => `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
+const _mkDay = (add: number): Date => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + add);
+  return d;
+};
+const _nextMon = (): Date => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const a = (8 - d.getDay()) % 7 || 7;
+  d.setDate(d.getDate() + a);
+  return d;
+};
+// 我的常用(localStorage, 用户级 UI 偏好·非 SoR): 与 ReminderActionButton 共享 key, 只读复用。
+const _REL_PRESET_KEY = "barsoul.reminder.relPresets";
+function _loadRelPresets(): { mins: number; label: string }[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const v = JSON.parse(localStorage.getItem(_REL_PRESET_KEY) || "[]");
+    return Array.isArray(v)
+      ? v.filter((p) => p && typeof p.mins === "number" && p.mins > 0 && typeof p.label === "string").slice(0, 8)
+      : [];
+  } catch {
+    return [];
   }
-  return r;
-}
-function _snoozePresets(zh: boolean): { v: TSnoozePreset; label: string; date: Date }[] {
-  const today = new Date();
-  const nextMon = new Date(today);
-  nextMon.setDate(today.getDate() + ((1 - today.getDay() + 7) % 7 || 7));
-  return [
-    { v: "tomorrow", label: zh ? "明天" : "明日", date: new Date(today.getTime() + 86400000) },
-    { v: "biz2", label: zh ? "2 个工作日后" : "2営業日後", date: _bizAdd(today, 2) },
-    { v: "next_mon", label: zh ? "下周一" : "来週月曜", date: nextMon },
-    { v: "week1", label: zh ? "1 周后" : "1週間後", date: new Date(today.getTime() + 7 * 86400000) },
-  ];
 }
 
 // Generic helper function to handle optional function calls gracefully
@@ -281,38 +290,86 @@ export const useMenuItemFactory = (props: MenuItemFactoryProps) => {
     shouldRender: isDeletingAllowed,
   });
 
-  // BARSOUL フォローアップ・スヌーズ: 右键「あとで通知 ▸ 预设」纯 API(无模态)。设了即从看板隐藏到该日再浮现。
+  // BARSOUL フォローアップ・スヌーズ: 右键「提醒我 ▸ 富预设」纯 API(无模态), hover 展开。设了卡片保留可见(紫条)。
+  // 直接复用详情页 ReminderActionButton 的预设集 / 标签 / 图标(recurring-card.tsx)。
   const createSnoozeMenuItem = (): TContextMenuItem => {
     const ws = props.workspaceSlug;
     const pid = issue.project_id;
     // 右键快捷 = 不隐藏 + 一次 + 只我(无黑洞); 富配置走详情页「提醒」条的详细设置。
-    const snooze = async (preset: TSnoozePreset, label: string) => {
+    const apply = async (body: TReminderInput) => {
       if (!ws || !pid) return;
       const r = await recurringService
-        .setSnooze(ws, pid, issue.id, { preset, hide: false, intensity: "once", audience: "self" })
+        .setSnooze(ws, pid, issue.id, { ...body, hide: false, intensity: "once", audience: "self" })
         .catch(() => null);
       if (r?.set) {
+        // 与详情页同源: 即时写入 SNOOZE SWR 缓存, 看板卡片紫色提醒态立刻反映, 无需刷新页面。
+        void globalMutate(`SNOOZE:${issue.id}`, r, { revalidate: false });
         setToast({
           type: TOAST_TYPE.SUCCESS,
-          title: zh ? `已设提醒 · ${r.at_jst ?? ""}` : `リマインダー · ${r.at_jst ?? ""}（${label}）`,
+          title: `${zh ? "已设提醒" : "リマインダー"} · ${r.at_jst ?? ""}`,
           message: zh ? "卡片保留可见" : "表示のまま",
         });
       } else {
         setToast({ type: TOAST_TYPE.ERROR, title: zh ? "设置失败" : "設定に失敗しました", message: "" });
       }
     };
+    const rel = (mins: number) => apply({ at: new Date(Date.now() + mins * 60000).toISOString() });
+    const day = (d: Date, time: string) => apply({ until: _ymd(d), time });
+    // 段标题: disabled + customContent(键盘/点击均跳过, 仅作视觉分组)
+    const hdr = (key: string, label: string): TContextMenuItem => ({
+      key,
+      title: label,
+      action: () => {},
+      disabled: true,
+      customContent: (
+        <span className="block w-full px-1 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-tertiary">
+          {label}
+        </span>
+      ),
+    });
+
+    const showTonight = new Date().getHours() < 18; // 18 点后「今晚」无意义
+    const customs = _loadRelPresets();
+    const nested: TContextMenuItem[] = [
+      hdr("snz-h-today", zh ? "今天处理" : "今日中"),
+      { key: "snz-30", title: zh ? "30 分钟后" : "30分後", icon: Clock, action: () => void rel(30) },
+      { key: "snz-60", title: zh ? "1 小时后 · 荐" : "1時間後 · 推奨", icon: Clock, action: () => void rel(60) },
+      { key: "snz-120", title: zh ? "2 小时后" : "2時間後", icon: Clock, action: () => void rel(120) },
+      { key: "snz-180", title: zh ? "3 小时后" : "3時間後", icon: Clock, action: () => void rel(180) },
+      ...(customs.length
+        ? [
+            hdr("snz-h-fav", zh ? "我的常用" : "よく使う"),
+            ...customs.map((p) => ({
+              key: `snz-fav-${p.mins}`,
+              title: p.label,
+              icon: Clock,
+              action: () => void rel(p.mins),
+            })),
+          ]
+        : []),
+      hdr("snz-h-after", zh ? "之后" : "その後"),
+      ...(showTonight
+        ? [
+            {
+              key: "snz-tonight",
+              title: zh ? "今晚 18:00" : "今夜 18:00",
+              icon: Moon,
+              action: () => void day(_mkDay(0), "18:00"),
+            },
+          ]
+        : []),
+      { key: "snz-tmrw", title: zh ? "明天上午 09:00" : "明日 09:00", icon: Sunrise, action: () => void day(_mkDay(1), "09:00") },
+      { key: "snz-day2", title: zh ? "后天 09:00" : "明後日 09:00", icon: Calendar, action: () => void day(_mkDay(2), "09:00") },
+      { key: "snz-mon", title: zh ? "下周一 09:00" : "来週月 09:00", icon: Calendar, action: () => void day(_nextMon(), "09:00") },
+    ];
+
     return {
       key: "barsoul-snooze",
       title: zh ? "提醒我" : "リマインド",
       icon: Clock,
       action: () => {},
       shouldRender: isEditingAllowed && !!ws && !!pid,
-      nestedMenuItems: _snoozePresets(zh).map((p) => ({
-        key: `snooze-${p.v}`,
-        title: p.label,
-        description: `${p.date.getMonth() + 1}/${p.date.getDate()}`,
-        action: () => void snooze(p.v, p.label),
-      })),
+      nestedMenuItems: nested,
     };
   };
 
@@ -351,7 +408,8 @@ export const useProjectIssueMenuItems = (props: MenuItemFactoryProps): TContextM
       factory.createCopyMenuItem(),
       factory.createOpenInNewTabMenuItem(),
       factory.createCopyLinkMenuItem(),
-      // BARSOUL 2026-06-16: 右键「提醒我」移除 — 详情醒目条(SnoozeBar 两树, 含备忘/全选项)取代; 保留「设为定期」
+      // BARSOUL 2026-06-21: 右键「提醒我」回归(看板/列表) — hover 展开富预设(复用详情页 ReminderActionButton); 减少点击
+      factory.createSnoozeMenuItem(),
       factory.createRecurrizeMenuItem(),
       factory.createArchiveMenuItem(),
       factory.createDeleteMenuItem(),
@@ -367,6 +425,7 @@ export const useWorkItemDetailMenuItems = (props: MenuItemFactoryProps): TContex
     () => [
       factory.createCopyMenuItem(props.workspaceSlug),
       factory.createOpenInNewTabMenuItem(),
+      factory.createSnoozeMenuItem(),
       factory.createRecurrizeMenuItem(),
       factory.createArchiveMenuItem(),
       factory.createRestoreMenuItem(),
@@ -385,6 +444,7 @@ export const useAllIssueMenuItems = (props: MenuItemFactoryProps): TContextMenuI
       factory.createCopyMenuItem(),
       factory.createOpenInNewTabMenuItem(),
       factory.createCopyLinkMenuItem(),
+      factory.createSnoozeMenuItem(),
       factory.createRecurrizeMenuItem(),
       factory.createArchiveMenuItem(),
       factory.createDeleteMenuItem(),

@@ -12,7 +12,7 @@ import type { NodeViewProps as TNodeViewProps } from "@tiptap/react";
 // plane imports
 import type { TCustomComponentsMetaData } from "@plane/utils";
 // extension types
-import type { TTextAlign } from "@/extensions";
+import type { TSlashCommandAdditionalOption, TTextAlign } from "@/extensions";
 // plane editor imports
 import type {
   IEditorPropsExtended,
@@ -184,7 +184,15 @@ export type IEditorProps = {
   workItemIdentifier?: string | null;
 };
 
-export type ILiteTextEditorProps = IEditorProps;
+export type ILiteTextEditorProps = IEditorProps & {
+  /**
+   * BARSOUL(2026-07-25 hechun): コメント欄のスラッシュ命令。
+   * アプリ側が i18n 済みの項目を渡したときだけメニューが生え、しかも
+   * **渡した項目だけ** が出る(本文用の H1〜H6 / 表 / 画像は出さない)。
+   * 未指定＝従来どおりスラッシュ命令なし。
+   */
+  commentCommands?: TSlashCommandAdditionalOption[];
+};
 
 export type IRichTextEditorProps = IEditorProps & {
   dragDropEnabled?: boolean;

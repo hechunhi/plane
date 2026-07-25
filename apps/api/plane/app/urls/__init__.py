@@ -25,6 +25,7 @@ from .exporter import urlpatterns as exporter_urls
 from .smart_table import urlpatterns as smart_table_urls
 from .blueprint import urlpatterns as blueprint_urls
 from .recurring import urlpatterns as recurring_urls
+from .weekly import urlpatterns as weekly_urls
 
 urlpatterns = [
     *analytic_urls,
@@ -50,4 +51,5 @@ urlpatterns = [
     *smart_table_urls,
     *blueprint_urls,
     *recurring_urls,
+    *weekly_urls,
 ]

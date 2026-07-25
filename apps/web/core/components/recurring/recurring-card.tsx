@@ -16,6 +16,7 @@ import {
   AlarmClock,
   EyeOff,
   Eye,
+  Lock,
   Bell,
   BellRing,
   User,
@@ -182,6 +183,15 @@ function ReminderDialog({
   );
   const [busy, setBusy] = useState(false);
 
+  // 「全员隐藏」是减算的权力 — 仅作成者 or 项目/WS 管理者可行(后端权威, 见 recurring.py _can_team_hide)。
+  // initial 来自 SnoozeBar 时直接带 can_hide; SnoozeButton 新建路径无 initial, 故订阅同一 SWR 键(GET 即使 set=false 也返回 can_hide)。
+  const { data: liveState } = useSWR(
+    ws && pid && issueId ? `SNOOZE:${issueId}` : null,
+    () => recurringService.getSnooze(ws, pid, issueId),
+    { revalidateOnFocus: false }
+  );
+  const canHide = initial?.can_hide ?? liveState?.can_hide ?? false;
+
   // 选中时刻的实时人读预览(月/日(周几) 时:分)
   const WD = zh ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] : ["日", "月", "火", "水", "木", "金", "土"];
   const preview = (() => {
@@ -200,8 +210,26 @@ function ReminderDialog({
     if (mode === "lead" && hasDue) body.lead_days = lead;
     else body.until = date;
     setBusy(true);
-    const r = await recurringService.setSnooze(ws, pid, issueId, body).catch(() => null);
+    const r = await recurringService
+      .setSnooze(ws, pid, issueId, body)
+      .catch((e) => ({ __err: (e?.response?.status ?? e?.status) as number | undefined }) as const);
     setBusy(false);
+    if (r && "__err" in r) {
+      // 403 = 无「全员隐藏」权限(后端 _can_team_hide 守门); 其余按时间错误提示。
+      const forbidden = r.__err === 403;
+      setToast({
+        type: TOAST_TYPE.ERROR,
+        title: forbidden
+          ? zh
+            ? "无权限:仅创建者/管理者可对所有人隐藏"
+            : "権限なし:全員から隠せるのは作成者/管理者のみ"
+          : zh
+            ? "设置失败(请选未来时间)"
+            : "設定失敗(未来の日時を)",
+        message: "",
+      });
+      return;
+    }
     if (!r?.set) {
       setToast({
         type: TOAST_TYPE.ERROR,
@@ -372,26 +400,51 @@ function ReminderDialog({
                 </div>
               </div>
             )}
-            <label
-              aria-label={zh ? "到点前从看板/列表隐藏卡片" : "それまでカードを一覧から隠す"}
-              className="flex cursor-pointer items-start gap-2.5"
+            <Tooltip
+              disabled={canHide}
+              tooltipContent={
+                zh
+                  ? "只有卡片创建者或项目/工作区管理者可以「对所有人隐藏」"
+                  : "全員から隠せるのはカード作成者またはプロジェクト/WS管理者のみ"
+              }
             >
-              <input
-                type="checkbox"
-                checked={hide}
-                onChange={(e) => setHide(e.target.checked)}
-                className="mt-0.5 size-4"
-              />
-              <span className="text-12 leading-relaxed text-secondary">
-                <span className="inline-flex items-center gap-1 font-medium text-primary">
-                  {hide ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}{" "}
-                  {zh ? "到点前从看板/列表隐藏卡片" : "それまでカードを一覧から隠す"}
+              <label
+                aria-label={zh ? "到点前对所有人隐藏卡片" : "それまで全員からカードを隠す"}
+                className={cn(
+                  "flex items-start gap-2.5",
+                  canHide ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={hide}
+                  disabled={!canHide}
+                  onChange={(e) => setHide(e.target.checked)}
+                  className="mt-0.5 size-4 disabled:cursor-not-allowed"
+                />
+                <span className="text-12 leading-relaxed text-secondary">
+                  <span className="inline-flex items-center gap-1 font-medium text-primary">
+                    {!canHide ? (
+                      <Lock className="size-3.5" />
+                    ) : hide ? (
+                      <EyeOff className="size-3.5" />
+                    ) : (
+                      <Eye className="size-3.5" />
+                    )}{" "}
+                    {zh ? "到点前对所有人隐藏卡片" : "それまで全員からカードを隠す"}
+                  </span>
+                  <span className="block text-placeholder">
+                    {!canHide
+                      ? zh
+                        ? "仅创建者/管理者可隐藏 · 你可设提醒但卡片对所有人保持可见"
+                        : "作成者/管理者のみ隠せます · リマインダーは設定可、カードは全員に表示"
+                      : zh
+                        ? "勾选=到点前对所有人(含担当)隐藏 · 不勾=保留可见, 仅顶部提醒(推荐)"
+                        : "チェック=全員(担当含む)から隠す · 未チェック=表示のまま上部にバッジ(推奨)"}
+                  </span>
                 </span>
-                <span className="block text-placeholder">
-                  {zh ? "不勾=保留可见, 仅顶部显示提醒(推荐, 不怕忘)" : "未チェック=表示のまま, 上部にバッジ(推奨)"}
-                </span>
-              </span>
-            </label>
+              </label>
+            </Tooltip>
             <div>
               <div className="mb-1.5 text-11 font-semibold tracking-wide text-placeholder uppercase">
                 {zh ? "提醒频率" : "強度"}

@@ -11,7 +11,48 @@ import { useParams } from "next/navigation";
 import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
-import { Ico, ICON, invalidateAIState, type DerivedIssueState } from "./ai-state-line";
+import { Ico, ICON, invalidateAIState, type DerivedIssueState, type TInboxTriage } from "./ai-state-line";
+
+// ── BARSOUL Inbox Phase3: 个人收件箱分流(完成/归档/Snooze/Pin/Mute/回队)──
+// 只写 per-user inbox_states 派生投影,**绝不碰 SoR**。审批/托管中卡的隐藏动作被服务层
+// 冻结(409)→ 这里转成温和 toast,不静默失败。返回最新分流态供乐观更新回执。
+export type TriageAction = "read" | "done" | "archive" | "snooze" | "pin" | "mute" | "reset";
+export async function triageInbox(
+  slug: string,
+  projectId: string,
+  issueId: string,
+  action: TriageAction,
+  zh: boolean,
+  opts?: { snoozedTill?: string; value?: boolean }
+): Promise<TInboxTriage | null> {
+  if (!slug || !projectId || !issueId) return null;
+  try {
+    const r = await fetch(`/api/workspaces/${slug}/projects/${projectId}/issues/${issueId}/inbox/triage/`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, snoozed_till: opts?.snoozedTill, value: opts?.value }),
+    });
+    if (r.status === 409) {
+      // 托管=审批闸门:审批未完成不可清出(feedback_approval_state_lock)
+      setToast({
+        type: TOAST_TYPE.INFO,
+        title: zh ? "审批中,暂不能清出" : "承認中のため片付けできません",
+        message: zh ? "需先完成审批,卡片才会离开收件箱" : "承認を完了すると受信箱から外れます",
+      });
+      return null;
+    }
+    if (!r.ok) throw new Error();
+    return (await r.json()) as TInboxTriage;
+  } catch {
+    setToast({
+      type: TOAST_TYPE.ERROR,
+      title: zh ? "操作失败" : "操作に失敗しました",
+      message: zh ? "请稍后重试" : "後ほど再度お試しください",
+    });
+    return null;
+  }
+}
 
 function useZhLite(): boolean {
   const { currentLocale } = useTranslation();

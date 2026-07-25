@@ -6,12 +6,28 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "paths": {
-      "src/*": ["./src/*"],
-      "@/*": ["./src/core/*"],
-      "@/plane-editor/*": ["./src/ce/*"],
-      "@/styles/*": ["./src/styles/*"]
+      "src/*": [
+        "./src/*"
+      ],
+      "@/*": [
+        "./src/core/*"
+      ],
+      "@/plane-editor/*": [
+        "./src/ce/*"
+      ],
+      "@/styles/*": [
+        "./src/styles/*"
+      ]
     }
   },
-  "include": ["src/**/*", "index.d.ts"],
-  "exclude": ["dist", "build", "node_modules"]
+  "include": [
+    "src/**/*",
+    "index.d.ts",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "dist",
+    "build",
+    "node_modules"
+  ]
 }

@@ -13,6 +13,16 @@ import { useTranslation } from "@plane/i18n";
 import { useUser } from "@/hooks/store/user";
 
 type Bilingual = { zh: string; ja: string };
+// BARSOUL Inbox Phase3: 个人分流态(per-user 派生投影)。仅「我的工作」ws 端点返回;
+// 项目级端点无此字段 → undefined = 未分流(默认在队)。绝不代表 SoR。
+export type TInboxTriage = {
+  read_at: string | null;
+  done_at: string | null;
+  archived_at: string | null;
+  snoozed_till: string | null;
+  pinned: boolean;
+  muted: boolean;
+};
 export type DerivedIssueState = {
   issue_id: string;
   state: "ACTIVE" | "WAITING" | "STALE" | "UNKNOWN";
@@ -46,6 +56,7 @@ export type DerivedIssueState = {
     tension: Bilingual;
     rep_child: { id: string; sequence_id: number; name: string } | null; // 代表子(球所在的活跃子,可点跳)
   } | null;
+  inbox?: TInboxTriage; // 个人分流态(仅 ws「我的工作」端点附带)
 };
 
 const STALL_TH = 4;
@@ -123,6 +134,11 @@ export const ICON = {
   users: ["M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M23 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"],
   close: ["M18 6L6 18", "M6 6l12 12"],
   subtree: ["M21 12h-8", "M21 6H8", "M21 18h-8", "M3 6v4c0 1.1.9 2 2 2h3", "M3 10v6c0 1.1.9 2 2 2h3"],
+  check: ["M20 6L9 17l-5-5"],
+  archive: ["M21 8v13H3V8", "M1 3h22v5H1z", "M10 12h4"],
+  pin: ["M12 17v5", "M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"],
+  undo: ["M9 14L4 9l5-5", "M4 9h11a4 4 0 0 1 0 8h-1"],
+  moon: ["M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"],
 };
 
 export function AvatarBadge({ name, size = 18 }: { name: string; size?: number }) {

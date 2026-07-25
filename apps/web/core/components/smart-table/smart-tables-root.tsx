@@ -284,6 +284,7 @@ export function SmartTablesRoot() {
   const [viewMenu, setViewMenu] = useState(false);
   const [rowH, setRowH] = useState(36);
   const [freezeN, setFreezeN] = useState(1);
+  const [, setHistTick] = useState(0);
   const [blueprints, setBlueprints] = useState<TBlueprint[]>([]);
   const [bpMenu, setBpMenu] = useState(false);
   const [bpSel, setBpSel] = useState<TBlueprint | null>(null);

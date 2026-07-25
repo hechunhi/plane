@@ -23,6 +23,8 @@ import { Tooltip } from "@plane/propel/tooltip";
 import { Avatar, EModalPosition, EModalWidth, Input, Loader, ModalCore, TabList, TextArea } from "@plane/ui";
 // components
 import { MemberDropdown } from "@/components/dropdowns/member/dropdown";
+// BARSOUL: 審査カードの原子構成エディタ（2026-07-25）
+import { ApprovalAtomComposer, pruneAtoms, type TAtom } from "./approval-atoms";
 
 // B-2p v2: variant="widget" = 快捷动作行风格触发器(用户点名动作按钮统一进该行)
 // B-5b: variant="controlled" = 触发器外置(发起流程下拉的「仅审批」项),open/onClose 受控
@@ -33,6 +35,11 @@ type Props = {
   variant?: "icon" | "widget" | "controlled";
   open?: boolean;
   onClose?: () => void;
+  /**
+   * BARSOUL(2026-07-25): 開くときの初期指示。`/審査 請求書の件` の後続語や、
+   * 愛ちゃん私聊の返答をそのまま下敷きにする経路で使う。空なら従来どおり。
+   */
+  initialInstruction?: string;
 };
 type Mode = "ANY" | "ALL" | "SEQUENTIAL";
 
@@ -103,6 +110,12 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
   const [riskFlags, setRiskFlags] = useState<string[]>([]);
   const [riskNote, setRiskNote] = useState("");
   const [clarify, setClarify] = useState("");
+  // BARSOUL: カード構成（原子列）。**開いて初めて**取りに行く（既定は従来の自動組成）。
+  // 一度取ったら以後は必ず送る —— 見せた構成と実際のカードを食い違わせないため。
+  const [atoms, setAtoms] = useState<TAtom[]>([]);
+  const [atomsLoaded, setAtomsLoaded] = useState(false);
+  const [atomsLoading, setAtomsLoading] = useState(false);
+  const [atomsEdited, setAtomsEdited] = useState(false);
   // 提交
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -121,6 +134,10 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
     setRiskFlags([]);
     setRiskNote("");
     setClarify("");
+    setAtoms([]);
+    setAtomsLoaded(false);
+    setAtomsLoading(false);
+    setAtomsEdited(false);
     setSubmitting(false);
     setError("");
     setDoneNo("");
@@ -131,13 +148,42 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
     reset();
   };
 
-  const runAnalyze = async () => {
+  /**
+   * BARSOUL: カード構成の提案を取りに行く（`action:"blocks"` = **読むだけ**、起票しない）。
+   * 引数で subject/detail を渡すのは、直前の analyze の setState を待たないため。
+   */
+  const runBlocks = async (sub?: string, det?: string) => {
+    const s = (sub ?? subject).trim();
+    const d = (det ?? detail).trim();
+    if (!s && !d) return;
+    setAtomsLoading(true);
+    try {
+      const j = await callAiApproval(workspaceSlug, projectId, issueId, {
+        action: "blocks",
+        subject: s,
+        detail: d,
+        text: d || s,
+      });
+      const got = Array.isArray(j.blocks) ? (j.blocks as TAtom[]) : [];
+      setAtoms(got);
+      setAtomsLoaded(true);
+      setAtomsEdited(false);
+    } catch {
+      // 構成は「あれば嬉しい」もの。取れなくても発起は止めない
+      //（空のまま送らない = atomsLoaded を立てない → 従来の自動組成に戻る）。
+      setAtomsLoaded(false);
+    } finally {
+      setAtomsLoading(false);
+    }
+  };
+
+  const runAnalyze = async (textOverride?: string) => {
     setAnalyzing(true);
     setError("");
     try {
       const j = await callAiApproval(workspaceSlug, projectId, issueId, {
         action: "analyze",
-        text: instruction,
+        text: textOverride ?? instruction,
         lang,
       });
       if (j.subject) setSubject(j.subject);
@@ -156,6 +202,9 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
       setRiskNote(j.risk_note || "");
       setClarify(j.clarify || "");
       setAnalyzed(true);
+      // 下敷きが書き変わったら構成も取り直す。ただし **人が触った構成は捨てない**
+      //（自動更新が人の手を上書きするのは、この UI で一番やってはいけないこと）。
+      if (atomsLoaded && !atomsEdited) void runBlocks(j.subject || "", j.detail || "");
     } catch {
       setError(t("aichan_approval.err_compose"));
       setAnalyzed(true); // 允许手动填写
@@ -165,8 +214,13 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
   };
 
   // 打开即分析(一次)。关闭→reset(analyzed=false)→下次打开重新分析。
+  // BARSOUL: initialInstruction があれば **それを積んでから** 分析する
+  // (setState は非同期なので instruction 経由ではなく直接渡す)。
   useEffect(() => {
-    if (open && !analyzed && !analyzing) runAnalyze();
+    if (!open || analyzed || analyzing) return;
+    const seed = (props.initialInstruction ?? "").trim();
+    if (seed) setInstruction(seed);
+    runAnalyze(seed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -182,6 +236,9 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
     }
     setSubmitting(true);
     try {
+      // 構成を一度でも見た人には、**見たものをそのまま**焼く。
+      // 一度も開いていなければ blocks を送らない → 従来どおり愛ちゃんが組む。
+      const blocks = atomsLoaded ? pruneAtoms(atoms) : [];
       const j = await callAiApproval(workspaceSlug, projectId, issueId, {
         action: "invoke",
         subject,
@@ -189,6 +246,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
         text: detail || subject,
         approver_ids: approvers,
         mode,
+        ...(blocks.length ? { blocks } : {}),
       });
       setDoneNo(j.no || "—");
     } catch (e: any) {
@@ -305,7 +363,7 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={runAnalyze}
+                      onClick={() => void runAnalyze()}
                       loading={analyzing}
                       disabled={analyzing || submitting}
                       className="text-accent-primary"
@@ -432,6 +490,22 @@ export const AichanApprovalButton = observer(function AichanApprovalButton(props
                   />
                   <p className="text-xs text-tertiary">{t(`aichan_approval.mode_desc_${mode.toLowerCase()}`)}</p>
                 </div>
+
+                {/* BARSOUL: カード構成（既定は折り畳み。決裁の主役は上の 3 つ）。 */}
+                <ApprovalAtomComposer
+                  atoms={atoms}
+                  onChange={(next) => {
+                    setAtoms(next);
+                    setAtomsEdited(true);
+                  }}
+                  onOpenChange={(isOpen) => {
+                    if (isOpen && !atomsLoaded && !atomsLoading) void runBlocks();
+                  }}
+                  onRegenerate={() => void runBlocks()}
+                  regenerating={atomsLoading}
+                  edited={atomsEdited}
+                  disabled={submitting}
+                />
               </div>
 
               {/* ── error ── */}
