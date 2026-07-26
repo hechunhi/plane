@@ -15,6 +15,7 @@ import { useTranslation } from "@plane/i18n";
 import { joinUrlPath } from "@plane/utils";
 // components
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
+import { NotificationAppSidebarOption } from "@/components/workspace-notifications/notification-app-sidebar-option";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useUser, useUserPermissions } from "@/hooks/store/user";
@@ -77,6 +78,10 @@ export const SidebarItemBase = observer(function SidebarItemBase({
           {icon}
           <p className="text-13 leading-5 font-medium">{t(item.labelTranslationKey)}</p>
         </div>
+        {/* BARSOUL(2026-07-26): 「我的工作」は通知センターの流し + レンズなので、
+            未読はこの入口に出す。今まで未読表示はヘッダ右上の Inbox アイコンだけで、
+            常時見えているサイドバーの入口側は無印 = 開くまで気付けなかった。 */}
+        {item.key === "my-work" && <NotificationAppSidebarOption workspaceSlug={slug} />}
         {additionalRender?.(item.key, slug)}
       </SidebarNavItem>
     </Link>

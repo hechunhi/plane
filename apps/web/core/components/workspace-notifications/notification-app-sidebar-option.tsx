@@ -11,6 +11,7 @@ import useSWR from "swr";
 import { getNumberCount } from "@plane/utils";
 // components
 import { CountChip } from "@/components/common/count-chip";
+import { UnreadDot } from "@/components/notifications/issue-unread-badge";
 // hooks
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 
@@ -43,7 +44,19 @@ export const NotificationAppSidebarOption = observer(function NotificationAppSid
   // comment/update の知会は数えない ＝ 数字を「本当に自分が動く件数」に一致させる。
   const hasMention = unreadNotificationsCount.mention_unread_notifications_count > 0;
 
-  if (actionRequiredUnreadCount <= 0) return <></>;
+  // BARSOUL(2026-07-26): 「動かなくていいが未読はある」を落とさない。
+  // 件数(琥珀)は行動が要る分だけ = 数字の意味を保つ。しかし数字が出ないと
+  // 「新しい動きがある」事自体が入口から見えず、開くきっかけが無くなる。
+  // → その場合は件数を出さず赤点だけ(サイドバーの項目赤点と同じ語彙:
+  //    赤=新しい動き / 琥珀の数字=何件待っている)。
+  if (actionRequiredUnreadCount <= 0) {
+    if (unreadNotificationsCount.total_unread_notifications_count <= 0) return <></>;
+    return (
+      <div className="ml-auto flex items-center pr-0.5">
+        <UnreadDot />
+      </div>
+    );
+  }
 
   return (
     <div className="ml-auto">
