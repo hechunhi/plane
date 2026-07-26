@@ -94,12 +94,17 @@ export function WeeklyEntryPanel(props: Props) {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  /** 下書きタブで訳文を読んでいる時の、その訳文(平文)。原文表示中は null。 */
+  const [draftShownText, setDraftShownText] = useState<string | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // 人が切り替えた選択は尊重するが、メンバーが変われば既定へ戻す。
   useEffect(() => {
     setTab((entry.content_html || "").trim() ? "final" : "draft");
     setEditing(false);
+    // 別のメンバーに切り替えた時、前の人の訳文が種に残らないように落とす
+    // (確定版タブに居ると下書き側の WeeklyTranslate が居らず、自力で null を報せられない)。
+    setDraftShownText(null);
   }, [entry.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const refByKey = useMemo(() => {
@@ -114,6 +119,21 @@ export function WeeklyEntryPanel(props: Props) {
   const toPlain = (html: string) => blocksToPlain(parseWeeklyHtml(html || ""));
 
   const startEdit = (seed: "content" | "draft") => {
+    /**
+     * 下書きから起こす時は「読んでいた言語」で開く — 中文で読み切ったのに
+     * エディタが日本語で開いたら、訳を読んだ意味が無い(出処キー `[BS-374]` は
+     * 訳文にも残るので、参照チップは保存時にそのまま復元される)。
+     *
+     * 確定版の編集は **必ず原文** から。あちらは人が書いた SoR で、
+     * 機械訳を種にすると保存した瞬間に SoR が訳文で上書きされる。
+     */
+    if (seed === "draft" && draftShownText?.trim()) {
+      setText(draftShownText);
+      setTab("final");
+      setEditing(true);
+      window.setTimeout(() => taRef.current?.focus(), 0);
+      return;
+    }
     setText(toPlain(seed === "content" ? entry.content_html : entry.draft_html));
     setTab("final");
     setEditing(true);
@@ -269,6 +289,7 @@ export function WeeklyEntryPanel(props: Props) {
                 html={entry.draft_html}
                 sources={entry.sources || []}
                 onRefClick={onRefClick}
+                onShownTextChange={setDraftShownText}
               />
               {draftMeta ? (
                 <p className="border-t border-subtle pt-3 text-11 text-placeholder">{draftMeta}</p>

@@ -9,7 +9,7 @@
  * → 1 回の翻訳呼出で見出し・箇条書き・出処チップが生き残る(weekly-html.tsx 参照)。
  * **原文は一切変更しない** — 訳文は派生キャッシュ(ContentTranslation)。
  */
-import { RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "@plane/i18n";
 import { Tooltip } from "@plane/ui";
@@ -30,10 +30,16 @@ type Props = {
   html: string;
   sources: TWeeklySource[];
   onRefClick?: (projectId: string, issueId: string) => void;
+  /**
+   * 「いま画面に出ている平文」を親へ知らせる(訳文表示中のみ、原文表示中は null)。
+   * 下書きから起こす時に **読んでいた言語のまま** 種にするため — 中文で読んでいたのに
+   * エディタが日本語で開くと、訳を読んだ意味が無くなる。
+   */
+  onShownTextChange?: (text: string | null) => void;
 };
 
 export function WeeklyTranslate(props: Props) {
-  const { workspaceSlug, entryId, field, html, sources, onRefClick } = props;
+  const { workspaceSlug, entryId, field, html, sources, onRefClick, onShownTextChange } = props;
   const { currentLocale } = useTranslation();
   const viewer: "zh" | "ja" = currentLocale === "ja" ? "ja" : "zh";
 
@@ -99,6 +105,11 @@ export function WeeklyTranslate(props: Props) {
   }, [wantTranslation, trText, doFetch]);
 
   const showingTranslation = wantTranslation && !!trText;
+
+  useEffect(() => {
+    onShownTextChange?.(showingTranslation ? trText : null);
+  }, [showingTranslation, trText, onShownTextChange]);
+
   const trBlocks = useMemo(
     () => (showingTranslation ? parseWeeklyPlain(trText || "", refByKey) : []),
     [showingTranslation, trText, refByKey]
@@ -178,16 +189,23 @@ export function WeeklyTranslate(props: Props) {
         </div>
       )}
 
-      <WeeklyHtml blocks={showingTranslation ? trBlocks : blocks} onRefClick={onRefClick} />
-
+      {/* 失敗は「訳の状態」であって週報の中身ではない。本文の末尾に置くと
+          原文の続きに見えるので、切替トグルと同じ帯 = 本文の上に出す。 */}
       {errorMsg && !loading && (
-        <div className="flex items-center gap-2 text-11 text-tertiary">
-          <span>{errorMsg}</span>
-          <button type="button" onClick={() => void doFetch(true)} className="text-accent-primary hover:underline">
+        <div className="flex items-center gap-2 rounded-md border border-subtle bg-layer-transparent px-2 py-1 text-11 text-tertiary">
+          <AlertCircle className="size-3.5 shrink-0 text-warning-primary" strokeWidth={1.75} />
+          <span className="min-w-0 flex-1">{errorMsg}</span>
+          <button
+            type="button"
+            onClick={() => void doFetch(true)}
+            className="shrink-0 whitespace-nowrap text-accent-primary transition-colors hover:underline"
+          >
             {viewer === "zh" ? "重试" : "再試行"}
           </button>
         </div>
       )}
+
+      <WeeklyHtml blocks={showingTranslation ? trBlocks : blocks} onRefClick={onRefClick} />
     </div>
   );
 }
