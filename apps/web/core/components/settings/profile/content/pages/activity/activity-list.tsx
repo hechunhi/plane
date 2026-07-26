@@ -10,6 +10,7 @@ import Link from "next/link";
 import useSWR from "swr";
 // icons
 import { History, MessageSquare } from "lucide-react";
+import { useTranslation } from "@plane/i18n";
 import { calculateTimeAgo, getFileURL } from "@plane/utils";
 // hooks
 import { ActivityIcon, ActivityMessage } from "@/components/core/activity";
@@ -35,6 +36,7 @@ export const ActivityProfileSettingsList = observer(function ProfileActivityList
   const { cursor, perPage, updateResultsCount, updateTotalPages, updateEmptyState } = props;
   // store hooks
   const { data: currentUser } = useUserProfile();
+  const { t } = useTranslation();
 
   const { data: userProfileActivity } = useSWR(
     USER_ACTIVITY({
@@ -96,7 +98,8 @@ export const ActivityProfileSettingsList = observer(function ProfileActivityList
                             : activityItem.actor_detail.display_name}
                         </div>
                         <p className="mt-0.5 text-11 text-secondary">
-                          Commented {calculateTimeAgo(activityItem.created_at)}
+                          {t("issue_activity.commented")}
+                          {calculateTimeAgo(activityItem.created_at)}
                         </p>
                       </div>
                       <div className="issue-comments-section p-0">
@@ -166,7 +169,7 @@ export const ActivityProfileSettingsList = observer(function ProfileActivityList
                               >
                                 <span className="text-gray font-medium">
                                   {currentUser?.id === activityItem.actor_detail.id
-                                    ? "You"
+                                    ? t("you")
                                     : activityItem.actor_detail.display_name}
                                 </span>
                               </Link>

@@ -39,6 +39,8 @@ import { Tooltip } from "@plane/propel/tooltip";
 import type { IIssueActivity } from "@plane/types";
 import { renderFormattedDate, generateWorkItemLink, capitalizeFirstLetter } from "@plane/utils";
 // helpers
+import { translatePriority } from "@/lib/priority-label";
+// helpers
 import { useLabel } from "@/hooks/store/use-label";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // types
@@ -384,7 +386,9 @@ const activityDetails: {
       <>
         {t("issue_activity.set_the_priority_to")}
         <span className="font-medium text-primary">
-          {activity.new_value ? capitalizeFirstLetter(activity.new_value) : t("issue_activity.priority_none")}
+          {activity.new_value
+            ? (translatePriority(activity.new_value, t) ?? capitalizeFirstLetter(activity.new_value))
+            : t("issue_activity.priority_none")}
         </span>
         <IssueSuffix activity={activity} showIssue={showIssue} />
       </>

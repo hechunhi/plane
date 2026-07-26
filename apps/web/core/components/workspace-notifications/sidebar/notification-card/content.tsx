@@ -24,6 +24,7 @@ import {
 } from "@/plane-web/components/workspace-notifications/notification-card/content";
 // BARSOUL: 提醒/定期 通知专属文案(无 issue_activity, 走自有渲染)
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
+import { translatePriority } from "@/lib/priority-label";
 import { useUser } from "@/hooks/store/user";
 
 // Types
@@ -117,7 +118,9 @@ export const BASE_NOTIFICATION_CONTENT_MAP: TNotificationContentMap = {
   }),
   priority: ({ newValue }, { t }) => ({
     action: t("issue_activity.set_the_priority_to"),
-    value: newValue,
+    /* 優先度は DB の生値（urgent/high/medium/low）で来る。値も訳さないと
+       「将优先级设置为 medium」のように文だけ中文で値が英語になる。 */
+    value: translatePriority(newValue, t),
     showConnector: false,
   }),
   name: ({ newValue }, { t }) => ({
