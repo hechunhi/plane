@@ -449,7 +449,6 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
 
   const startReply = (m: TMeetingChatMessage) => {
     closeMenus();
-    setActiveId(null);
     setReplyingTo(m);
     window.setTimeout(() => composerRef.current?.focus(), 0);
   };
@@ -457,6 +456,8 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
   const closeMenus = () => {
     setPickerFor(null);
     setConfirmDel(null);
+    // 操作列も一緒に畳む。ポインタが離れた / 別の操作に移った時点で「その発言を触っている」は終わり。
+    setActiveId(null);
   };
 
   const toggleReaction = async (m: TMeetingChatMessage, emoji: string) => {
@@ -472,7 +473,6 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
 
   const startEdit = (m: TMeetingChatMessage) => {
     closeMenus();
-    setActiveId(null);
     setEditingId(m.id);
     setEditText(m.text);
   };
@@ -570,6 +570,14 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                       flashId === m.id && "bg-accent-primary/10"
                     )}
                     onMouseLeave={closeMenus}
+                    onClick={(e) => {
+                      /* タッチ端末はホバーが無いので、発言を叩いた時だけ操作列を出す。
+                         中の押せる物(展開・引用元・画像・リアクション・操作列自身)を
+                         押した時は畳まない — 押した結果を消してしまうため。 */
+                      if (!canAct) return;
+                      if ((e.target as HTMLElement).closest("button,a,textarea,input")) return;
+                      setActiveId((c) => (c === m.id ? null : m.id));
+                    }}
                   >
                     <span className="w-7 shrink-0 pt-0.5">
                       {!grouped && (
@@ -584,8 +592,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                     </span>
                     <div className="min-w-0 flex-1">
                       {!grouped && (
-                        /* max-sm では操作列が常時表示なので、名前と時刻の場所を空けておく。 */
-                        <p className={cn("flex items-baseline gap-2", canAct && "max-sm:pr-28")}>
+                        <p className="flex items-baseline gap-2">
                           <span className="truncate text-12 font-medium text-secondary">
                             {m.author?.display_name || "—"}
                           </span>
@@ -789,11 +796,15 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                       <div
                         className={cn(
                           /* top-0 = **自分の** 発言の右上に重ねる。-top-2 だと連続発言(mt-0)で
-                             1 つ上の発言の最終行に被る — 特に max-sm は常時表示なので実害が出る。 */
+                             1 つ上の発言の最終行に被る。 */
                           "absolute right-0 top-0 z-10 flex items-center gap-0.5 rounded-md border border-subtle bg-layer-1 p-0.5 shadow-sm transition-opacity",
+                          /* 常時表示にしない。本文の上に重なる帯なので、出しっぱなしだと
+                             読んでいる文字を隠す(特に連続発言は見出し行が無く、1 行目に直接被る)。
+                             opacity-0 のままでは当たり判定が残り、右上を触ると勝手に取消確認が
+                             開くので pointer-events も一緒に落とす。 */
                           activeId === m.id || pickerFor === m.id || confirmDel === m.id
                             ? "opacity-100"
-                            : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100"
+                            : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
                         )}
                       >
                         <button
