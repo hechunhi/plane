@@ -4,9 +4,11 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
+// plane imports
+import { useTranslation, type TTranslationStore } from "@plane/i18n";
 // store hooks
 // icons
 import {
@@ -41,10 +43,13 @@ import { useLabel } from "@/hooks/store/use-label";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // types
 
+type TT = TTranslationStore["t"];
+
 export function IssueLink({ activity }: { activity: IIssueActivity }) {
   // router params
   const { workspaceSlug } = useParams();
   const { isMobile } = usePlatformOS();
+  const { t } = useTranslation();
 
   const workItemLink = generateWorkItemLink({
     workspaceSlug: workspaceSlug?.toString() ?? activity.workspace_detail?.slug,
@@ -56,7 +61,7 @@ export function IssueLink({ activity }: { activity: IIssueActivity }) {
 
   return (
     <Tooltip
-      tooltipContent={activity?.issue_detail ? activity.issue_detail.name : "This work item has been deleted"}
+      tooltipContent={activity?.issue_detail ? activity.issue_detail.name : t("issue_activity.work_item_deleted")}
       isMobile={isMobile}
     >
       {activity?.issue_detail ? (
@@ -72,10 +77,28 @@ export function IssueLink({ activity }: { activity: IIssueActivity }) {
         </a>
       ) : (
         <span className="inline-flex items-center gap-1 font-medium whitespace-nowrap text-primary">
-          {" a work item"}{" "}
+          {t("issue_activity.a_work_item")}{" "}
         </span>
       )}
     </Tooltip>
+  );
+}
+
+/**
+ * BARSOUL(2026-07-26 hechun): 「どの課題の話か」を出す時の後置。
+ *
+ * 元は `to / from / of / for` を英語のまま挟み込んでいた。ja/zh では語順が違う
+ * ので、訳語を差し替えても文にならない(「担当者を追加しました 何淳 を BS-386」)。
+ * 中黒で **区切る** だけにすれば、どの言語でも壊れない — 連結子を訳す代わりに
+ * 連結子を無くす。
+ */
+function IssueSuffix({ activity, showIssue }: { activity: IIssueActivity; showIssue: boolean }) {
+  if (!showIssue) return null;
+  return (
+    <>
+      <span className="text-tertiary"> · </span>
+      <IssueLink activity={activity} />
+    </>
   );
 }
 
@@ -116,633 +139,357 @@ const LabelPill = observer(function LabelPill({ labelId, workspaceSlug }: { labe
   );
 });
 
-const inboxActivityMessage = {
-  declined: {
-    showIssue: "declined work item",
-    noIssue: "declined this work item from intake.",
-  },
-  snoozed: {
-    showIssue: "snoozed work item",
-    noIssue: "snoozed this work item.",
-  },
-  accepted: {
-    showIssue: "accepted work item",
-    noIssue: "accepted this work item from intake.",
-  },
-  markedDuplicate: {
-    showIssue: "declined work item",
-    noIssue: "declined this work item from intake by marking a duplicate work item.",
-  },
-};
-
-const getInboxUserActivityMessage = (activity: IIssueActivity, showIssue: boolean) => {
+/** intake の可否は verb に数字で載ってくる(-1 却下 / 0 スヌーズ / 1 承認 / 2 重複却下)。 */
+const getInboxUserActivityMessage = (activity: IIssueActivity, t: TT) => {
   switch (activity.verb) {
     case "-1":
-      return showIssue ? inboxActivityMessage.declined.showIssue : inboxActivityMessage.declined.noIssue;
+      return t("issue_activity.declined_from_intake");
     case "0":
-      return showIssue ? inboxActivityMessage.snoozed.showIssue : inboxActivityMessage.snoozed.noIssue;
+      return t("issue_activity.snoozed_work_item");
     case "1":
-      return showIssue ? inboxActivityMessage.accepted.showIssue : inboxActivityMessage.accepted.noIssue;
+      return t("issue_activity.accepted_from_intake");
     case "2":
-      return showIssue ? inboxActivityMessage.markedDuplicate.showIssue : inboxActivityMessage.markedDuplicate.noIssue;
+      return t("issue_activity.declined_from_intake_duplicate");
     default:
-      return "updated intake work item status.";
+      return t("issue_activity.updated_intake_status");
   }
 };
 
+/**
+ * BARSOUL(2026-07-26 hechun): 個人概要 / 個人の活動 の文面を多言語化。
+ *
+ * 語彙は通知カードと同じ `issue_activity.*` を再利用する — 同じ出来事が
+ * 「受信箱では日本語、個人概要では英語」になっていると、同じ事だと読めない。
+ */
 const activityDetails: {
   [key: string]: {
-    message: (activity: IIssueActivity, showIssue: boolean, workspaceSlug: string) => React.ReactNode;
-    icon: React.ReactNode;
+    message: (activity: IIssueActivity, showIssue: boolean, workspaceSlug: string, t: TT) => ReactNode;
+    icon: ReactNode;
   };
 } = {
   assignees: {
-    message: (activity, showIssue) => {
-      if (activity.old_value === "")
-        return (
-          <>
-            added a new assignee <UserLink activity={activity} />
-            {showIssue && (
-              <>
-                {" "}
-                to <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            removed the assignee <UserLink activity={activity} />
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-    },
+    message: (activity, showIssue, _workspaceSlug, t) => (
+      <>
+        {t(activity.old_value === "" ? "issue_activity.added_a_new_assignee" : "issue_activity.removed_the_assignee")}
+        <UserLink activity={activity} />
+        <IssueSuffix activity={activity} showIssue={showIssue} />
+      </>
+    ),
     icon: <Users2Icon size={12} className="text-secondary" aria-hidden="true" />,
   },
   archived_at: {
-    message: (activity) => {
-      if (activity.new_value === "restore")
-        return (
-          <>
-            restored <IssueLink activity={activity} />
-          </>
-        );
-      else
-        return (
-          <>
-            archived <IssueLink activity={activity} />
-          </>
-        );
-    },
+    message: (activity, _showIssue, _workspaceSlug, t) => (
+      <>
+        {t(
+          activity.new_value === "restore"
+            ? "issue_activity.restored_the_work_item"
+            : "issue_activity.archived_the_work_item"
+        )}
+        <IssueSuffix activity={activity} showIssue />
+      </>
+    ),
     icon: <ArchiveIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   attachment: {
-    message: (activity, showIssue) => {
-      if (activity.verb === "created")
-        return (
-          <>
-            uploaded a new attachment
-            {showIssue && (
-              <>
-                {" "}
-                to <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            removed an attachment
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-    },
+    message: (activity, showIssue, _workspaceSlug, t) => (
+      <>
+        {t(
+          activity.verb === "created"
+            ? "issue_activity.uploaded_a_new_attachment"
+            : "issue_activity.removed_an_attachment"
+        )}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
+      </>
+    ),
     icon: <PaperclipIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   description: {
-    message: (activity, showIssue) => (
+    message: (activity, showIssue, _workspaceSlug, t) => (
       <>
-        updated the description
-        {showIssue && (
-          <>
-            {" "}
-            of <IssueLink activity={activity} />
-          </>
-        )}
+        {t("issue_activity.updated_the_description")}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
       </>
     ),
     icon: <MessageSquareIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   estimate_point: {
-    message: (activity, showIssue) => {
-      if (!activity.new_value)
-        return (
-          <>
-            removed the estimate point
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            set the estimate point to {activity.new_value}
-            {showIssue && (
-              <>
-                {" "}
-                for <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-    },
+    message: (activity, showIssue, _workspaceSlug, t) => (
+      <>
+        {t(
+          !activity.new_value
+            ? "issue_activity.removed_the_estimate_point"
+            : "issue_activity.set_the_estimate_point_to"
+        )}
+        {activity.new_value && <span className="font-medium text-primary">{activity.new_value}</span>}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
+      </>
+    ),
     icon: <TriangleIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   issue: {
-    message: (activity) => {
-      if (activity.verb === "created")
-        return (
-          <>
-            created <IssueLink activity={activity} />
-          </>
-        );
-      else if (activity.verb === "converted")
-        return (
-          <>
-            converted <IssueLink activity={activity} /> to an epic
-          </>
-        );
-      else
-        return (
-          <>
-            deleted <IssueLink activity={activity} />
-          </>
-        );
-    },
+    message: (activity, _showIssue, _workspaceSlug, t) => (
+      <>
+        {t(
+          activity.verb === "created"
+            ? "issue_activity.created_work_item"
+            : activity.verb === "converted"
+              ? "issue_activity.converted_to_epic"
+              : "issue_activity.deleted_work_item"
+        )}
+        <IssueLink activity={activity} />
+      </>
+    ),
     icon: <WorkItemsIcon width={12} height={12} className="text-secondary" aria-hidden="true" />,
   },
   epic: {
-    message: (activity) => {
-      if (activity.verb === "created")
-        return (
-          <>
-            created <IssueLink activity={activity} />
-          </>
-        );
-      else if (activity.verb === "converted")
-        return (
-          <>
-            converted <IssueLink activity={activity} /> to a work item
-          </>
-        );
-      else
-        return (
-          <>
-            deleted <IssueLink activity={activity} />
-          </>
-        );
-    },
+    message: (activity, _showIssue, _workspaceSlug, t) => (
+      <>
+        {t(
+          activity.verb === "created"
+            ? "issue_activity.created_work_item"
+            : activity.verb === "converted"
+              ? "issue_activity.converted_to_work_item"
+              : "issue_activity.deleted_work_item"
+        )}
+        <IssueLink activity={activity} />
+      </>
+    ),
     icon: <EpicIcon width={12} height={12} className="text-secondary" aria-hidden="true" />,
   },
   labels: {
-    message: (activity, showIssue, workspaceSlug) => {
-      if (activity.old_value === "")
-        return (
-          <span className="overflow-hidden">
-            added a new label{" "}
-            <span className="inline-flex items-center gap-2 rounded-full border border-strong px-2 py-0.5 text-11">
-              <LabelPill labelId={activity.new_identifier ?? ""} workspaceSlug={workspaceSlug} />
-              <span className="line-clamp-1 flex-shrink font-medium break-all text-primary">{activity.new_value}</span>
+    message: (activity, showIssue, workspaceSlug, t) => {
+      const added = activity.old_value === "";
+      return (
+        <span className="overflow-hidden">
+          {t(added ? "issue_activity.added_a_new_label" : "issue_activity.removed_the_label")}
+          <span className="inline-flex items-center gap-2 rounded-full border border-strong px-2 py-0.5 text-11">
+            <LabelPill
+              labelId={(added ? activity.new_identifier : activity.old_identifier) ?? ""}
+              workspaceSlug={workspaceSlug}
+            />
+            <span className="line-clamp-1 flex-shrink font-medium break-all text-primary">
+              {added ? activity.new_value : activity.old_value}
             </span>
-            {showIssue && (
-              <span className="">
-                {" "}
-                to <IssueLink activity={activity} />
-              </span>
-            )}
           </span>
-        );
-      else
-        return (
-          <>
-            removed the label{" "}
-            <span className="inline-flex items-center gap-2 rounded-full border border-strong px-2 py-0.5 text-11">
-              <LabelPill labelId={activity.old_identifier ?? ""} workspaceSlug={workspaceSlug} />
-              <span className="line-clamp-1 flex-shrink font-medium break-all text-primary">{activity.old_value}</span>
-            </span>
-            {showIssue && (
-              <span>
-                {" "}
-                from <IssueLink activity={activity} />
-              </span>
-            )}
-          </>
-        );
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </span>
+      );
     },
     icon: <TagIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   link: {
-    message: (activity, showIssue) => {
-      if (activity.verb === "created")
-        return (
-          <>
-            added this{" "}
-            <a
-              href={`${activity.new_value}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-            >
-              link
-            </a>
-            {showIssue && (
-              <>
-                {" "}
-                to <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else if (activity.verb === "updated")
-        return (
-          <>
-            updated the{" "}
-            <a
-              href={`${activity.old_value}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-            >
-              link
-            </a>
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            removed this{" "}
-            <a
-              href={`${activity.old_value}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-            >
-              link
-            </a>
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
+    message: (activity, showIssue, _workspaceSlug, t) => {
+      const created = activity.verb === "created";
+      return (
+        <>
+          {t(
+            created
+              ? "issue_activity.added"
+              : activity.verb === "updated"
+                ? "issue_activity.updated_the"
+                : "issue_activity.removed_this"
+          )}
+          <a
+            href={`${created ? activity.new_value : activity.old_value}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+          >
+            {t("issue_activity.link")}
+          </a>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <Link2Icon size={12} className="text-secondary" aria-hidden="true" />,
   },
   cycles: {
-    message: (activity, showIssue, workspaceSlug) => {
-      if (activity.verb === "created")
-        return (
-          <>
-            <span className="flex-shrink-0">
-              added {showIssue ? <IssueLink activity={activity} /> : "this work item"}{" "}
-              <span className="whitespace-nowrap">to the cycle</span>{" "}
-            </span>
-            <a
-              href={`/${workspaceSlug}/projects/${activity.project}/cycles/${activity.new_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline items-center gap-1 font-medium text-primary hover:underline"
-            >
-              <span className="break-all">{activity.new_value}</span>
-            </a>
-          </>
-        );
-      else if (activity.verb === "updated")
-        return (
-          <>
-            <span className="flex-shrink-0 whitespace-nowrap">set the cycle to </span>
-            <a
-              href={`/${workspaceSlug}/projects/${activity.project}/cycles/${activity.new_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline items-center gap-1 font-medium text-primary hover:underline"
-            >
-              <span className="break-all">{activity.new_value}</span>
-            </a>
-          </>
-        );
-      else
-        return (
-          <>
-            removed <IssueLink activity={activity} /> from the cycle{" "}
-            <a
-              href={`/${workspaceSlug}/projects/${activity.project}/cycles/${activity.old_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline items-center gap-1 font-medium text-primary hover:underline"
-            >
-              <span className="break-all">{activity.old_value}</span>
-            </a>
-          </>
-        );
+    message: (activity, showIssue, workspaceSlug, t) => {
+      const removed = activity.verb !== "created" && activity.verb !== "updated";
+      const identifier = removed ? activity.old_identifier : activity.new_identifier;
+      return (
+        <>
+          {t(
+            activity.verb === "created"
+              ? "issue_activity.added_work_item_to_cycle"
+              : activity.verb === "updated"
+                ? "issue_activity.set_the_cycle_to"
+                : "issue_activity.removed_work_item_from_cycle"
+          )}
+          <a
+            href={`/${workspaceSlug}/projects/${activity.project}/cycles/${identifier}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline items-center gap-1 font-medium text-primary hover:underline"
+          >
+            <span className="break-all">{removed ? activity.old_value : activity.new_value}</span>
+          </a>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <CycleIcon height={12} width={12} className="text-secondary" aria-hidden="true" />,
   },
   modules: {
-    message: (activity, showIssue, workspaceSlug) => {
-      if (activity.verb === "created")
-        return (
-          <>
-            added {showIssue ? <IssueLink activity={activity} /> : "this work item"} to the module{" "}
-            <a
-              href={`/${workspaceSlug}/projects/${activity.project}/modules/${activity.new_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline items-center gap-1 font-medium text-primary hover:underline"
-            >
-              <span className="break-all">{activity.new_value}</span>
-            </a>
-          </>
-        );
-      else if (activity.verb === "updated")
-        return (
-          <>
-            set the module to{" "}
-            <a
-              href={`/${workspaceSlug}/projects/${activity.project}/modules/${activity.new_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline items-center gap-1 font-medium text-primary hover:underline"
-            >
-              <span className="break-all">{activity.new_value}</span>
-            </a>
-          </>
-        );
-      else
-        return (
-          <>
-            removed <IssueLink activity={activity} /> from the module{" "}
-            <a
-              href={`/${workspaceSlug}/projects/${activity.project}/modules/${activity.old_identifier}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline items-center gap-1 font-medium text-primary hover:underline"
-            >
-              <span className="break-all">{activity.old_value}</span>
-            </a>
-          </>
-        );
+    message: (activity, showIssue, workspaceSlug, t) => {
+      const removed = activity.verb !== "created" && activity.verb !== "updated";
+      const identifier = removed ? activity.old_identifier : activity.new_identifier;
+      return (
+        <>
+          {t(
+            activity.verb === "created"
+              ? "issue_activity.added_work_item_to_module"
+              : activity.verb === "updated"
+                ? "issue_activity.set_the_module_to"
+                : "issue_activity.removed_work_item_from_module"
+          )}
+          <a
+            href={`/${workspaceSlug}/projects/${activity.project}/modules/${identifier}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline items-center gap-1 font-medium text-primary hover:underline"
+          >
+            <span className="break-all">{removed ? activity.old_value : activity.new_value}</span>
+          </a>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <ModuleIcon className="h-3 w-3 !text-secondary" aria-hidden="true" />,
   },
   name: {
-    message: (activity, showIssue) => (
+    message: (activity, showIssue, _workspaceSlug, t) => (
       <>
-        set the title to <span className="break-all">{activity.new_value}</span>
-        {showIssue && (
-          <>
-            {" "}
-            of <IssueLink activity={activity} />
-          </>
-        )}
+        {t("issue_activity.set_the_name_to")}
+        <span className="font-medium break-all text-primary">{activity.new_value}</span>
+        <IssueSuffix activity={activity} showIssue={showIssue} />
       </>
     ),
     icon: <MessageSquareIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   parent: {
-    message: (activity, showIssue) => {
-      if (!activity.new_value)
-        return (
-          <>
-            removed the parent <span className="font-medium whitespace-nowrap text-primary">{activity.old_value}</span>
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            set the parent to <span className="font-medium whitespace-nowrap text-primary">{activity.new_value}</span>
-            {showIssue && (
-              <>
-                {" "}
-                for <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-    },
+    message: (activity, showIssue, _workspaceSlug, t) => (
+      <>
+        {t(!activity.new_value ? "issue_activity.removed_the_parent" : "issue_activity.set_the_parent_to")}
+        <span className="font-medium whitespace-nowrap text-primary">
+          {activity.new_value || activity.old_value}
+        </span>
+        <IssueSuffix activity={activity} showIssue={showIssue} />
+      </>
+    ),
     icon: <UsersIcon className="h-3 w-3 !text-secondary" aria-hidden="true" />,
   },
   priority: {
-    message: (activity, showIssue) => (
+    message: (activity, showIssue, _workspaceSlug, t) => (
       <>
-        set the priority to{" "}
+        {t("issue_activity.set_the_priority_to")}
         <span className="font-medium text-primary">
-          {activity.new_value ? capitalizeFirstLetter(activity.new_value) : "None"}
+          {activity.new_value ? capitalizeFirstLetter(activity.new_value) : t("issue_activity.priority_none")}
         </span>
-        {showIssue && (
-          <>
-            {" "}
-            for <IssueLink activity={activity} />
-          </>
-        )}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
       </>
     ),
     icon: <SignalMediumIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   relates_to: {
-    message: (activity, showIssue) => {
-      if (activity.old_value === "")
-        return (
-          <>
-            marked that {showIssue ? <IssueLink activity={activity} /> : "this work item"} relates to{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.new_value}</span>.
-          </>
-        );
-      else
-        return (
-          <>
-            removed the relation from{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.old_value}</span>.
-          </>
-        );
+    message: (activity, showIssue, _workspaceSlug, t) => {
+      const added = activity.old_value === "";
+      return (
+        <>
+          {t(added ? "issue_activity.marked_relates_to" : "issue_activity.removed_relates_to")}
+          <span className="font-medium whitespace-nowrap text-primary">
+            {added ? activity.new_value : activity.old_value}
+          </span>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <RelatedIcon height="12" width="12" className="text-secondary" />,
   },
   blocking: {
-    message: (activity, showIssue) => {
-      if (activity.old_value === "")
-        return (
-          <>
-            marked {showIssue ? <IssueLink activity={activity} /> : "this work item"} is blocking work item{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.new_value}</span>.
-          </>
-        );
-      else
-        return (
-          <>
-            removed the blocking work item{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.old_value}</span>.
-          </>
-        );
+    message: (activity, showIssue, _workspaceSlug, t) => {
+      const added = activity.old_value === "";
+      return (
+        <>
+          {t(added ? "issue_activity.marked_blocking" : "issue_activity.removed_blocking")}
+          <span className="font-medium whitespace-nowrap text-primary">
+            {added ? activity.new_value : activity.old_value}
+          </span>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <BlockerIcon height="12" width="12" className="text-secondary" />,
   },
   blocked_by: {
-    message: (activity, showIssue) => {
-      if (activity.old_value === "")
-        return (
-          <>
-            marked {showIssue ? <IssueLink activity={activity} /> : "this work item"} is being blocked by{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.new_value}</span>.
-          </>
-        );
-      else
-        return (
-          <>
-            removed {showIssue ? <IssueLink activity={activity} /> : "this work item"} being blocked by work item{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.old_value}</span>.
-          </>
-        );
+    message: (activity, showIssue, _workspaceSlug, t) => {
+      const added = activity.old_value === "";
+      return (
+        <>
+          {t(added ? "issue_activity.marked_blocked_by" : "issue_activity.removed_blocked_by")}
+          <span className="font-medium whitespace-nowrap text-primary">
+            {added ? activity.new_value : activity.old_value}
+          </span>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <BlockedIcon height="12" width="12" className="text-secondary" />,
   },
   duplicate: {
-    message: (activity, showIssue) => {
-      if (activity.old_value === "")
-        return (
-          <>
-            marked {showIssue ? <IssueLink activity={activity} /> : "this work item"} as duplicate of{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.new_value}</span>.
-          </>
-        );
-      else
-        return (
-          <>
-            removed {showIssue ? <IssueLink activity={activity} /> : "this work item"} as a duplicate of{" "}
-            <span className="font-medium whitespace-nowrap text-primary">{activity.old_value}</span>.
-          </>
-        );
+    message: (activity, showIssue, _workspaceSlug, t) => {
+      const added = activity.old_value === "";
+      return (
+        <>
+          {t(added ? "issue_activity.marked_duplicate" : "issue_activity.removed_duplicate")}
+          <span className="font-medium whitespace-nowrap text-primary">
+            {added ? activity.new_value : activity.old_value}
+          </span>
+          <IssueSuffix activity={activity} showIssue={showIssue} />
+        </>
+      );
     },
     icon: <CopyPlus size={12} className="text-secondary" />,
   },
   state: {
-    message: (activity, showIssue) => (
+    message: (activity, showIssue, _workspaceSlug, t) => (
       <>
-        set the state to <span className="font-medium break-all text-primary">{activity.new_value}</span>
-        {showIssue && (
-          <>
-            {" "}
-            for <IssueLink activity={activity} />
-          </>
-        )}
+        {t("issue_activity.set_the_state_to")}
+        <span className="font-medium break-all text-primary">{activity.new_value}</span>
+        <IssueSuffix activity={activity} showIssue={showIssue} />
       </>
     ),
     icon: <LayoutGridIcon size={12} className="text-secondary" aria-hidden="true" />,
   },
   start_date: {
-    message: (activity, showIssue) => {
-      if (!activity.new_value)
-        return (
-          <>
-            removed the start date
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            set the start date to{" "}
-            <span className="font-medium whitespace-nowrap text-primary">
-              {renderFormattedDate(activity.new_value)}
-            </span>
-            {showIssue && (
-              <>
-                {" "}
-                for <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-    },
+    message: (activity, showIssue, _workspaceSlug, t) => (
+      <>
+        {t(!activity.new_value ? "issue_activity.removed_the_start_date" : "issue_activity.set_the_start_date_to")}
+        {activity.new_value && (
+          <span className="font-medium whitespace-nowrap text-primary">{renderFormattedDate(activity.new_value)}</span>
+        )}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
+      </>
+    ),
     icon: <Calendar size={12} className="text-secondary" aria-hidden="true" />,
   },
   target_date: {
-    message: (activity, showIssue) => {
-      if (!activity.new_value)
-        return (
-          <>
-            removed the due date
-            {showIssue && (
-              <>
-                {" "}
-                from <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-      else
-        return (
-          <>
-            set the due date to{" "}
-            <span className="font-medium whitespace-nowrap text-primary">
-              {renderFormattedDate(activity.new_value)}
-            </span>
-            {showIssue && (
-              <>
-                <IssueLink activity={activity} />
-              </>
-            )}
-          </>
-        );
-    },
+    message: (activity, showIssue, _workspaceSlug, t) => (
+      <>
+        {t(!activity.new_value ? "issue_activity.removed_the_due_date" : "issue_activity.set_the_due_date_to")}
+        {activity.new_value && (
+          <span className="font-medium whitespace-nowrap text-primary">{renderFormattedDate(activity.new_value)}</span>
+        )}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
+      </>
+    ),
     icon: <Calendar size={12} className="text-secondary" aria-hidden="true" />,
   },
   inbox: {
-    message: (activity, showIssue) => (
+    message: (activity, showIssue, _workspaceSlug, t) => (
       <>
-        {getInboxUserActivityMessage(activity, showIssue)}
-        {showIssue && (
-          <>
-            {" "}
-            <IssueLink activity={activity} />
-          </>
-        )}
-        {activity.verb === "2" && ` from intake by marking a duplicate work item.`}
+        {getInboxUserActivityMessage(activity, t)}
+        <IssueSuffix activity={activity} showIssue={showIssue} />
       </>
     ),
     icon: <IntakeIcon className="size-3 text-secondary" aria-hidden="true" />,
@@ -761,6 +508,7 @@ type ActivityMessageProps = {
 export function ActivityMessage({ activity, showIssue = false }: ActivityMessageProps) {
   // router params
   const { workspaceSlug } = useParams();
+  const { t } = useTranslation();
   const activityField = activity.field ?? "issue";
 
   return (
@@ -768,7 +516,8 @@ export function ActivityMessage({ activity, showIssue = false }: ActivityMessage
       {activityDetails[activityField as keyof typeof activityDetails]?.message(
         activity,
         showIssue,
-        workspaceSlug ? workspaceSlug.toString() : (activity.workspace_detail?.slug ?? "")
+        workspaceSlug ? workspaceSlug.toString() : (activity.workspace_detail?.slug ?? ""),
+        t
       )}
     </>
   );

@@ -2882,6 +2882,20 @@ export default {
     removed_duplicate: "この作業項目を次の重複から解除しました ",
     marked_relates_to: "この作業項目が次に関連するとマークしました ",
     removed_relates_to: "次との関連を削除しました ",
+    // BARSOUL(2026-07-26): 通知カード(受信箱 / 我的工作)と共用。
+    // 同じ出来事が場所によって別の言い回しになるのを避ける。
+    commented: "コメントしました ",
+    assigned_the_work_item_to_you: "作業項目をあなたに割り当てました。",
+    set_the_estimate_time_to: "見積もり時間を次に設定しました: ",
+    removed_the_estimate_time: "見積もり時間を削除しました",
+    period: "。",
+    created_work_item: "作成しました: ",
+    deleted_work_item: "削除しました: ",
+    converted_to_epic: "エピックに変換しました: ",
+    converted_to_work_item: "作業項目に変換しました: ",
+    priority_none: "なし",
+    a_work_item: "作業項目",
+    work_item_deleted: "この作業項目は削除されました",
   },
   calendar: {
     week_view: "週表示",

@@ -6,10 +6,12 @@
 
 import type { ReactNode } from "react";
 // plane imports
+import { useTranslation, type TTranslationStore } from "@plane/i18n";
 import type { TNotification } from "@plane/types";
 import {
   convertMinutesToHoursMinutesString,
   renderFormattedDate,
+  replaceUnderscoreIfSnakeCase,
   sanitizeCommentForNotification,
   stripAndTruncateHTML,
 } from "@plane/utils";
@@ -17,7 +19,6 @@ import {
 import { LiteTextEditor } from "@/components/editor/lite-text";
 import {
   ADDITIONAL_NOTIFICATION_CONTENT_MAP,
-  renderAdditionalAction,
   renderAdditionalValue,
   shouldShowConnector,
 } from "@/plane-web/components/workspace-notifications/notification-card/content";
@@ -39,7 +40,24 @@ export type TNotificationContentDetails = {
   showConnector?: boolean;
 };
 
-export type TNotificationContentHandler = (data: TNotificationFieldData) => TNotificationContentDetails | null;
+/**
+ * BARSOUL(2026-07-26 hechun): 通知カードの文面を多言語化。
+ *
+ * 語彙は **課題詳細の活動欄と同じ `issue_activity.*` を再利用** する。
+ * 同じ出来事(担当者を追加した / 状態を変えた)を通知と活動欄で別の言い回しに
+ * すると、JP-CN 混成のチームでは「別の何かが起きた」と読まれる。
+ *
+ * 各キーは「動作句 + 末尾スペース」で、後ろに値が来る前提で全ロケール分
+ * 揃っている(ja/zh は語順もそれで自然になるよう既に訳し分けてある)ので、
+ * ここでは action に句、value に値を渡すだけで良い — 連結子 `to` を英語で
+ * 挟み込む必要も無くなるため、原則 showConnector は false にする。
+ */
+type TT = TTranslationStore["t"];
+
+export type TNotificationContentHandler = (
+  data: TNotificationFieldData,
+  ctx: { t: TT; renderCommentBox?: boolean }
+) => TNotificationContentDetails | null;
 
 export type TNotificationContentMap = {
   [key: string]: TNotificationContentHandler;
@@ -47,103 +65,154 @@ export type TNotificationContentMap = {
 
 // Base notification content map for core fields
 export const BASE_NOTIFICATION_CONTENT_MAP: TNotificationContentMap = {
-  duplicate: ({ verb }) => ({
+  duplicate: ({ verb, newValue, oldValue }, { t }) => ({
+    action: t(verb === "created" ? "issue_activity.marked_duplicate" : "issue_activity.removed_duplicate"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  assignees: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.added_a_new_assignee" : "issue_activity.removed_the_assignee"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  start_date: ({ newValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.set_the_start_date_to" : "issue_activity.removed_the_start_date"),
+    value: renderFormattedDate(newValue),
+    showConnector: false,
+  }),
+  target_date: ({ newValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.set_the_due_date_to" : "issue_activity.removed_the_due_date"),
+    value: renderFormattedDate(newValue),
+    showConnector: false,
+  }),
+  labels: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.added_a_new_label" : "issue_activity.removed_the_label"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  parent: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.set_the_parent_to" : "issue_activity.removed_the_parent"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  relates_to: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.marked_relates_to" : "issue_activity.removed_relates_to"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  blocking: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.marked_blocking" : "issue_activity.removed_blocking"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  blocked_by: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.marked_blocked_by" : "issue_activity.removed_blocked_by"),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  state: ({ newValue }, { t }) => ({
+    action: t("issue_activity.set_the_state_to"),
+    value: newValue,
+    showConnector: false,
+  }),
+  priority: ({ newValue }, { t }) => ({
+    action: t("issue_activity.set_the_priority_to"),
+    value: newValue,
+    showConnector: false,
+  }),
+  name: ({ newValue }, { t }) => ({
+    action: t("issue_activity.set_the_name_to"),
+    value: newValue,
+    showConnector: false,
+  }),
+  cycles: ({ newValue, oldValue }, { t }) => ({
+    action: t(
+      newValue !== "" ? "issue_activity.added_work_item_to_cycle" : "issue_activity.removed_work_item_from_cycle"
+    ),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  modules: ({ newValue, oldValue }, { t }) => ({
+    action: t(
+      newValue !== "" ? "issue_activity.added_work_item_to_module" : "issue_activity.removed_work_item_from_module"
+    ),
+    value: newValue !== "" ? newValue : oldValue,
+    showConnector: false,
+  }),
+  link: ({ verb, newValue, oldValue }, { t }) => ({
     action:
-      verb === "created"
-        ? "marked that this work item is a duplicate of"
-        : "marked that this work item is not a duplicate",
-    value: null,
-    showConnector: false,
-  }),
-  assignees: ({ newValue, oldValue }) => ({
-    action: newValue !== "" ? "added assignee" : "removed assignee",
+      t(
+        verb === "created"
+          ? "issue_activity.added"
+          : verb === "updated"
+            ? "issue_activity.updated_the"
+            : "issue_activity.removed_this"
+      ) + t("issue_activity.link"),
     value: newValue !== "" ? newValue : oldValue,
     showConnector: false,
   }),
-  start_date: ({ newValue }) => ({
-    action: newValue !== "" ? "set start date" : "removed the start date",
-    value: renderFormattedDate(newValue),
+  estimate_point: ({ newValue }, { t }) => ({
+    action: t(
+      newValue !== "" ? "issue_activity.set_the_estimate_point_to" : "issue_activity.removed_the_estimate_point"
+    ),
+    value: newValue,
     showConnector: false,
   }),
-  target_date: ({ newValue }) => ({
-    action: newValue !== "" ? "set due date" : "removed the due date",
-    value: renderFormattedDate(newValue),
-    showConnector: false,
-  }),
-  labels: ({ newValue, oldValue }) => ({
-    action: newValue !== "" ? "added label" : "removed label",
-    value: newValue !== "" ? newValue : oldValue,
-    showConnector: false,
-  }),
-  parent: ({ newValue, oldValue }) => ({
-    action: newValue !== "" ? "added parent" : "removed parent",
-    value: newValue !== "" ? newValue : oldValue,
-    showConnector: false,
-  }),
-  relates_to: () => ({
-    action: "marked that this work item is related to",
-    value: null,
-    showConnector: true,
-  }),
-  comment: ({ newValue }, renderCommentBox?: boolean) => ({
-    action: "commented",
+  comment: ({ newValue }, { t, renderCommentBox }) => ({
+    action: t("issue_activity.commented"),
     value: renderCommentBox ? null : sanitizeCommentForNotification(newValue),
     showConnector: false,
   }),
-  archived_at: ({ newValue }) => ({
-    action: newValue === "restore" ? "restored the work item" : "archived the work item",
+  archived_at: ({ newValue }, { t }) => ({
+    action: t(
+      newValue === "restore" ? "issue_activity.restored_the_work_item" : "issue_activity.archived_the_work_item"
+    ),
     value: null,
     showConnector: false,
   }),
-  None: () => ({
+  None: (_data, { t }) => ({
     action: null,
-    value: "the work item and assigned it to you.",
+    value: t("issue_activity.assigned_the_work_item_to_you"),
     showConnector: false,
   }),
-  // Fields below only define value - action falls through to default handler
-  attachment: () => ({
-    action: null,
-    value: "the work item",
-    showConnector: true,
+  attachment: ({ verb }, { t }) => ({
+    action: t(
+      verb === "created" ? "issue_activity.uploaded_a_new_attachment" : "issue_activity.removed_an_attachment"
+    ),
+    value: null,
+    showConnector: false,
   }),
-  description: ({ newValue }) => ({
+  description: ({ newValue }, { t }) => ({
+    action: t("issue_activity.updated_the_description"),
     value: stripAndTruncateHTML(newValue || "", 55),
-    showConnector: true,
+    showConnector: false,
   }),
-  estimate_time: ({ newValue, oldValue }) => ({
+  estimate_time: ({ newValue, oldValue }, { t }) => ({
+    action: t(newValue !== "" ? "issue_activity.set_the_estimate_time_to" : "issue_activity.removed_the_estimate_time"),
     value:
       newValue !== ""
         ? convertMinutesToHoursMinutesString(Number(newValue))
         : convertMinutesToHoursMinutesString(Number(oldValue)),
-    showConnector: true,
+    showConnector: false,
   }),
 };
 
 // Helper to get content details from maps
 const getNotificationContentDetails = (
   fieldData: TNotificationFieldData,
-  renderCommentBox?: boolean
+  ctx: { t: TT; renderCommentBox?: boolean }
 ): TNotificationContentDetails | null => {
   const { field } = fieldData;
   if (!field) return null;
 
   // Check base map first
   const baseHandler = BASE_NOTIFICATION_CONTENT_MAP[field];
-  if (baseHandler) {
-    // Special case for comment field that needs renderCommentBox
-    if (field === "comment") {
-      return (baseHandler as (data: TNotificationFieldData, renderCommentBox?: boolean) => TNotificationContentDetails)(
-        fieldData,
-        renderCommentBox
-      );
-    }
-    return baseHandler(fieldData);
-  }
+  if (baseHandler) return baseHandler(fieldData, ctx);
 
   // Check additional map from plane-web (EE extensions)
   const additionalHandler = ADDITIONAL_NOTIFICATION_CONTENT_MAP[field];
   if (additionalHandler) {
-    return additionalHandler(fieldData);
+    return additionalHandler(fieldData, ctx);
   }
 
   return null;
@@ -163,6 +232,7 @@ export function NotificationContent({
   renderCommentBox?: boolean;
 }) {
   const zh = useZh();
+  const { t } = useTranslation();
   const { data: currentUser } = useUser();
   // BARSOUL: 提醒/定期 = 显示型通知(无 issue_activity)。专属文案 + 备忘直接显示(价值在通知本身,不骗点进卡)。
   const ndata = notification.data as { kind?: string; reminder?: { note?: string; by_id?: string; by_name?: string } };
@@ -216,7 +286,7 @@ export function NotificationContent({
   );
 
   // Get content details from map
-  const contentDetails = getNotificationContentDetails(fieldData, renderCommentBox);
+  const contentDetails = getNotificationContentDetails(fieldData, { t, renderCommentBox });
 
   // Render action - use map value if defined, otherwise fall through to default handler
   // Note: undefined = fall through to default, null = explicitly no action text
@@ -224,8 +294,10 @@ export function NotificationContent({
     if (!notificationField) return "";
     // Check if action is explicitly defined in map (including null)
     if (contentDetails && "action" in contentDetails) return contentDetails.action;
-    // Fallback to default action handler for fields not in map or without action defined
-    return renderAdditionalAction(notificationField, verb);
+    /* 未知のフィールド(EE 拡張・将来の追加)だけがここに落ちる。
+       素の `${verb} ${field}` を出すと英語が混ざるので、動作句だけは訳し、
+       フィールド名は生のまま添える — 訳が無い事を隠して誤訳するより良い。 */
+    return `${t("issue_activity.updated_the")}${replaceUnderscoreIfSnakeCase(notificationField)}`;
   };
 
   // Render value - use map value if defined, otherwise fall through to default handler
@@ -246,7 +318,7 @@ export function NotificationContent({
       <span className="text-tertiary">{renderAction()} </span>
       {verb !== "deleted" && (
         <>
-          {showConnector && <span className="text-tertiary">to </span>}
+          {showConnector && <span className="text-tertiary">{t("issue_activity.to")}</span>}
           <span className="font-medium text-primary">{renderValue()}</span>
           {notificationField === "comment" && renderCommentBox && (
             <div className="origin-left scale-75">
@@ -263,7 +335,7 @@ export function NotificationContent({
               />
             </div>
           )}
-          {"."}
+          {t("issue_activity.period")}
         </>
       )}
     </>
