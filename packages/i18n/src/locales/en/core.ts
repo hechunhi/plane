@@ -64,7 +64,8 @@ export default {
     },
     final: {
       empty: "No final version yet",
-      empty_hint: "The final version is the record this week leaves behind: regenerating a draft never overwrites it, and confirming the week freezes it.",
+      empty_hint:
+        "The final version is the record this week leaves behind: regenerating a draft never overwrites it, and confirming the week freezes it.",
       note: "This is the final version — the record that stays. Regenerating the draft does not touch it.",
       write: "Write it",
       from_draft: "Start from the draft",
@@ -74,7 +75,8 @@ export default {
       saved: "Final version saved",
       save_failed: "Could not save",
       placeholder: "# Completed\n- What happened [ABC-12]",
-      syntax_hint: "Lines starting with # are headings, lines starting with - are bullets. Keys like [ABC-12] stay linked to their work items.",
+      syntax_hint:
+        "Lines starting with # are headings, lines starting with - are bullets. Keys like [ABC-12] stay linked to their work items.",
     },
     notes: {
       open: "Notes",
@@ -131,21 +133,31 @@ export default {
       failed: "The action could not be completed",
       reopen: "Undo confirmation",
       reopened: "Confirmation undone",
-      reopen_conflict: "A newer week is already open, so this one cannot be reopened. Delete or confirm that week first.",
+      reopen_conflict:
+        "A newer week is already open, so this one cannot be reopened. Delete or confirm that week first.",
       delete: "Delete this week",
       deleting: "Deleting…",
       deleted: "Week deleted",
-      delete_modal: "This week will be removed along with its drafts. Only a week nobody has written in can be deleted.",
+      delete_modal:
+        "This week will be removed along with its drafts. Only a week nobody has written in can be deleted.",
       delete_conflict: "This week already has a final version or chat, so it cannot be deleted.",
       rename: "Rename this week",
       rename_placeholder: "e.g. Weekly sync, Jul week 4",
-      confirm_modal: "Confirming freezes this week: drafts and final versions can no longer be edited, and the next week starts from now. The final versions stay as this week’s record.",
+      confirm_modal:
+        "Confirming freezes this week: drafts and final versions can no longer be edited, and the next week starts from now. The final versions stay as this week’s record.",
       confirming: "Confirming…",
     },
     empty: {
       title: "No meeting yet",
       hint: "Open a meeting to collect what everyone has worked on since the last one.",
       no_entries: "No members in this meeting.",
+    },
+    // BARSOUL 2026-07-27 放映幕（会議室のテレビ専用ページ）
+    present: {
+      title: "On screen",
+      scenes_label: "Scenes",
+      scenes: { member: "This week", overview: "Everyone", chat: "Live" },
+      pending: "The scenes are being built. Press 1, 2 or 3 to switch, F for full screen.",
     },
   },
 

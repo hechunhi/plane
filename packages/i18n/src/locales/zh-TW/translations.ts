@@ -147,6 +147,13 @@ export default {
       hint: "新開一期，就會把上次之後每個人的動靜彙整起來。",
       no_entries: "這一期沒有成員。",
     },
+    // BARSOUL 2026-07-27 放映幕（會議室電視專用頁）
+    present: {
+      title: "放映",
+      scenes_label: "幕",
+      scenes: { member: "本週", overview: "全員", chat: "發言" },
+      pending: "各幕正在接入。按 1 / 2 / 3 切幕，按 F 全螢幕。",
+    },
   },
   auth: {
     common: {

@@ -383,6 +383,16 @@ export const coreRoutes: RouteConfigEntry[] = [
         ]),
       ]),
     ]),
+
+    // BARSOUL 2026-07-27 週会放映幕（会議室 100 インチテレビ専用の単独ページ）
+    // `[workspaceSlug]/layout.tsx` の *外* に置く。あの layout は
+    // WorkspaceContentWrapper（上部ナビ + AppRail + 余白）を必ず描くので、
+    // 中に入れた時点で「壳なし」が成立しない。認証と workspace ストアだけは
+    // weekly-present/layout.tsx が自分で積む。
+    layout("./(all)/[workspaceSlug]/weekly-present/layout.tsx", [
+      route(":workspaceSlug/weekly/present", "./(all)/[workspaceSlug]/weekly-present/page.tsx"),
+    ]),
+
     // ======================================================================
     // STANDALONE ROUTES (outside workspace context)
     // ======================================================================

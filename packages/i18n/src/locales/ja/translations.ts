@@ -151,6 +151,13 @@ export default {
       hint: "会期を開くと、前回からの動きをメンバーごとにまとめます。",
       no_entries: "この会期にメンバーがいません。",
     },
+    // BARSOUL 2026-07-27 放映幕（会議室のテレビ専用ページ）
+    present: {
+      title: "放映",
+      scenes_label: "幕",
+      scenes: { member: "今週", overview: "全員", chat: "発言" },
+      pending: "各幕はこれから入ります。1 / 2 / 3 で幕を切り替え、F で全画面。",
+    },
   },
   auth: {
     common: {

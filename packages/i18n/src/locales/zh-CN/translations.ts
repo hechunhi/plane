@@ -148,6 +148,13 @@ export default {
       hint: "新开一期，就会把上次之后每个人的动静汇总起来。",
       no_entries: "这一期没有成员。",
     },
+    // BARSOUL 2026-07-27 放映幕（会议室电视专用页）
+    present: {
+      title: "放映",
+      scenes_label: "幕",
+      scenes: { member: "本周", overview: "全员", chat: "发言" },
+      pending: "各幕正在接入。按 1 / 2 / 3 切幕，按 F 全屏。",
+    },
   },
   auth: {
     common: {
