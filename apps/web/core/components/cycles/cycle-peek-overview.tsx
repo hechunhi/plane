@@ -51,7 +51,12 @@ export const CyclePeekOverview = observer(function CyclePeekOverview(props: Prop
       {peekCycle && projectId && (
         <div
           ref={ref}
-          className="fixed right-0 z-[9] flex h-full w-full max-w-[21.5rem] flex-shrink-0 flex-col gap-3.5 overflow-y-auto border-l border-subtle bg-surface-1 px-4 duration-300 md:relative"
+          /* BARSOUL(2026-07-27): 断点排他。素の `fixed` + `md:relative` は危険 —
+             拡張機能が挿す CSS(origin: injected)の `.fixed{position:fixed}` は
+             ページ側の @layer utilities より強く、PC でも fixed のまま残って
+             脇板が本体に重なる。`.fixed` 自体を出さない書き方にする
+             (profile/sidebar.tsx と同じ手当て)。 */
+          className="relative z-[9] flex h-full w-full max-w-[21.5rem] flex-shrink-0 flex-col gap-3.5 overflow-y-auto border-l border-subtle bg-surface-1 px-4 duration-300 max-md:fixed max-md:right-0"
           style={{
             boxShadow:
               "0px 1px 4px 0px rgba(0, 0, 0, 0.06), 0px 2px 4px 0px rgba(16, 24, 40, 0.06), 0px 1px 8px -1px rgba(16, 24, 40, 0.06)",

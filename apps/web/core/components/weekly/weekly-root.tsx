@@ -601,9 +601,16 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
                  上に載せる — 同値だと DOM 順次第で左側がサイドバーに食われる。
                  lg 以上でも static(z-auto)に戻さず relative + z-[22] を維持する:
                  static だとサイドバー側の positioned 要素が上に描かれ得る。 */
-              "fixed inset-0 z-[22]",
-              "lg:relative lg:inset-auto lg:z-[22] lg:shrink-0 lg:border-l lg:border-subtle",
-              "lg:w-full"
+              /* BARSOUL(2026-07-27): 断点排他。素の `fixed` + `lg:relative` にはしない —
+                 拡張機能が挿す CSS(origin: injected)の `.fixed{position:fixed}` は
+                 ページ側の @layer utilities より強く、lg でも position:fixed のまま
+                 残る。そうなると aside は flow から外れて高さが青天井になり、
+                 grid の minmax(0,1fr) が「中身の高さ」で決まる → 一覧が伸びて
+                 入力欄が画面外に落ちる(発言が増えた会議中に実際に踏んだ)。
+                 profile/sidebar.tsx の max-md:fixed と同じ手当て — 断点で
+                 排他にすれば `.fixed` 自体を使わないので上書き合戦が起きない。 */
+              "relative z-[22] max-lg:fixed max-lg:inset-0",
+              "lg:w-full lg:shrink-0 lg:border-l lg:border-subtle"
             )}
           >
             {/* 全面表示のとき閉じる導線はここしか無い。畳めない画面を作らない。 */}

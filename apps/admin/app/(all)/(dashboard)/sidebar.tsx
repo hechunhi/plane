@@ -44,7 +44,11 @@ export const AdminSidebar = observer(function AdminSidebar() {
 
   return (
     <div
-      className={`fixed inset-y-0 z-20 flex h-full flex-shrink-0 flex-grow-0 flex-col border-r border-subtle bg-surface-1 duration-300 md:relative ${isSidebarCollapsed ? "-ml-[290px]" : ""} sm:${isSidebarCollapsed ? "-ml-[290px]" : ""} md:ml-0 ${isSidebarCollapsed ? "w-[70px]" : "w-[290px]"} lg:ml-0 ${isSidebarCollapsed ? "w-[70px]" : "w-[290px]"} `}
+      /* BARSOUL(2026-07-27): 断点排他。素の `fixed` + `md:relative` は危険 —
+         拡張機能が挿す CSS(origin: injected)の `.fixed{position:fixed}` は
+         ページ側の @layer utilities より強く、PC でも fixed のまま残って
+         脇板が本体に重なる。`.fixed` 自体を出さない書き方にする。 */
+      className={`relative z-20 flex h-full flex-shrink-0 flex-grow-0 flex-col border-r border-subtle bg-surface-1 duration-300 max-md:fixed max-md:inset-y-0 ${isSidebarCollapsed ? "-ml-[290px]" : ""} sm:${isSidebarCollapsed ? "-ml-[290px]" : ""} md:ml-0 ${isSidebarCollapsed ? "w-[70px]" : "w-[290px]"} lg:ml-0 ${isSidebarCollapsed ? "w-[70px]" : "w-[290px]"} `}
     >
       <div ref={ref} className="flex h-full w-full flex-1 flex-col">
         <AdminSidebarDropdown />
