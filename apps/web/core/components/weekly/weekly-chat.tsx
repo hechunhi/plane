@@ -533,7 +533,13 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
             </div>
           </div>
         ) : (
-          <ol className="flex flex-col gap-0.5">
+          /* BARSOUL(2026-07-27): 読み幅を上限付きで中央寄せ。この面は lg 以上で
+             全面(≒1900px)になるため、素の全幅だと ①1 行が長すぎて日本語/中国語が
+             読めない ②各発言の操作列(absolute right-0)が本文から 1400px 離れた所に
+             出て「右上に工具条が無い」と見える ③左は余白があるのに右は端まで
+             使い切って見える。週報列の mx-auto max-w-[1600px] と同じ発想で、
+             一覧と入力欄を同じ幅に揃える(揃えないと入力欄だけズレる)。 */
+          <ol className="mx-auto flex w-full max-w-4xl flex-col gap-0.5">
             {msgs.map((m, i) => {
               const prev = i > 0 ? msgs[i - 1] : null;
               const grouped =
@@ -565,8 +571,11 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                     key={m.id}
                     data-mid={m.id}
                     className={cn(
-                      "group relative flex gap-2.5 rounded-md transition-colors",
-                      grouped ? "mt-0" : "mt-3 first:mt-0",
+                      /* -mx-2 px-2 = 文字の位置は変えずに帯だけ外へ広げる。ホバー地(hover:bg-*)は
+                         「この行を触っている」の唯一の手掛かり — 操作列は行の右上に出るので、
+                         行の範囲が見えないと本文から離れた所に浮いた別物に見える。 */
+                      "group relative -mx-2 flex gap-2.5 rounded-md px-2 py-0.5 transition-colors hover:bg-layer-transparent-hover",
+                      grouped ? "mt-0" : "mt-2.5 first:mt-0",
                       flashId === m.id && "bg-accent-primary/10"
                     )}
                     onMouseLeave={closeMenus}
@@ -845,7 +854,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                                 setConfirmDel(confirmDel === m.id ? null : m.id);
                                 setActiveId(m.id);
                               }}
-                              className="grid size-6 place-items-center rounded text-tertiary hover:bg-red-500/10 hover:text-red-500"
+                              className="grid size-6 place-items-center rounded text-tertiary hover:bg-danger-subtle hover:text-danger-primary"
                             >
                               <Trash2 className="size-3.5" strokeWidth={2} />
                             </button>
@@ -878,7 +887,10 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                           type="button"
                           onClick={() => void doDelete(m)}
                           disabled={busyId === m.id}
-                          className="rounded bg-red-500 px-2 py-0.5 text-11 font-medium text-white hover:opacity-90 disabled:opacity-50"
+                          /* BARSOUL(2026-07-27): この build の theme には Tailwind 既定パレットが無い
+                             (bg-red-500 は生成されず透明 = 白地に白文字で「取消」が消えていた)。
+                             danger は house token(packages/ui の danger ボタンと同じ組)で書く。 */
+                          className="rounded bg-danger-primary px-2 py-0.5 text-11 font-medium text-on-color hover:opacity-90 disabled:opacity-50"
                         >
                           {t("weekly.chat.delete")}
                         </button>
@@ -904,8 +916,10 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
             <button
               type="button"
               onClick={() => jumpTo(firstUnreadId)}
-              /* 行動を促す信号なので琥珀([[feedback_color_semantics]])。 */
-              className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-11 font-medium text-amber-600 shadow-sm backdrop-blur hover:bg-amber-500/25 dark:text-amber-400"
+              /* 行動を促す信号なので琥珀([[feedback_color_semantics]])。
+                 amber-* は既定パレット依存で生成されない(= 透明の丸だけが出ていた)。
+                 warning token で書く — 明暗どちらの theme でも解決する。 */
+              className="flex items-center gap-1.5 rounded-full border border-warning-subtle bg-warning-subtle px-3 py-1 text-11 font-medium text-warning-primary shadow-sm backdrop-blur hover:opacity-90"
             >
               <ArrowDown className="size-3" strokeWidth={2.5} />
               {t("weekly.chat.unread_jump", { count: unreadCount })}
@@ -916,11 +930,14 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
 
       {readOnly ? (
         <p className="border-t border-subtle px-4 py-3 text-11 leading-relaxed text-tertiary">
-          {t("weekly.chat.closed")}
+          <span className="mx-auto block w-full max-w-4xl">{t("weekly.chat.closed")}</span>
         </p>
       ) : (
-        /* grid の auto 行。行の高さは中身が決めるので shrink-0 は要らない。 */
+        /* grid の auto 行。行の高さは中身が決めるので shrink-0 は要らない。
+           境界線(border-t)は面の全幅で引き、中身だけ一覧と同じ読み幅に揃える —
+           入力欄が一覧の左端とズレると「別の面」に見える。 */
         <div className="border-t border-subtle p-3 sm:p-4">
+          <div className="mx-auto w-full max-w-4xl">
           {replyingTo && (
             /* 「誰の何に返すか」を打つ前に見せる。X で解除。 */
             <div className="mb-1.5 flex items-center gap-2 rounded-md border-l-2 border-accent-strong bg-layer-2 px-2 py-1">
@@ -955,7 +972,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
                     {t("weekly.chat.image_uploading")}
                   </p>
                 )}
-                {pending.failed && <p className="text-11 text-red-500">{t("weekly.chat.image_failed")}</p>}
+                {pending.failed && <p className="text-11 text-danger-primary">{t("weekly.chat.image_failed")}</p>}
               </div>
               <button
                 type="button"
@@ -1049,6 +1066,7 @@ export const WeeklyChat = observer(function WeeklyChat({ workspaceSlug, meetingI
             </button>
           </div>
           <p className="mt-1.5 px-1 text-11 text-placeholder">{t("weekly.chat.hint")}</p>
+          </div>
         </div>
       )}
     </div>
