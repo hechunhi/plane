@@ -70,6 +70,12 @@ ENV VITE_WEB_BASE_URL=$VITE_WEB_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV TURBO_TELEMETRY_DISABLED=1
 
+# BARSOUL: V8 は cgroup の上限ではなくホスト実装依存の既定でヒープを切るため、
+# コード量が増えると "Reached heap limit" (exit 137) で落ちる。VM の総量
+# (OrbStack 既定 10GiB) に収まる範囲で明示的に上げておく。
+ARG NODE_HEAP_MB=6144
+ENV NODE_OPTIONS="--max-old-space-size=${NODE_HEAP_MB}"
+
 RUN pnpm turbo run build --filter=web
 
 # *****************************************************************************

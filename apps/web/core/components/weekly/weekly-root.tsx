@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Lock,
   MessagesSquare,
+  MoreHorizontal,
   NotebookPen,
   Pencil,
   Plus,
@@ -63,21 +64,48 @@ function StatCards({ entries }: { entries: TWeeklyEntry[] }) {
     return a;
   }, [entries]);
 
+  // 出処パネルの丸と同じ色を使う。同じ意味に別の色を当てない。
   const cards = [
-    { key: "done", value: agg.done, accent: "text-success-primary" },
-    { key: "progress", value: agg.progress, accent: "text-accent-primary" },
-    { key: "discussion", value: agg.discussion, accent: "text-warning-primary" },
-    { key: "confirmed", value: `${agg.confirmed}/${entries.length}`, accent: "text-secondary" },
+    { key: "done", value: agg.done, dot: "bg-success-primary" },
+    { key: "progress", value: agg.progress, dot: "bg-accent-primary" },
+    { key: "discussion", value: agg.discussion, dot: "bg-warning-primary" },
   ];
 
+  const remaining = entries.length - agg.confirmed;
+
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+    /* まとめは「読む物」ではなく「一瞥する物」。カード 4 枚で一帯を潰さず、1 行の帯に落とす。
+       会議で本当に効くのは下書き本文と出処で、この数字はその上の温度計でしかない。 */
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-lg border border-subtle bg-layer-transparent px-3.5 py-2">
       {cards.map((c) => (
-        <div key={c.key} className="rounded-lg border border-subtle bg-layer-transparent px-3 py-2.5">
-          <p className="truncate text-11 text-tertiary">{t(`weekly.stats.${c.key}`)}</p>
-          <p className={cn("mt-0.5 text-20 leading-tight font-semibold tabular-nums", c.accent)}>{c.value}</p>
-        </div>
+        <span key={c.key} className="flex shrink-0 items-center gap-1.5">
+          <span className={cn("size-1.5 shrink-0 rounded-full", c.dot)} />
+          <span className="text-15 leading-none font-semibold text-primary tabular-nums">{c.value}</span>
+          <span className="text-11 whitespace-nowrap text-tertiary">{t(`weekly.stats.${c.key}`)}</span>
+        </span>
       ))}
+
+      <span className="hidden flex-1 sm:block" />
+
+      {/* 定稿の進み具合だけは「見る数字」ではなく「まだ誰か書けていない」の合図。
+          だから他の 3 つと切り離して右端に置き、残っている間だけ琥珀で灯す。 */}
+      <span className="flex shrink-0 items-center gap-2">
+        <span className="text-11 whitespace-nowrap text-tertiary">{t("weekly.stats.confirmed")}</span>
+        <span
+          className={cn(
+            "text-13 leading-none font-semibold tabular-nums",
+            remaining > 0 ? "text-warning-primary" : "text-success-primary"
+          )}
+        >
+          {agg.confirmed}/{entries.length}
+        </span>
+        <span className="hidden h-1 w-16 overflow-hidden rounded-full bg-layer-1 sm:block">
+          <span
+            className={cn("block h-full rounded-full", remaining > 0 ? "bg-warning-primary" : "bg-success-primary")}
+            style={{ width: `${entries.length ? (agg.confirmed / entries.length) * 100 : 0}%` }}
+          />
+        </span>
+      </span>
     </div>
   );
 }
@@ -109,9 +137,8 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
   const [titleDraft, setTitleDraft] = useState("");
   const escaped = useRef(false);
 
-  const { data: meetings, mutate: mutateList } = useSWR(
-    workspaceSlug ? ["weekly-meetings", workspaceSlug] : null,
-    () => weeklyService.list(workspaceSlug)
+  const { data: meetings, mutate: mutateList } = useSWR(workspaceSlug ? ["weekly-meetings", workspaceSlug] : null, () =>
+    weeklyService.list(workspaceSlug)
   );
 
   // 既定は「開いている会期」。無ければ直近。会議を開いたらまずここに居たい。
@@ -136,9 +163,8 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
     data: meeting,
     mutate: mutateMeeting,
     isLoading,
-  } = useSWR(
-    workspaceSlug && meetingId ? ["weekly-meeting", workspaceSlug, meetingId] : null,
-    () => weeklyService.detail(workspaceSlug, meetingId as string)
+  } = useSWR(workspaceSlug && meetingId ? ["weekly-meeting", workspaceSlug, meetingId] : null, () =>
+    weeklyService.detail(workspaceSlug, meetingId as string)
   );
 
   const entries = useMemo(() => meeting?.entries || [], [meeting]);
@@ -157,9 +183,12 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
       const targetId = (next as TWeeklyEntry).id || id;
       if (!targetId) return;
       void mutateMeeting(
+        // SWR のキャッシュは参照比較で再描画を決めるので、ここは in-place 変更ではなく
+        // copy-on-write でなければならない(Object.assign に置き換えると再描画が飛ぶ)。
         (cur?: TWeeklyMeeting) =>
           cur
-            ? { ...cur, entries: (cur.entries || []).map((e) => (e.id === targetId ? { ...e, ...next } : e)) }
+            ? // oxlint-disable-next-line no-map-spread
+              { ...cur, entries: (cur.entries || []).map((e) => (e.id === targetId ? { ...e, ...next } : e)) }
             : cur,
         { revalidate: false }
       );
@@ -300,7 +329,13 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           <h2 className="text-16 font-semibold text-primary">{t("weekly.empty.title")}</h2>
           <p className="text-12 leading-relaxed text-tertiary">{t("weekly.empty.hint")}</p>
           {canEdit && (
-            <Button variant="primary" size="lg" onClick={() => void run("open")} loading={busy === "open"} prependIcon={<Plus />}>
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={() => void run("open")}
+              loading={busy === "open"}
+              prependIcon={<Plus />}
+            >
               {t("weekly.actions.open")}
             </Button>
           )}
@@ -314,7 +349,11 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
       <div className="z-10 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle bg-surface-1 px-4 py-2 sm:px-6">
         {renaming ? (
           <input
-            autoFocus
+            // autoFocus は a11y 規則で禁止。改名は明示的に押して入るモードなので
+            // 「開いた瞬間にキャレットが入る」挙動は変えず、mount 時に ref で当てる。
+            ref={(el) => {
+              if (el && document.activeElement !== el) el.focus();
+            }}
             value={titleDraft}
             maxLength={255}
             placeholder={t("weekly.actions.rename_placeholder")}
@@ -327,56 +366,57 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
             className="w-[14rem] rounded-md border border-accent-strong bg-layer-transparent px-2 py-1 text-13 font-medium text-primary outline-none"
           />
         ) : (
-        <CustomMenu
-          maxHeight="lg"
-          closeOnSelect
-          customButton={
-            <span className="flex items-center gap-1.5 rounded-md px-2 py-1 text-13 font-medium text-primary transition-colors hover:bg-layer-1">
-              <CalendarDays className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
-              <span className="max-w-[14rem] truncate">
-                {meeting?.title || (meeting ? `${fmtDate(meeting.period_start)} – ${fmtDate(meeting.period_end)}` : "—")}
+          <CustomMenu
+            maxHeight="lg"
+            closeOnSelect
+            customButton={
+              <span className="flex items-center gap-1.5 rounded-md px-2 py-1 text-13 font-medium text-primary transition-colors hover:bg-layer-1">
+                <CalendarDays className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
+                <span className="max-w-[14rem] truncate">
+                  {meeting?.title ||
+                    (meeting ? `${fmtDate(meeting.period_start)} – ${fmtDate(meeting.period_end)}` : "—")}
+                </span>
+                <ChevronDown className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
               </span>
-              <ChevronDown className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
-            </span>
-          }
-        >
-          {meetings.map((m) => (
-            <CustomMenu.MenuItem key={m.id} onClick={() => setMeetingId(m.id)}>
-              <span className="flex items-center gap-2">
-                <span
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    m.status === "OPEN" ? "bg-accent-primary" : "bg-[var(--border-color-strong)]"
-                  )}
-                />
-                <span className="truncate">{m.title || `${fmtDate(m.period_start)} – ${fmtDate(m.period_end)}`}</span>
-              </span>
-            </CustomMenu.MenuItem>
-          ))}
-          {canEdit && meeting && (
-            <>
-              <div className="my-1 border-t border-subtle" />
-              <CustomMenu.MenuItem
-                onClick={() => {
-                  setTitleDraft(meeting.title || "");
-                  setRenaming(true);
-                }}
-              >
+            }
+          >
+            {meetings.map((m) => (
+              <CustomMenu.MenuItem key={m.id} onClick={() => setMeetingId(m.id)}>
                 <span className="flex items-center gap-2">
-                  <Pencil className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
-                  {t("weekly.actions.rename")}
+                  <span
+                    className={cn(
+                      "size-1.5 shrink-0 rounded-full",
+                      m.status === "OPEN" ? "bg-accent-primary" : "bg-[var(--border-color-strong)]"
+                    )}
+                  />
+                  <span className="truncate">{m.title || `${fmtDate(m.period_start)} – ${fmtDate(m.period_end)}`}</span>
                 </span>
               </CustomMenu.MenuItem>
-              {/* 開き間違えた会期の逃げ道。これが無いと確定の押し間違いから戻れなくなる。 */}
-              <CustomMenu.MenuItem onClick={() => setDeleteOpen(true)}>
-                <span className="flex items-center gap-2 text-danger-primary">
-                  <Trash2 className="size-3.5 shrink-0" strokeWidth={1.75} />
-                  {t("weekly.actions.delete")}
-                </span>
-              </CustomMenu.MenuItem>
-            </>
-          )}
-        </CustomMenu>
+            ))}
+            {canEdit && meeting && (
+              <>
+                <div className="my-1 border-t border-subtle" />
+                <CustomMenu.MenuItem
+                  onClick={() => {
+                    setTitleDraft(meeting.title || "");
+                    setRenaming(true);
+                  }}
+                >
+                  <span className="flex items-center gap-2">
+                    <Pencil className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
+                    {t("weekly.actions.rename")}
+                  </span>
+                </CustomMenu.MenuItem>
+                {/* 開き間違えた会期の逃げ道。これが無いと確定の押し間違いから戻れなくなる。 */}
+                <CustomMenu.MenuItem onClick={() => setDeleteOpen(true)}>
+                  <span className="flex items-center gap-2 text-danger-primary">
+                    <Trash2 className="size-3.5 shrink-0" strokeWidth={1.75} />
+                    {t("weekly.actions.delete")}
+                  </span>
+                </CustomMenu.MenuItem>
+              </>
+            )}
+          </CustomMenu>
         )}
 
         {meeting && (
@@ -390,7 +430,7 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           </span>
         )}
         {meeting && (
-          <span className="hidden shrink-0 text-11 tabular-nums text-placeholder sm:inline">
+          <span className="hidden shrink-0 text-11 text-placeholder tabular-nums sm:inline">
             {fmtDate(meeting.period_start)} – {fmtDate(meeting.period_end)}
           </span>
         )}
@@ -405,7 +445,7 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
               href={notesHref}
               target="_blank"
               rel="noreferrer"
-              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-1 hover:text-primary"
+              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-13 font-medium whitespace-nowrap text-secondary transition-colors hover:bg-layer-1 hover:text-primary"
             >
               <NotebookPen className="size-3.5 shrink-0" strokeWidth={1.75} />
               <span className="hidden sm:inline">{t("weekly.notes.open")}</span>
@@ -421,6 +461,7 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
               loading={busy === "page"}
               disabled={!!busy}
               prependIcon={<NotebookPen />}
+              className="shrink-0 whitespace-nowrap"
             >
               <span className="hidden sm:inline">{t("weekly.notes.create")}</span>
             </Button>
@@ -431,14 +472,14 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
             maxHeight="lg"
             closeOnSelect
             customButton={
-              <span className="flex items-center gap-1.5 rounded-md px-2 py-1 text-13 font-medium text-secondary transition-colors hover:bg-layer-1 hover:text-primary">
+              <span className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-13 font-medium whitespace-nowrap text-secondary transition-colors hover:bg-layer-1 hover:text-primary">
                 <NotebookPen className="size-3.5 shrink-0" strokeWidth={1.75} />
                 <span className="hidden sm:inline">{t("weekly.notes.create")}</span>
                 <ChevronDown className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
               </span>
             }
           >
-            <p className="px-2 pb-1 pt-0.5 text-11 text-tertiary">{t("weekly.notes.pick_project")}</p>
+            <p className="px-2 pt-0.5 pb-1 text-11 text-tertiary">{t("weekly.notes.pick_project")}</p>
             {joinedProjectIds.map((id) => (
               <CustomMenu.MenuItem key={id} onClick={() => void createNotes(id)}>
                 <span className="truncate">{getProjectById(id)?.name || "—"}</span>
@@ -456,25 +497,17 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
             disabled={!meeting}
             aria-label={t("weekly.chat.title")}
             prependIcon={<MessagesSquare />}
+            className="shrink-0 whitespace-nowrap"
           >
             <span className="hidden sm:inline">{t("weekly.chat.title")}</span>
           </Button>
         </Tooltip>
 
-        <div className={cn("flex items-center gap-2", !canEdit && "hidden")}>
-          {/* 「出処だけ取り直す」は上級操作 — 狭い画面では畳んで、主導線を邪魔しない。 */}
-          <Tooltip tooltipContent={t("weekly.actions.refresh_sources_hint")} position="bottom">
-            <Button
-              variant="ghost"
-              size="base"
-              className="hidden sm:inline-flex"
-              onClick={() => void run("sources")}
-              loading={busy === "sources"}
-              disabled={!meeting || confirmed || !!busy}
-            >
-              {t("weekly.actions.refresh_sources")}
-            </Button>
-          </Tooltip>
+        {/* 「見る操作」と「会期を動かす操作」の境目。5 つ並べると全部同じ重さに見えて、
+            終端操作の 確定 が主導線として読めなくなる。 */}
+        <span className={cn("mx-0.5 h-4 w-px shrink-0 bg-[var(--border-color-subtle)]", !canEdit && "hidden")} />
+
+        <div className={cn("flex shrink-0 items-center gap-2", !canEdit && "hidden")}>
           <Tooltip tooltipContent={t("weekly.actions.refresh_hint")} position="bottom">
             <Button
               variant="secondary"
@@ -482,12 +515,20 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
               onClick={() => void run("refresh")}
               disabled={!meeting || confirmed || !!busy}
               prependIcon={<RefreshCw className={cn(busy === "refresh" && "animate-spin")} />}
+              className="shrink-0 whitespace-nowrap"
             >
               <span className="hidden sm:inline">{t("weekly.actions.refresh")}</span>
             </Button>
           </Tooltip>
           {confirmed ? (
-            <Button variant="primary" size="base" onClick={() => void run("open")} loading={busy === "open"} prependIcon={<Plus />}>
+            <Button
+              variant="primary"
+              size="base"
+              onClick={() => void run("open")}
+              loading={busy === "open"}
+              prependIcon={<Plus />}
+              className="shrink-0 whitespace-nowrap"
+            >
               {t("weekly.actions.open")}
             </Button>
           ) : (
@@ -499,11 +540,36 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
                 onClick={() => setConfirmOpen(true)}
                 disabled={!meeting || !!busy}
                 prependIcon={<CheckCircle2 />}
+                className="shrink-0 whitespace-nowrap"
               >
                 {t("weekly.actions.confirm")}
               </Button>
             </Tooltip>
           )}
+
+          {/* 「出処だけ取り直す」は上級操作。平置きすると主導線と同じ重さに見えるので畳む。 */}
+          <CustomMenu
+            closeOnSelect
+            placement="bottom-end"
+            customButton={
+              <span className="grid size-7 shrink-0 place-items-center rounded-md text-tertiary transition-colors hover:bg-layer-1 hover:text-primary">
+                <MoreHorizontal className="size-4" strokeWidth={1.75} />
+              </span>
+            }
+          >
+            <CustomMenu.MenuItem disabled={!meeting || confirmed || !!busy} onClick={() => void run("sources")}>
+              <span className="flex items-center gap-2">
+                <RefreshCw
+                  className={cn("size-3.5 shrink-0 text-tertiary", busy === "sources" && "animate-spin")}
+                  strokeWidth={1.75}
+                />
+                <span className="whitespace-nowrap">{t("weekly.actions.refresh_sources")}</span>
+              </span>
+            </CustomMenu.MenuItem>
+            <p className="max-w-[15rem] px-2 pt-0.5 pb-1 text-11 leading-relaxed text-tertiary">
+              {t("weekly.actions.refresh_sources_hint")}
+            </p>
+          </CustomMenu>
         </div>
       </div>
 
@@ -518,73 +584,73 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           )}
         >
           <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-4">
-          {/* 確定済みは「書けない」ではなく「なぜ書けないか + 戻し方」を出す。
+            {/* 確定済みは「書けない」ではなく「なぜ書けないか + 戻し方」を出す。
               ボタンを黙って消すと、壊れた画面にしか見えない。 */}
-          {confirmed && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-subtle bg-layer-1 px-3 py-2.5">
-              <Lock className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
-              <p className="min-w-0 flex-1 text-11 leading-relaxed text-tertiary">{t("weekly.status.frozen_hint")}</p>
-              {canEdit && (
-                <Button
-                  variant="secondary"
-                  size="base"
-                  onClick={() => void run("reopen")}
-                  loading={busy === "reopen"}
-                  disabled={!!busy}
-                  prependIcon={<Undo2 />}
-                >
-                  {t("weekly.actions.reopen")}
-                </Button>
-              )}
-            </div>
-          )}
-
-          <StatCards entries={entries} />
-
-          {entries.length ? (
-            <>
-              <div className="lg:hidden">
-                <WeeklyMemberStrip entries={entries} activeId={activeEntryId} onSelect={setActiveEntryId} />
+            {confirmed && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-subtle bg-layer-1 px-3 py-2.5">
+                <Lock className="size-3.5 shrink-0 text-tertiary" strokeWidth={1.75} />
+                <p className="min-w-0 flex-1 text-11 leading-relaxed text-tertiary">{t("weekly.status.frozen_hint")}</p>
+                {canEdit && (
+                  <Button
+                    variant="secondary"
+                    size="base"
+                    onClick={() => void run("reopen")}
+                    loading={busy === "reopen"}
+                    disabled={!!busy}
+                    prependIcon={<Undo2 />}
+                  >
+                    {t("weekly.actions.reopen")}
+                  </Button>
+                )}
               </div>
+            )}
 
-              <div className="grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:gap-5">
-                <aside className="vertical-scrollbar scrollbar-sm sticky top-0 hidden max-h-[calc(100vh-12rem)] overflow-y-auto lg:block">
-                  <div className="rounded-lg border border-subtle bg-layer-transparent p-2">
-                    <WeeklyMemberRail entries={entries} activeId={activeEntryId} onSelect={setActiveEntryId} />
-                  </div>
-                </aside>
+            <StatCards entries={entries} />
 
-                <div className="flex min-w-0 flex-col gap-4">
-                  {activeEntry ? (
-                    <WeeklyEntryPanel
-                      key={activeEntry.id}
-                      workspaceSlug={workspaceSlug}
-                      meetingId={meeting?.id || ""}
-                      entry={activeEntry}
-                      readOnly={confirmed || !canEdit}
-                      busy={!!busy}
-                      onRefClick={openPeek}
-                      onEntryChange={(e) => patchEntry(e)}
-                    />
-                  ) : null}
-                  {/* 広い画面では右列に出す。狭い画面ではここに畳んで置く。 */}
-                  <div className="xl:hidden">
-                    <WeeklySources sources={activeEntry?.sources || []} onOpen={openPeek} collapsible />
-                  </div>
+            {entries.length ? (
+              <>
+                <div className="lg:hidden">
+                  <WeeklyMemberStrip entries={entries} activeId={activeEntryId} onSelect={setActiveEntryId} />
                 </div>
 
-                <aside className="vertical-scrollbar scrollbar-sm sticky top-0 hidden max-h-[calc(100vh-12rem)] overflow-y-auto xl:block">
-                  <WeeklySources sources={activeEntry?.sources || []} onOpen={openPeek} />
-                </aside>
-              </div>
-            </>
-          ) : isLoading ? (
-            <div className="h-40 animate-pulse rounded-lg bg-layer-transparent" />
-          ) : (
-            <p className="rounded-lg border border-dashed border-subtle px-6 py-10 text-center text-12 text-placeholder">
-              {t("weekly.empty.no_entries")}
-            </p>
-          )}
+                <div className="grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_20rem] xl:gap-5">
+                  <aside className="vertical-scrollbar sticky top-0 hidden scrollbar-sm max-h-[calc(100vh-12rem)] overflow-y-auto lg:block">
+                    <div className="rounded-lg border border-subtle bg-layer-transparent p-2">
+                      <WeeklyMemberRail entries={entries} activeId={activeEntryId} onSelect={setActiveEntryId} />
+                    </div>
+                  </aside>
+
+                  <div className="flex min-w-0 flex-col gap-4">
+                    {activeEntry ? (
+                      <WeeklyEntryPanel
+                        key={activeEntry.id}
+                        workspaceSlug={workspaceSlug}
+                        meetingId={meeting?.id || ""}
+                        entry={activeEntry}
+                        readOnly={confirmed || !canEdit}
+                        busy={!!busy}
+                        onRefClick={openPeek}
+                        onEntryChange={(e) => patchEntry(e)}
+                      />
+                    ) : null}
+                    {/* 広い画面では右列に出す。狭い画面ではここに畳んで置く。 */}
+                    <div className="xl:hidden">
+                      <WeeklySources sources={activeEntry?.sources || []} onOpen={openPeek} collapsible />
+                    </div>
+                  </div>
+
+                  <aside className="vertical-scrollbar sticky top-0 hidden scrollbar-sm max-h-[calc(100vh-12rem)] overflow-y-auto xl:block">
+                    <WeeklySources sources={activeEntry?.sources || []} onOpen={openPeek} />
+                  </aside>
+                </div>
+              </>
+            ) : isLoading ? (
+              <div className="h-40 animate-pulse rounded-lg bg-layer-transparent" />
+            ) : (
+              <p className="rounded-lg border border-dashed border-subtle px-6 py-10 text-center text-12 text-placeholder">
+                {t("weekly.empty.no_entries")}
+              </p>
+            )}
           </div>
         </div>
 

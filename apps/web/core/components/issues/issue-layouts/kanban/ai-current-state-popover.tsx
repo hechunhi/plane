@@ -3,7 +3,7 @@
  * v4: ①详情/peek 面板打开时全局禁弹浮层(详情用内嵌块代替)②抽出 AICurrentStateBody
  * 给浮层与内嵌块复用 ④置信度灰点 tooltip ⑦碰撞检测右→左→下。
  */
-import { useEffect, useState, type ReactNode, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type ReactNode, type MouseEvent } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -503,6 +503,9 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
   const zh = useZh();
   const issueDetail = useIssueDetail();
   const [, tick] = useState(0);
+  // 触屏の下スワイプ量(px)。指を離した時に閾値を超えていれば閉じる。
+  const [dragY, setDragY] = useState(0);
+  const dragFrom = useRef<number | null>(null);
 
   useEffect(() => {
     if (!active) return;
@@ -514,6 +517,12 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
       window.removeEventListener("resize", on);
     };
   }, [active]);
+
+  // 別のカードを開いたら引きずり量は持ち越さない。
+  useEffect(() => {
+    setDragY(0);
+    dragFrom.current = null;
+  }, [active?.issueId]);
 
   // item 1: 任何详情/peek 面板打开时,全局禁弹浮层(详情用内嵌块)
   if (issueDetail.peekIssue) return null;
@@ -567,6 +576,167 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
     />
   );
 
+  // 触屏幅では hover が無く、浮層は画面をほぼ覆ってしまう → 下から出るシートに替える。
+  const narrow = vw < 640;
+
+  const head = (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: narrow ? "10px 14px" : "9px 11px",
+        borderBottom: "1px solid #f0f1f3",
+        background: "#fbfbfc",
+        flex: "none",
+      }}
+    >
+      <Ico d={ICON.sparkle} size={13} color="#7c5cff" sw={1.8} />
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#71757c", flex: "none" }}>
+        {active.meta.identifier && active.meta.seq != null ? `${active.meta.identifier}-${active.meta.seq}` : ""}
+      </span>
+      <span
+        style={{
+          fontSize: 12,
+          color: "#3a3d42",
+          fontWeight: 600,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          minWidth: 0,
+        }}
+      >
+        {active.meta.name}
+      </span>
+      {s.confidence < LOW_CONF ? (
+        <span
+          title={zh ? "AI 置信度:低" : "AI 確度:低"}
+          style={{
+            marginLeft: "auto",
+            flex: "none",
+            fontSize: 10.5,
+            fontWeight: 600,
+            color: "#92700a",
+            background: "#fdf6dd",
+            border: "1px solid #ecd98a",
+            borderRadius: 4,
+            padding: "0 5px",
+          }}
+        >
+          {zh ? "AI 不确定" : "AI 不確実"}
+        </span>
+      ) : (
+        <span
+          title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t}
+          style={{ marginLeft: "auto", flex: "none", fontSize: 11, fontWeight: 600, color: conf.c }}
+        >
+          {(zh ? "置信度 " : "確度 ") + conf.t}
+        </span>
+      )}
+    </div>
+  );
+
+  const body = (
+    <div
+      style={{
+        padding: narrow ? "12px 14px" : "10px 11px",
+        overflow: "auto",
+        flex: "1 1 auto",
+        minHeight: 0,
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
+      <AICurrentStateBody
+        s={s}
+        zh={zh}
+        projectId={active.projectId}
+        onSource={openCard}
+        onOpenChild={(cid) => {
+          issueDetail.setPeekIssue({ workspaceSlug: slug, projectId: active.projectId, issueId: cid });
+          aiPopover.hide();
+        }}
+      />
+    </div>
+  );
+
+  // v9 行动操作:催促/改担当(确认闸门)/再分析
+  const foot = (
+    <div
+      style={{
+        padding: narrow ? "10px 14px" : "8px 11px",
+        borderTop: "1px solid #f0f1f3",
+        background: "#fbfbfc",
+        flex: "none",
+      }}
+    >
+      <DISActionBar s={s} projectId={active.projectId} zh={zh} compact />
+    </div>
+  );
+
+  if (narrow)
+    return (
+      <>
+        {/* 遮罩:触屏には「外に出る」動作が無いので、閉じ方を必ず一つ画面に置く。
+            div ではなく button —— キーボードでも Tab で届いて Enter で閉じられる。 */}
+        <button
+          type="button"
+          aria-label={zh ? "关闭" : "閉じる"}
+          onClick={() => aiPopover.hide()}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 94,
+            background: "rgba(16,24,40,0.38)",
+            border: 0,
+            padding: 0,
+            appearance: "none",
+          }}
+        />
+        <div
+          onTouchStart={(e) => {
+            dragFrom.current = e.touches[0]?.clientY ?? null;
+          }}
+          onTouchMove={(e) => {
+            if (dragFrom.current === null) return;
+            // 下方向だけ追従(上に引っ張って伸びるのは違和感)。
+            setDragY(Math.max(0, (e.touches[0]?.clientY ?? 0) - dragFrom.current));
+          }}
+          onTouchEnd={() => {
+            const shouldClose = dragY > 80;
+            dragFrom.current = null;
+            setDragY(0);
+            if (shouldClose) aiPopover.hide();
+          }}
+          style={{
+            position: "fixed",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 95,
+            background: "#fff",
+            borderRadius: "14px 14px 0 0",
+            maxHeight: "78vh",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            textAlign: "left",
+            boxShadow: "0 -12px 32px -8px rgba(16,24,40,0.28)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+            transform: dragY ? `translateY(${dragY}px)` : undefined,
+            transition: dragFrom.current === null ? "transform .18s ease" : "none",
+          }}
+        >
+          {/* つまみ:下スワイプで閉じられることを形で伝える。 */}
+          <div style={{ display: "flex", justifyContent: "center", padding: "8px 0 4px", flex: "none" }}>
+            <span style={{ width: 36, height: 4, borderRadius: 2, background: "#d7d9de" }} />
+          </div>
+          {head}
+          {body}
+          {foot}
+        </div>
+      </>
+    );
+
   return (
     <div
       onMouseEnter={() => aiPopover.keep()}
@@ -590,75 +760,9 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
       }}
     >
       {arrow}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "9px 11px",
-          borderBottom: "1px solid #f0f1f3",
-          background: "#fbfbfc",
-        }}
-      >
-        <Ico d={ICON.sparkle} size={13} color="#7c5cff" sw={1.8} />
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#71757c", flex: "none" }}>
-          {active.meta.identifier && active.meta.seq != null ? `${active.meta.identifier}-${active.meta.seq}` : ""}
-        </span>
-        <span
-          style={{
-            fontSize: 12,
-            color: "#3a3d42",
-            fontWeight: 600,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            minWidth: 0,
-          }}
-        >
-          {active.meta.name}
-        </span>
-        {s.confidence < LOW_CONF ? (
-          <span
-            title={zh ? "AI 置信度:低" : "AI 確度:低"}
-            style={{
-              marginLeft: "auto",
-              flex: "none",
-              fontSize: 10.5,
-              fontWeight: 600,
-              color: "#92700a",
-              background: "#fdf6dd",
-              border: "1px solid #ecd98a",
-              borderRadius: 4,
-              padding: "0 5px",
-            }}
-          >
-            {zh ? "AI 不确定" : "AI 不確実"}
-          </span>
-        ) : (
-          <span
-            title={(zh ? "AI 置信度:" : "AI 確度:") + conf.t}
-            style={{ marginLeft: "auto", flex: "none", fontSize: 11, fontWeight: 600, color: conf.c }}
-          >
-            {(zh ? "置信度 " : "確度 ") + conf.t}
-          </span>
-        )}
-      </div>
-      <div style={{ padding: "10px 11px", overflow: "auto", flex: "1 1 auto", minHeight: 0 }}>
-        <AICurrentStateBody
-          s={s}
-          zh={zh}
-          projectId={active.projectId}
-          onSource={openCard}
-          onOpenChild={(cid) => {
-            issueDetail.setPeekIssue({ workspaceSlug: slug, projectId: active.projectId, issueId: cid });
-            aiPopover.hide();
-          }}
-        />
-      </div>
-      {/* v9 行动操作:催促/改担当(确认闸门)/再分析 */}
-      <div style={{ padding: "8px 11px", borderTop: "1px solid #f0f1f3", background: "#fbfbfc", flex: "none" }}>
-        <DISActionBar s={s} projectId={active.projectId} zh={zh} compact />
-      </div>
+      {head}
+      {body}
+      {foot}
     </div>
   );
 });

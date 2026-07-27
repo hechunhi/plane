@@ -1,6 +1,11 @@
 .git
 *.pyc
 .env
+# BARSOUL 2026-07-27: 上の `.env` は context ルートの 1 個だけしか除外しない。
+# apps/web/.env は素通りし、vite.config.ts が build 時に dotenv で読む
+# → dev 用の VITE_API_BASE_URL が本番 bundle に焼き込まれる（本番が壊れる）。
+**/.env
+**/.env.local
 venv
 .venv
 node_modules/
