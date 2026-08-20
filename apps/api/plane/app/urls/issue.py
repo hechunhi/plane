@@ -17,6 +17,7 @@ from plane.app.views import (
     WorkspaceAIApprovalsEndpoint,
     IssueAIStateBatchEndpoint,
     IssueAIStateWorkspaceEndpoint,
+    IssueAIStateAckInfoEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
     IssueAIStateRederiveEndpoint,
@@ -218,6 +219,12 @@ urlpatterns = [
         "workspaces/<str:slug>/my-work/ai-states/",
         IssueAIStateWorkspaceEndpoint.as_view(),
         name="workspace-my-work-ai-states",
+    ),
+    # BARSOUL DIS: 「補足は不要」= 要補足の打ち切り(出口の無い指摘を作らない)
+    path(
+        "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-state/ack-info/",
+        IssueAIStateAckInfoEndpoint.as_view(),
+        name="project-issue-ai-state-ack-info",
     ),
     # BARSOUL DIS: 人工纠正/补充(向 AI 补足背景 → 双语留痕 + 触发重判)
     path(

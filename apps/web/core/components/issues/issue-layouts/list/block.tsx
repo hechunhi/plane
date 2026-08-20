@@ -222,6 +222,9 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
         ref={issueRef}
         className={cn(
           "group/list-block relative flex min-h-11 flex-col gap-3 bg-layer-transparent py-3 text-13 transition-colors hover:bg-layer-transparent-hover",
+          // BARSOUL 2026-08: 768px 未満では必ず縦積み(md:flex-row が効かない)ので、
+          // タイトル行とプロパティ行の隙間・上下余白だけ詰める。文字サイズは不変。
+          "max-md:gap-1.5 max-md:py-2",
           {
             "border-accent-strong": getIsIssuePeeked(issue.id) && peekIssue?.nestingLevel === nestingLevel,
             "border-strong-1": isIssueActive,

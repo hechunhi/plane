@@ -1,31 +1,28 @@
 /**
- * BARSOUL 2026-07-25 (hechun「審査を一等市民に·受信箱」): ワークスペース級
- * 「審査」ビューの本体。3 タブ(待我处理 / 我发起 / 全部)で、自分が関与する
- * 審査を一望する。これが同時に:
- *   ① 既存の issue 紐付き審査に **集約された行き先** を与え、
- *   ② issue を持たない「独立」審査の **落脚点** になる。
+ * BARSOUL 2026-07-25 (hechun「審査を一等市民に·受信箱」) / 2026-08-07 分業見直し。
+ *
+ * ワークスペース級「審査」ビュー。**分業が変わった**:
+ *   ・**待我审批**(今日決めるべき束)  → 「我的工作」の承認レンズ。**ここには置かない**。
+ *   ・**我发起 / 全部 / 独立起票**     → この台帳ページ。追跡・監査・起票のための場所。
+ * 「一等市民」= 毎日専用の入口を持つこと、ではなく **出るべき所に出る** こと。
+ * 行(ApprovalInboxRow)と取得(useApprovalInbox)は両画面で共有 —— 実装は 1 つ。
  *
  * データは同源 Django 認証代理(actor は session 解析)経由の読取専用。
  * 裁決は行内から既存 /ai/decide-approval → Temporal に集約(engine 不変)。
  */
-import { useCallback, useEffect, useState } from "react";
-import { Loader, Plus } from "lucide-react";
+import { useState } from "react";
+import { ArrowRight, Loader, Plus } from "lucide-react";
+import { Link } from "react-router";
 import { useTranslation } from "@plane/i18n";
 import { cn } from "@plane/utils";
-import {
-  approvalsService,
-  type TApprovalInboxItem,
-  type TApprovalScope,
-  type TApprovalStatusFilter,
-} from "@/services/approvals.service";
+import { useApprovalInbox } from "@/hooks/use-approval-inbox";
+import type { TApprovalScope, TApprovalStatusFilter } from "@/services/approvals.service";
 import { ApprovalInboxRow } from "./inbox-row";
 import { StandaloneApprovalModal } from "./standalone-modal";
 
-type TTabKey = "assigned" | "mine" | "all";
+type TTabKey = "mine" | "all";
 
-// タブ → (scope, status)。待我处理 = 自分が審査者 × 未終結のみ(＝決めるべき束)。
 const TABS: { key: TTabKey; scope: TApprovalScope; status: TApprovalStatusFilter }[] = [
-  { key: "assigned", scope: "assigned", status: "open" },
   { key: "mine", scope: "mine", status: "all" },
   { key: "all", scope: "all", status: "all" },
 ];
@@ -34,46 +31,20 @@ type Props = { workspaceSlug: string };
 
 export function ApprovalInboxRoot({ workspaceSlug }: Props) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<TTabKey>("assigned");
-  const [items, setItems] = useState<TApprovalInboxItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<TTabKey>("mine");
   const [originating, setOriginating] = useState(false);
 
-  const load = useCallback(
-    async (key: TTabKey) => {
-      const cfg = TABS.find((x) => x.key === key)!;
-      setLoading(true);
-      setError(null);
-      try {
-        const list = await approvalsService.list(workspaceSlug, cfg.scope, cfg.status);
-        setItems(list);
-      } catch (e) {
-        const msg = (e as { error?: string; msg?: string })?.error || (e as { msg?: string })?.msg || "";
-        setError(msg || t("approval_inbox.load_failed"));
-        setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [workspaceSlug, t]
-  );
+  const cfg = TABS.find((x) => x.key === tab)!;
+  // 取得は SWR キー (slug, scope, status) 一本。手書きの useEffect ループに
+  // 戻さないこと —— `t` を依存に混ぜて毎フレーム取得する事故が実際に起きた。
+  const { items, hasError, errorMessage, isLoading, refresh } = useApprovalInbox(workspaceSlug, cfg.scope, cfg.status);
 
-  useEffect(() => {
-    void load(tab);
-  }, [tab, load]);
-
-  const tabLabel = (key: TTabKey) =>
-    key === "assigned"
-      ? t("approval_inbox.tab_assigned")
-      : key === "mine"
-        ? t("approval_inbox.tab_mine")
-        : t("approval_inbox.tab_all");
+  const tabLabel = (key: TTabKey) => (key === "mine" ? t("approval_inbox.tab_mine") : t("approval_inbox.tab_all"));
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col px-5 py-5">
       {/* タブ(選択 = accent 蓝 = 位置/選中) */}
-      <div className="mb-4 flex items-center gap-1 border-b border-subtle">
+      <div className="flex items-center gap-1 border-b border-subtle">
         {TABS.map((x) => {
           const active = x.key === tab;
           return (
@@ -95,8 +66,8 @@ export function ApprovalInboxRoot({ workspaceSlug }: Props) {
         <div className="ml-auto flex items-center gap-2 pb-1">
           <button
             type="button"
-            onClick={() => void load(tab)}
-            disabled={loading}
+            onClick={refresh}
+            disabled={isLoading}
             className="text-11 text-tertiary hover:text-secondary disabled:opacity-50"
           >
             {t("approval_inbox.refresh")}
@@ -113,47 +84,48 @@ export function ApprovalInboxRoot({ workspaceSlug }: Props) {
         </div>
       </div>
 
+      {/* 決める場所への道標。ここは台帳なので、行動は「我的工作」へ送る。 */}
+      <Link
+        to={`/${workspaceSlug}/my-work/`}
+        className="mt-3 mb-4 inline-flex w-fit items-center gap-1.5 text-11 text-tertiary transition-colors hover:text-accent-primary"
+      >
+        {t("approval_inbox.decide_moved_hint")}
+        <ArrowRight className="size-3 shrink-0" strokeWidth={1.75} />
+      </Link>
+
       {/* 本体 */}
-      {loading ? (
+      {isLoading ? (
         <div className="flex flex-1 items-center justify-center py-16 text-tertiary">
           <Loader className="size-4 animate-spin" />
         </div>
-      ) : error ? (
+      ) : hasError ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
-          <p className="text-13 text-danger-primary">{error}</p>
-          <button type="button" onClick={() => void load(tab)} className="text-12 text-accent-primary hover:underline">
+          <p className="text-13 text-danger-primary">{errorMessage || t("approval_inbox.load_failed")}</p>
+          <button type="button" onClick={refresh} className="text-12 text-accent-primary hover:underline">
             {t("approval_inbox.retry")}
           </button>
         </div>
       ) : items.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-1 py-16 text-center">
-          <p className="text-13 text-secondary">
-            {tab === "assigned" ? t("approval_inbox.empty_assigned") : t("approval_inbox.empty_generic")}
-          </p>
+          <p className="text-13 text-secondary">{t("approval_inbox.empty_generic")}</p>
           <p className="text-11 text-tertiary">{t("approval_inbox.empty_hint")}</p>
         </div>
       ) : (
         <div className="flex flex-col gap-2.5">
           {items.map((item) => (
-            <ApprovalInboxRow
-              key={item.no}
-              item={item}
-              workspaceSlug={workspaceSlug}
-              onDecided={() => void load(tab)}
-            />
+            <ApprovalInboxRow key={item.no} item={item} workspaceSlug={workspaceSlug} onDecided={refresh} />
           ))}
         </div>
       )}
 
-      {/* 独立審査の発起モーダル(受信箱からのみ)。作成後は現タブを読み直す。 */}
+      {/* 独立審査の発起モーダル(台帳からのみ)。作成後は「我发起」を読み直す。 */}
       <StandaloneApprovalModal
         workspaceSlug={workspaceSlug}
         isOpen={originating}
         onClose={() => setOriginating(false)}
         onCreated={() => {
-          // 発起直後は「我発起」に切り替えて、作った独立審査を即見せる。
           setTab("mine");
-          void load("mine");
+          refresh();
         }}
       />
     </div>

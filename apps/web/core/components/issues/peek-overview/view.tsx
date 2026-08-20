@@ -145,7 +145,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
           }}
         >
           {isError ? (
-            <div className="relative h-screen w-full overflow-hidden">
+            <div className="relative h-dvh w-full overflow-hidden">
               <IssuePeekOverviewError removeRoutePeekId={removeRoutePeekId} />
             </div>
           ) : (
@@ -174,7 +174,9 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
               {/* content */}
               <div className="vertical-scrollbar relative scrollbar-md h-full w-full overflow-hidden overflow-y-auto">
                 {["side-peek", "modal"].includes(peekMode) ? (
-                  <div className="relative flex flex-col gap-3 space-y-3 px-8 py-5">
+                  // BARSOUL 2026-08: side-peek はスマホで全幅になるため、32px の左右余白は
+                  // そのままだと本文の可読幅を大きく削る。大画面のみ従来値を維持する。
+                  <div className="relative flex flex-col gap-3 px-4 py-3 md:px-5">
                     <PeekOverviewIssueDetails
                       editorRef={editorRef}
                       workspaceSlug={workspaceSlug}
@@ -214,7 +216,7 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                   </div>
                 ) : (
                   <div className="vertical-scrollbar flex h-full w-full overflow-auto">
-                    <div className="relative h-full w-full space-y-6 overflow-auto p-4 py-5">
+                    <div className="relative h-full w-full space-y-6 overflow-auto p-3">
                       <div className="space-y-3">
                         <PeekOverviewIssueDetails
                           editorRef={editorRef}
@@ -247,7 +249,8 @@ export const IssueView = observer(function IssueView(props: IIssueView) {
                       </div>
                     </div>
                     <div
-                      className={`vertical-scrollbar scrollbar-sm h-full !w-[400px] flex-shrink-0 overflow-hidden border-l border-subtle p-4 py-5 ${
+                      // BARSOUL 2026-08: 固定 400px はノート PC だと本文側を潰すため段階化。
+                      className={`vertical-scrollbar scrollbar-sm h-full !w-[300px] flex-shrink-0 overflow-hidden border-l border-subtle p-3 lg:!w-[340px] ${
                         is_archived ? "pointer-events-none" : ""
                       }`}
                     >

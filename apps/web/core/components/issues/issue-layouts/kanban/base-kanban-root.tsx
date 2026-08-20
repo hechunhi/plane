@@ -293,7 +293,10 @@ export const BaseKanBanRoot = observer(function BaseKanBanRoot(props: IBaseKanBa
           ref={scrollableContainerRef}
         >
           <div className="relative h-full w-max min-w-full bg-surface-2">
-            <div className="h-full w-max">
+            {/* BARSOUL 2026-08: w-max だけだと盤面が「列の合計幅」で止まり、広い画面では
+                右側が丸ごと死んだ余白になっていた。min-w-full を足して盤面を必ず
+                スクローラ幅まで広げ、余った分は列側の grow が吸収する。 */}
+            <div className="h-full w-max min-w-full">
               <KanBanView
                 issuesMap={issueMap}
                 groupedIssueIds={groupedIssueIds ?? {}}

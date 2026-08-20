@@ -16,6 +16,7 @@ import { ControlLink } from "@plane/ui";
 import { cn, generateWorkItemLink } from "@plane/utils";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useLabel } from "@/hooks/store/use-label";
 import { useIssues } from "@/hooks/store/use-issues";
 import { useProject } from "@/hooks/store/use-project";
 import { useProjectState } from "@/hooks/store/use-project-state";
@@ -28,6 +29,7 @@ import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/iss
 import { WorkItemPreviewCard } from "../../preview-card";
 import type { TRenderQuickActions } from "../list/list-view-types";
 import type { CalendarStoreType } from "./base-calendar-root";
+import { HOLIDAY_TEXT, isHolidayLabelName } from "./holiday";
 
 type Props = {
   issue: TIssue;
@@ -53,8 +55,14 @@ export const CalendarIssueBlock = observer(
     const storeType = useIssueStoreType() as CalendarStoreType;
     const { issuesFilter } = useIssues(storeType);
     const { getProjectIdentifierById } = useProject();
+    const { getLabelById } = useLabel();
 
     const stateColor = getProjectStates(issue?.project_id)?.find((state) => state?.id == issue?.state_id)?.color || "";
+    // BARSOUL: 「休み」ラベルの付いたカードは赤字にする。日付セル側(day-tile)と
+    // 同じ判定規約(./holiday)を使うので、セルが赤いのにカードだけ黒、が起きない。
+    const isHoliday = (issue?.label_ids ?? []).some((labelId) =>
+      isHolidayLabelName(getLabelById(labelId)?.name)
+    );
     const projectIdentifier = getProjectIdentifierById(issue?.project_id);
 
     // handlers
@@ -122,7 +130,7 @@ export const CalendarIssueBlock = observer(
                     <span
                       className="h-full w-0.5 flex-shrink-0 rounded-sm"
                       style={{
-                        backgroundColor: stateColor,
+                        backgroundColor: isHoliday ? HOLIDAY_TEXT : stateColor,
                       }}
                     />
                     {issue.project_id && (
@@ -134,7 +142,12 @@ export const CalendarIssueBlock = observer(
                         displayProperties={issuesFilter?.issueFilters?.displayProperties}
                       />
                     )}
-                    <div className="truncate text-13 font-medium md:text-11 md:font-regular">{issue.name}</div>
+                    <div
+                      style={{ color: isHoliday ? HOLIDAY_TEXT : undefined }}
+                      className="truncate text-13 font-medium md:text-11 md:font-regular"
+                    >
+                      {issue.name}
+                    </div>
                   </div>
                   <div
                     className={cn("size-5 flex-shrink-0", {

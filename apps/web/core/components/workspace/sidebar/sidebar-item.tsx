@@ -17,9 +17,9 @@ import { joinUrlPath } from "@plane/utils";
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 import { NotificationAppSidebarOption } from "@/components/workspace-notifications/notification-app-sidebar-option";
 // hooks
-import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useUser, useUserPermissions } from "@/hooks/store/user";
 import { useWorkspaceNavigationPreferences } from "@/hooks/use-navigation-preferences";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 // plane web imports
 import { getSidebarNavigationItemIcon } from "@/plane-web/components/workspace/sidebar/helper";
 
@@ -41,18 +41,13 @@ export const SidebarItemBase = observer(function SidebarItemBase({
   const { isWorkspaceItemPinned } = useWorkspaceNavigationPreferences();
   const { data } = useUser();
 
-  const { toggleSidebar, isExtendedSidebarOpened, toggleExtendedSidebar } = useAppTheme();
-
-  const handleLinkClick = () => {
-    if (window.innerWidth < 768) toggleSidebar();
-    if (isExtendedSidebarOpened) toggleExtendedSidebar(false);
-  };
+  // BARSOUL 2026-08: モバイルのメニュー自動クローズは全入口で同じ 1 本を使う。
+  const handleLinkClick = useCloseSidebarOnNavigate();
 
   const staticItems = [
     "home",
     "my-work", // BARSOUL BS-216 Path A:常显个人工作入口(不走 pin/preference 门控)
     "weekly", // BARSOUL 週次ミーティング支援:同じく常显
-    "approvals", // BARSOUL 2026-07-25 審査を一等市民に·受信箱:同じく常显
     "pi_chat",
     "projects",
     "your_work",

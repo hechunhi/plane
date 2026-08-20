@@ -36,16 +36,23 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
   // refs
   const ref = useRef<HTMLDivElement>(null);
 
+  // BARSOUL 2026-08: 引数なしの toggleSidebar() は「反転」なので、意図が
+  // 「閉じる」なら常に true を渡す(条件が増えた時に裏返るのを防ぐ)。
   useOutsideClickDetector(ref, () => {
     if (sidebarCollapsed === false && window.innerWidth < 768) {
-      toggleSidebar();
+      toggleSidebar(true);
     }
   });
 
+  // BARSOUL 2026-08: 以前は windowSize(= [幅, 高さ])の変化そのものを依存にしていた。
+  // iOS Safari / Android Chrome はスクロールで URL バーが出入りするだけで高さが変わり
+  // resize が飛ぶため、「メニューを開いた直後に勝手に閉じる」状態になっていた。
+  // 見るべきはブレークポイントを跨いだかどうかだけなので、真偽値を依存にする。
+  const isMobileViewport = windowSize[0] < 768;
   useEffect(() => {
-    if (windowSize[0] < 768 && !sidebarCollapsed) toggleSidebar();
+    if (isMobileViewport && !sidebarCollapsed) toggleSidebar(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [windowSize]);
+  }, [isMobileViewport]);
 
   return (
     <>
@@ -87,7 +94,8 @@ export const SidebarWrapper = observer(function SidebarWrapper(props: TSidebarWr
           {children}
         </ScrollArea>
         {/* Help Section */}
-        <div className="flex h-12 items-center justify-between border-t border-subtle bg-surface-1 p-3">
+        {/* BARSOUL 2026-08: iPhone のホームインジケータ帯でフッターが切れるのを防ぐ。 */}
+        <div className="flex h-12 items-center justify-between border-t border-subtle bg-surface-1 p-3 max-md:h-auto max-md:min-h-12 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           <WorkspaceEditionBadge />
           {/* TODO: To be checked if we need this */}
           {/* <div className="flex items-center gap-2">

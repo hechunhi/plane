@@ -41,7 +41,9 @@ export function ResizableSidebar({
   width,
   setWidth,
   onWidthChange,
-  minWidth = 236,
+  // BARSOUL 2026-08: 1280/1366 のノートでは 236px でも本文を圧迫する。
+  // 手動リサイズの下限を 208px まで下げ、ユーザーが詰められるようにする(既定幅は不変)。
+  minWidth = 208,
   maxWidth = 350,
   className = "",
   children,
@@ -183,7 +185,13 @@ export function ResizableSidebar({
           "z-20 h-full border-r border-subtle bg-surface-1",
           !isResizing && "transition-all duration-300 ease-in-out",
           isCollapsed ? "w-0 translate-x-[-100%] opacity-0" : "translate-x-0 opacity-100",
-          isMobile && "absolute",
+          // BARSOUL 2026-08: 以前は UA ベースの isMobile で overlay 化していた。
+          // ビューポート幅(768px)で判定し、狭い画面では常に本文に被せる。
+          // ブレークポイント排他クラスなので lg 以上の挙動は一切変わらない。
+          "max-md:absolute",
+          // 端末幅より広いサイドバーは画面外にはみ出すので、モバイルでは実幅を上書きする。
+          // inline style を上書きするため `!` が必要。
+          !isCollapsed && "max-md:!w-[min(86vw,20rem)] max-md:!max-w-[min(86vw,20rem)] max-md:!min-w-0",
           className
         )}
         style={{

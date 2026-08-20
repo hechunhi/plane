@@ -37,7 +37,9 @@ export interface IStateStore {
   getProjectDefaultStateId: (projectId: string | null | undefined) => string | undefined;
   // fetch actions
   fetchProjectStates: (workspaceSlug: string, projectId: string) => Promise<IState[]>;
-  fetchProjectIntakeState: (workspaceSlug: string, projectId: string) => Promise<IIntakeState>;
+  // BARSOUL: Intake 未設定の project では 404 を「Intake 無し」として握り潰し
+  // undefined を返す(実装側コメント参照)。型もそれに合わせる。
+  fetchProjectIntakeState: (workspaceSlug: string, projectId: string) => Promise<IIntakeState | undefined>;
   fetchWorkspaceStates: (workspaceSlug: string) => Promise<IState[]>;
   // crud actions
   createState: (workspaceSlug: string, projectId: string, data: Partial<IState>) => Promise<IState>;

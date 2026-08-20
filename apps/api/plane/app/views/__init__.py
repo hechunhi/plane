@@ -144,6 +144,7 @@ from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentT
 from .issue.ai_state import (
     IssueAIStateBatchEndpoint,
     IssueAIStateWorkspaceEndpoint,
+    IssueAIStateAckInfoEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
     IssueAIStateRederiveEndpoint,
@@ -292,4 +293,11 @@ from .weekly import (
     MeetingChatMessageEndpoint,
     MeetingChatReactionEndpoint,
     ContentTranslateEndpoint,
+)
+
+# BARSOUL 2026-08 Web Push(PWA のプッシュ通知)
+from .push import (
+    PushConfigEndpoint,
+    PushSubscriptionEndpoint,
+    PushPreferenceEndpoint,
 )

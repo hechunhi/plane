@@ -39,6 +39,7 @@ import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
 import { useProjectNavigationPreferences } from "@/hooks/use-navigation-preferences";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 // plane web imports
 import { useNavigationItems } from "@/plane-web/components/navigations";
 import { ProjectNavigationRoot } from "@/plane-web/components/sidebar";
@@ -78,7 +79,9 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
   const { allowPermissions } = useUserPermissions();
   const { getIsProjectListOpen, toggleProjectListOpen } = useCommandPalette();
   const { preferences: projectPreferences } = useProjectNavigationPreferences();
-  const { isExtendedProjectSidebarOpened, toggleExtendedProjectSidebar, toggleAnySidebarDropdown } = useAppTheme();
+  const { toggleAnySidebarDropdown } = useAppTheme();
+  // BARSOUL 2026-08: ナビ遷移後のモバイルメニュー自動クローズ(全入口共通の 1 本)
+  const closeSidebarOnNavigate = useCloseSidebarOnNavigate();
 
   // states
   const [leaveProjectModalOpen, setLeaveProjectModal] = useState(false);
@@ -267,14 +270,15 @@ export const SidebarProjectsListItem = observer(function SidebarProjectsListItem
 
   const handleItemClick = () => {
     if (projectPreferences.navigationMode === "ACCORDION") {
+      // アコーディオンは開閉するだけで遷移しない → メニューは閉じない。
       setIsProjectListOpen(!isProjectListOpen);
-    } else {
-      router.push(defaultTabUrl);
+      return;
     }
-    // close the extended sidebar if it is open
-    if (isExtendedProjectSidebarOpened && !isAccordionMode) {
-      toggleExtendedProjectSidebar(false);
-    }
+    router.push(defaultTabUrl);
+    // BARSOUL 2026-08 修正: ここが唯一 `toggleSidebar` を呼んでいなかったため、
+    // モバイルで「プロジェクト → BARSOUL」だけメニューが残っていた。
+    // 拡張パネルの畳み込みもフック側に含まれる。
+    closeSidebarOnNavigate();
   };
 
   const shouldHighlightProject = URLProjectId === project?.id && projectPreferences.navigationMode !== "ACCORDION";

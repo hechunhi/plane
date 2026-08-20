@@ -15,6 +15,7 @@ import { ViewFiltersSelection } from "@/components/views/filters/filter-selectio
 import { ViewOrderByDropdown } from "@/components/views/filters/order-by";
 // hooks
 import { useMember } from "@/hooks/store/use-member";
+import { MOBILE_HEADER_INLINE_CLASS, MOBILE_HEADER_ITEM_CLASS } from "@/components/core/app-header";
 import { useProjectView } from "@/hooks/store/use-project-view";
 
 export const ViewMobileHeader = observer(function ViewMobileHeader() {
@@ -26,8 +27,8 @@ export const ViewMobileHeader = observer(function ViewMobileHeader() {
 
   return (
     <>
-      <div className="z-[13] flex justify-evenly border-b border-subtle bg-surface-1 py-2 md:hidden">
-        <Row className="flex flex-grow items-center justify-center border-l border-subtle text-13 text-secondary">
+      <div className={MOBILE_HEADER_INLINE_CLASS}>
+        <Row className={MOBILE_HEADER_ITEM_CLASS}>
           <ViewOrderByDropdown
             sortBy={filters.sortBy}
             sortKey={filters.sortKey}
@@ -38,7 +39,7 @@ export const ViewMobileHeader = observer(function ViewMobileHeader() {
             isMobile
           />
         </Row>
-        <div className="flex flex-grow items-center justify-center border-l border-subtle text-13 text-secondary">
+        <div className={MOBILE_HEADER_ITEM_CLASS}>
           <FiltersDropdown
             icon={<ListFilter className="h-3 w-3" />}
             title="Filters"

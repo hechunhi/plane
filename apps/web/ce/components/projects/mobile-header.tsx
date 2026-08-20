@@ -11,6 +11,7 @@ import { ListFilter } from "lucide-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
 import { ChevronDownIcon } from "@plane/propel/icons";
+import { MOBILE_HEADER_INLINE_CLASS, MOBILE_HEADER_ITEM_CLASS } from "@/components/core/app-header";
 import type { TProjectFilters } from "@plane/types";
 import { calculateTotalFilters } from "@plane/utils";
 // components
@@ -58,7 +59,7 @@ export const ProjectsListMobileHeader = observer(function ProjectsListMobileHead
   const isFiltersApplied = calculateTotalFilters(filters ?? {}) !== 0;
 
   return (
-    <div className="flex w-full border-b border-subtle bg-surface-1 py-2 md:hidden">
+    <div className={MOBILE_HEADER_INLINE_CLASS}>
       <ProjectOrderByDropdown
         value={displayFilters?.order_by}
         onChange={(val) => {
@@ -69,7 +70,7 @@ export const ProjectsListMobileHeader = observer(function ProjectsListMobileHead
         }}
         isMobile
       />
-      <div className="flex w-full justify-around border-l border-subtle">
+      <div className={MOBILE_HEADER_ITEM_CLASS}>
         <FiltersDropdown
           icon={<ListFilter className="h-3 w-3" />}
           title={t("common.filters")}

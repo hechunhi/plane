@@ -18,11 +18,15 @@ export const headerStyle: IHeaderProperties = {
   [EHeaderVariant.PRIMARY]:
     "relative flex w-full flex-shrink-0 flex-row items-center justify-between gap-x-2 gap-y-4 bg-surface-1 bg-surface-1 z-[18]",
   [EHeaderVariant.SECONDARY]: "!py-0  overflow-y-hidden border-b border-subtle justify-between bg-surface-1 z-[15]",
-  [EHeaderVariant.TERNARY]: "flex flex-wrap justify-between py-2  border-b border-subtle gap-2 bg-surface-1 z-[12]",
+  // BARSOUL 2026-08: ノート PC(縦 768px)では 1 行あたりの余白が効く。文字サイズは据え置きで
+  // 上下パディングだけ大画面未満で 1 段細くする。
+  [EHeaderVariant.TERNARY]:
+    "flex flex-wrap justify-between py-1.5 border-b border-subtle gap-2 bg-surface-1 z-[12]",
 };
 export const minHeights: IHeaderProperties = {
   [EHeaderVariant.PRIMARY]: "",
-  [EHeaderVariant.SECONDARY]: "min-h-[52px]",
+  // BARSOUL 2026-08: 52px は大画面のみ。それ以下は 44px(タッチ推奨最小値)まで詰める。
+  [EHeaderVariant.SECONDARY]: "min-h-[44px]",
   [EHeaderVariant.TERNARY]: "",
 };
 export const getHeaderStyle = (variant: THeaderVariant, setMinHeight: boolean, showOnMobile: boolean) => {

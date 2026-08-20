@@ -525,7 +525,9 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
   }, [active?.issueId]);
 
   // item 1: 任何详情/peek 面板打开时,全局禁弹浮层(详情用内嵌块)
-  if (issueDetail.peekIssue) return null;
+  // ただし触屏でタップして開いた sticky 浮層は例外 —— 直前に開いた peek が
+  // まだ store に残っていると「開いた瞬間に消える」ため(2026-08 修正)。
+  if (issueDetail.peekIssue && !active?.sticky) return null;
   if (!active) return null;
   const s = getCachedAIState(active.issueId);
   if (!s || (!s.needs_info && (s.state === "UNKNOWN" || !s.ball))) return null;
@@ -554,8 +556,8 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         ? { t: zh ? "中" : "中", c: "#b45309" }
         : { t: zh ? "低" : "低", c: "#c0392b" };
   const openCard = () => {
+    aiPopover.close();
     issueDetail.setPeekIssue({ workspaceSlug: slug, projectId: active.projectId, issueId: active.issueId });
-    aiPopover.hide();
   };
 
   const arrow = (
@@ -633,6 +635,30 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
           {(zh ? "置信度 " : "確度 ") + conf.t}
         </span>
       )}
+      {/* 触屏: 遮罩タップ・下スワイプに加えて、明示的な × も置く(閉じ方が分からない事故を防ぐ)。 */}
+      {narrow && (
+        <button
+          type="button"
+          aria-label={zh ? "关闭" : "閉じる"}
+          onClick={() => aiPopover.close()}
+          style={{
+            flex: "none",
+            marginLeft: 4,
+            width: 32,
+            height: 32,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 8,
+            border: 0,
+            background: "transparent",
+            color: "#8a9099",
+            cursor: "pointer",
+          }}
+        >
+          <Ico d={ICON.close} size={15} sw={1.9} />
+        </button>
+      )}
     </div>
   );
 
@@ -652,8 +678,8 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         projectId={active.projectId}
         onSource={openCard}
         onOpenChild={(cid) => {
+          aiPopover.close();
           issueDetail.setPeekIssue({ workspaceSlug: slug, projectId: active.projectId, issueId: cid });
-          aiPopover.hide();
         }}
       />
     </div>
@@ -669,6 +695,34 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         flex: "none",
       }}
     >
+      {/* BARSOUL 2026-08 触屏: この行のタップは「AI 判定を読む」専用にしたので、
+          「じゃあカードはどう開くのか」の答えを必ずシート内に置く。
+          48px の実体ボタン = 親指で確実に押せる。 */}
+      {narrow && (
+        <button
+          type="button"
+          onClick={openCard}
+          style={{
+            width: "100%",
+            minHeight: 44,
+            marginBottom: 8,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 6,
+            borderRadius: 8,
+            border: "1px solid #2f333a",
+            background: "#2f333a",
+            color: "#fff",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          <Ico d={ICON.external} size={14} sw={1.8} />
+          {zh ? "打开卡片" : "カードを開く"}
+        </button>
+      )}
       <DISActionBar s={s} projectId={active.projectId} zh={zh} compact />
     </div>
   );
@@ -681,7 +735,7 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
         <button
           type="button"
           aria-label={zh ? "关闭" : "閉じる"}
-          onClick={() => aiPopover.hide()}
+          onClick={() => aiPopover.close()}
           style={{
             position: "fixed",
             inset: 0,
@@ -705,7 +759,7 @@ export const GlobalAICurrentStatePopover = observer(function GlobalAICurrentStat
             const shouldClose = dragY > 80;
             dragFrom.current = null;
             setDragY(0);
-            if (shouldClose) aiPopover.hide();
+            if (shouldClose) aiPopover.close();
           }}
           style={{
             position: "fixed",

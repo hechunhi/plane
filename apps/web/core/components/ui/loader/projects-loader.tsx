@@ -9,7 +9,7 @@ import { range } from "lodash-es";
 export function ProjectsLoader() {
   return (
     <div className="h-full w-full animate-pulse overflow-y-auto p-8">
-      <div className="grid grid-cols-1 gap-9 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 lg:gap-6 2xl:grid-cols-4">
         {range(3).map((i) => (
           <div key={i} className="flex cursor-pointer flex-col rounded-sm border border-subtle bg-surface-1">
             <div className="relative min-h-[118px] w-full rounded-t border-b border-subtle">

@@ -144,9 +144,10 @@ export default {
       cta_primary: "作業項目を追加",
     },
     drafts: {
-      title: "途中の作業項目",
-      description: "これを試すには、作業項目の追加を開始して途中で離れるか、以下で最初の下書きを作成してください。😉",
-      cta_primary: "下書き作業項目を作成",
+      title: "リストは空です",
+      description:
+        "上の欄に、やることをそのまま書き留めてください。チームに渡す準備ができたら、プロジェクトへ移動できます。",
+      cta_primary: "詳しく書いて追加",
     },
     projects_archived: {
       title: "アーカイブされたプロジェクトはありません",

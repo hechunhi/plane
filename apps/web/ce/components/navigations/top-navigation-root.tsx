@@ -57,20 +57,22 @@ export const TopNavigationRoot = observer(function TopNavigationRoot() {
 
   return (
     <div
-      className={cn("z-[27] flex min-h-10 w-full items-center bg-canvas px-3.5 transition-all duration-300", {
+      // BARSOUL 2026-08: 大画面のみ従来の 14px。それ以下は 10px にして横幅を本文へ回す。
+      className={cn("z-[27] flex min-h-10 w-full items-center bg-canvas px-2.5 transition-all duration-300", {
         "px-2": !showLabel,
       })}
     >
       {/* Workspace Menu */}
-      <div className="flex-1 shrink-0">
+      {/* BARSOUL 2026-08: 3 ブロックとも shrink-0 だったので、狭い画面では合計幅が
+          ビューポートを超え、右端のアクション群が画面外に出て触れなくなっていた。
+          左と中央を縮められるようにし、右のアクション群は常に実寸を確保する。 */}
+      <div className="min-w-0 flex-1">
         <WorkspaceMenuRoot variant="top-navigation" />
       </div>
       {/* Power K Search */}
-      <div className="shrink-0">
-        <TopNavPowerK />
-      </div>
+      <TopNavPowerK />
       {/* Additional Actions */}
-      <div className="flex flex-1 shrink-0 items-center justify-end gap-1">
+      <div className="flex shrink-0 items-center justify-end gap-1 md:flex-1">
         <Tooltip tooltipContent="Inbox" position="bottom">
           <AppSidebarItem
             variant={isNotificationsActive ? "button" : "link"}

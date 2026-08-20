@@ -210,7 +210,10 @@ export const ProjectCard = observer(function ProjectCard(props: Props) {
         )}
       >
         <ContextMenu parentRef={projectCardRef} items={MENU_ITEMS} />
-        <div className="relative h-[118px] w-full rounded-t">
+        {/* BARSOUL 2026-08: カバー 118px + 本文 104px の固定高だと、スマホでは
+            1 枚のカードが画面の 1/4 以上を占め、3 件しか見えなかった。
+            スマホだけ高さを詰める(文字サイズ・情報量は不変)。 */}
+        <div className="relative h-[84px] w-full rounded-t md:h-[96px]">
           <div className="absolute inset-0 z-[1] bg-gradient-to-t from-black/60 to-transparent" />
 
           <CoverImage
@@ -267,7 +270,7 @@ export const ProjectCard = observer(function ProjectCard(props: Props) {
         </div>
 
         <div
-          className={cn("flex h-[104px] w-full flex-col justify-between rounded-b-sm p-4", {
+          className={cn("flex h-auto min-h-[84px] w-full flex-col justify-between gap-2 rounded-b-sm p-3 md:h-[92px] md:gap-0 md:p-3", {
             "opacity-90": isArchived,
           })}
         >

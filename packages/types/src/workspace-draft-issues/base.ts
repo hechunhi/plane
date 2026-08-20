@@ -25,6 +25,14 @@ export type TWorkspaceDraftIssue = {
   start_date: string | undefined;
   target_date: string | undefined;
   completed_at: string | undefined;
+  /** BARSOUL 2026-08: 個人 ToDo の「済」。state 連動の completed_at とは別物。 */
+  done_at: string | null | undefined;
+  /** BARSOUL 2026-08: 子タスクの親。1 段だけ。`parent_id`(チームの Issue)とは別物。 */
+  todo_parent_id: string | null | undefined;
+  /** BARSOUL 2026-08: 自分だけの走り書き。プロジェクトへ移す時は本文へ畳み込む。 */
+  memo: string | null | undefined;
+  /** BARSOUL 2026-08: 個人の並び順(小さいほど上)。既定 65535。 */
+  todo_order: number | undefined;
 
   created_at: string;
   updated_at: string;
@@ -54,6 +62,8 @@ export type TWorkspaceDraftPaginationInfo<T> = {
 export type TWorkspaceDraftQueryParams = {
   per_page: number;
   cursor: string;
+  /** BARSOUL 2026-08: true で「完了した ToDo」の引き出しを取りに行く。 */
+  done?: boolean;
 };
 
 export type TWorkspaceDraftIssueLoader =

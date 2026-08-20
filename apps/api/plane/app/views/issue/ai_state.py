@@ -153,6 +153,9 @@ def _serialize(row):
         "info_gap": {"zh": row.info_gap_zh or "", "ja": row.info_gap_ja or row.info_gap_zh or ""},
         # 补充框架(AI 理解 + 待澄清点;告诉补充人该写什么,按阅览者语言展示)
         "info_framework": {"zh": row.info_framework_zh or "", "ja": row.info_framework_ja or row.info_framework_zh or ""},
+        # 「補足は不要」の人手確定(留痕缺口の出口。誰がいつ打ち切ったかを残す)
+        "info_ack_at": row.info_ack_at.isoformat() if row.info_ack_at else None,
+        "info_ack_by": row.info_ack_by or None,
         # DIS 子树 rollup(父任务汇总): 仅有子任务时下发; 决策(ball/actor/next 在上面字段, code 定)+ 子树计数/代表子/矛盾
         "family": ({
             "total": row.subtree_total, "active": row.subtree_active,
@@ -235,6 +238,51 @@ class IssueAIStateWorkspaceEndpoint(BaseAPIView):
             d["inbox"] = _inbox_state_dict(inbox_map.get(row.issue_id))
             out[str(row.issue_id)] = d
         return Response(out, status=status.HTTP_200_OK)
+
+
+class IssueAIStateAckInfoEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/projects/{pid}/issues/{iid}/ai-state/ack-info/
+    「このカードは補足する事が無い」を人が確定する = 要補足の打ち切り。
+
+    なぜ要るか: これまで needs_info を消せるのは AI の再判断だけだった。人が補足しても
+    AI が納得しなければ立ち続ける → 消せない指摘 → 全員が無視するようになる
+    (hechun 2026-08-20:「用户看见『待补充』一律无视」)。出口の無い指摘は死ぬ。
+    ここで人が打ち切れる。誰がいつ打ち切ったかは派生表 + 監査表に残る。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST])
+    def post(self, request, slug, project_id, issue_id):
+        try:
+            issue = Issue.objects.get(pk=issue_id, workspace__slug=slug, project_id=project_id)
+        except Issue.DoesNotExist:
+            return Response({"error": "issue not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        row = IssueAIState.all_objects.filter(issue=issue).first()
+        if not row:
+            return Response({"error": "no derived state"}, status=status.HTTP_404_NOT_FOUND)
+
+        by = (getattr(request.user, "display_name", "") or getattr(request.user, "email", "") or "")[:120]
+        uid = request.user.id if request.user.is_authenticated else None
+        prev_ball, prev_actor = row.ball or "", row.current_actor or ""
+
+        row.deleted_at = None
+        row.info_ack_at = timezone.now()
+        row.info_ack_by = by
+        row.needs_info = False
+        row.info_gap_zh = row.info_gap_ja = ""
+        row.info_framework_zh = row.info_framework_ja = ""
+        row.updated_by_id = uid
+        row.save()
+
+        # 留痕(程序/AI 追跡用)。人向けの評論は出さない —— 「説明する事が無い」の
+        # 確定でタイムラインを埋めても読む人の役に立たない。
+        IssueAIStateCorrection.objects.create(
+            issue=issue, project_id=project_id, workspace_id=issue.workspace_id,
+            note_zh="(确认无需补充)", note_ja="(補足不要と確認)", note_lang="ack",
+            prev_ball=prev_ball, prev_actor=prev_actor,
+            created_by_id=uid, updated_by_id=uid)
+
+        return Response({"needs_info": False, "info_ack_by": by,
+                         "info_ack_at": row.info_ack_at.isoformat()}, status=status.HTTP_200_OK)
 
 
 class IssueAIStateCorrectEndpoint(BaseAPIView):

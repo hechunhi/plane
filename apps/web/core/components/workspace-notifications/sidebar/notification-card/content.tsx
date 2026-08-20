@@ -261,6 +261,20 @@ export function NotificationContent({
       </>
     );
   }
+  if (ndata?.kind === "deadline") {
+    // BARSOUL 2026-08: 期限リマインド。前日 / 当日の 2 種類しか無い。
+    const phase = (notification.data as { deadline?: { phase?: string } })?.deadline?.phase;
+    const today = phase === "deadline_today";
+    return (
+      <>
+        <span style={{ color: "#b45309", fontWeight: 500 }}>{zh ? "截止提醒" : "期限のお知らせ"}</span>
+        <span className="text-tertiary">
+          {" · "}
+          {today ? (zh ? "今天到期" : "今日が期限です") : zh ? "明天到期" : "明日が期限です"}
+        </span>
+      </>
+    );
+  }
   if (ndata?.kind === "recurring") {
     return (
       <>

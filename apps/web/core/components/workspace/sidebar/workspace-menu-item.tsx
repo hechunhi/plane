@@ -17,8 +17,8 @@ import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 // BARSOUL: 「項目」グループヘッダ赤点(配下のいずれかに未読あれば)
 import { useHasAnyUnread, UnreadDot } from "@/components/notifications/issue-unread-badge";
 // hooks
-import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useUserPermissions } from "@/hooks/store/user";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 // plane web imports
 import { UpgradeBadge } from "@/plane-web/components/workspace/upgrade-badge";
 
@@ -43,13 +43,7 @@ export const SidebarWorkspaceMenuItem = observer(function SidebarWorkspaceMenuIt
   const { workspaceSlug } = useParams();
   const { allowPermissions } = useUserPermissions();
   // store hooks
-  const { toggleSidebar } = useAppTheme();
-
-  const handleLinkClick = () => {
-    if (window.innerWidth < 768) {
-      toggleSidebar();
-    }
-  };
+  const handleLinkClick = useCloseSidebarOnNavigate();
 
   if (!allowPermissions(item.access as any, EUserPermissionsLevel.WORKSPACE, workspaceSlug.toString())) {
     return null;

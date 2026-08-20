@@ -15,8 +15,8 @@ import type { EUserWorkspaceRoles } from "@plane/types";
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 import { NotificationAppSidebarOption } from "@/components/workspace-notifications/notification-app-sidebar-option";
 // hooks
-import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useUserPermissions } from "@/hooks/store/user";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 
 export interface SidebarUserMenuItemProps {
   item: {
@@ -27,11 +27,10 @@ export interface SidebarUserMenuItemProps {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Icon: any;
   };
-  draftIssueCount: number;
 }
 
 export const SidebarUserMenuItem = observer(function SidebarUserMenuItem(props: SidebarUserMenuItemProps) {
-  const { item, draftIssueCount } = props;
+  const { item } = props;
   // nextjs hooks
   const { workspaceSlug } = useParams();
   const pathname = usePathname();
@@ -39,20 +38,14 @@ export const SidebarUserMenuItem = observer(function SidebarUserMenuItem(props: 
   const { t } = useTranslation();
   // store hooks
   const { allowPermissions } = useUserPermissions();
-  const { toggleSidebar } = useAppTheme();
+  // BARSOUL 2026-08: 遷移後のモバイルメニュー自動クローズ(共通フック)。
+  // early return より前で呼ぶ必要があるためここで取得する。
+  const handleLinkClick = useCloseSidebarOnNavigate();
 
   const isActive = pathname === item.href;
 
-  if (item.key === "drafts" && draftIssueCount === 0) return null;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (!allowPermissions(item.access as any, EUserPermissionsLevel.WORKSPACE, workspaceSlug.toString())) return null;
-
-  const handleLinkClick = () => {
-    if (window.innerWidth < 768) {
-      toggleSidebar();
-    }
-  };
 
   return (
     <Link href={item.href} onClick={handleLinkClick}>

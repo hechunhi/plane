@@ -19,10 +19,10 @@ import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 // BARSOUL: 项目→工作項 chain red dot
 import { useHasUnreadInProject, UnreadDot } from "@/components/notifications/issue-unread-badge";
 // hooks
-import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useUserPermissions } from "@/hooks/store/user";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 
 export type TNavigationItem = {
   name: string;
@@ -46,7 +46,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
   const { workItem: workItemIdentifierFromRoute } = useParams();
   // store hooks
   const { t } = useTranslation();
-  const { isExtendedProjectSidebarOpened, toggleExtendedProjectSidebar, toggleSidebar } = useAppTheme();
+  const closeSidebarOnNavigate = useCloseSidebarOnNavigate();
   const { getPartialProjectById } = useProject();
   const { allowPermissions } = useUserPermissions();
   const {
@@ -63,15 +63,7 @@ export const ProjectNavigation = observer(function ProjectNavigation(props: TPro
   // BARSOUL: 工作項 nav の赤点判定
   const hasProjectUnread = useHasUnreadInProject(projectId);
   // handlers
-  const handleProjectClick = () => {
-    if (window.innerWidth < 768) {
-      toggleSidebar();
-    }
-    // close the extended sidebar if it is open
-    if (isExtendedProjectSidebarOpened) {
-      toggleExtendedProjectSidebar(false);
-    }
-  };
+  const handleProjectClick = closeSidebarOnNavigate;
 
   const baseNavigation = useCallback(
     (workspaceSlug: string, projectId: string): TNavigationItem[] => [

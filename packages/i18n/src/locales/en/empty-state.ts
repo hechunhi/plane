@@ -143,10 +143,10 @@ export default {
       cta_primary: "Add work item",
     },
     drafts: {
-      title: "Half-written work items",
+      title: "Nothing on your list",
       description:
-        "To try this out, start adding a work item and leave it mid-way or create your first draft below. 😉",
-      cta_primary: "Create draft work item",
+        "Type in the box above to jot down anything you need to do. When one is ready for the team, move it into a project.",
+      cta_primary: "Add with details",
     },
     projects_archived: {
       title: "No projects archived",

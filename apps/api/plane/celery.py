@@ -53,6 +53,12 @@ app.conf.beat_schedule = {
         "task": "plane.bgtasks.recurring_task.recurring_sweep",
         "schedule": crontab(hour=22, minute=0),
     },
+    # BARSOUL 2026-08: 期日リマインド(当日 / 前日)。UTC 23:00 = JST 08:00、
+    # 出社直後に「今日が期日」「明日が期日」が手元で鳴る。冪等なので再実行しても増えない。
+    "barsoul-deadline-sweep": {
+        "task": "plane.bgtasks.deadline_reminder_task.deadline_sweep",
+        "schedule": crontab(hour=23, minute=0),
+    },
     # BARSOUL P3-EVENT-RELIABILITY: 提醒到点改 Temporal 持久定时器(ReminderWorkflow, NewTimer)。
     # 退役旧 reminder_sweep(15min 扫世界哨兵反模式)。此处只留日次 selfheal 对账(确保 workflow 存在,
     # 补 start 失败/存量/重启遗漏; 绝不直接响铃)。到点响铃全靠 Temporal durable timer。

@@ -20,6 +20,7 @@ import type { TGroupedIssues, TIssue, TIssueMap, TPaginationData, ICalendarDate 
 // components
 import { cn, renderFormattedPayloadDate } from "@plane/utils";
 import { highlightIssueOnDrop } from "@/components/issues/issue-layouts/utils";
+import { useLabel } from "@/hooks/store/use-label";
 // helpers
 // helpers
 // types
@@ -28,6 +29,7 @@ import type { IModuleIssuesFilter } from "@/store/issue/module";
 import type { IProjectIssuesFilter } from "@/store/issue/project";
 import type { IProjectViewIssuesFilter } from "@/store/issue/project-views";
 import type { TRenderQuickActions } from "../list/list-view-types";
+import { dayNumberColor, HOLIDAY_TINT, isHolidayLabelName } from "./holiday";
 import { CalendarIssueBlocks } from "./issue-blocks";
 
 const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
@@ -88,6 +90,8 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
 
   const { currentLocale } = useTranslation();
   const dateFnsLocale = DATE_FNS_LOCALE_MAP[currentLocale];
+  // BARSOUL: 「赤い日」判定にラベル名が要る。判定規約は ./holiday。
+  const { getLabelById } = useLabel();
 
   const calendarLayout = issuesFilterStore?.issueFilters?.displayFilters?.calendar?.layout ?? "month";
 
@@ -152,6 +156,19 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
   const isWeekend = [0, 6].includes(date.date.getDay());
   const isMonthLayout = calendarLayout === "month";
 
+  // BARSOUL: この日に「休み」ラベルのカードが 1 枚でもあれば赤日。
+  // 祝日カードは CAL(予定表)に入っているが、判定はラベル名だけを見るので
+  // どのプロジェクトのカレンダーでも同じ規約で赤くなる。
+  const isHoliday = (issueIds ?? []).some((id) =>
+    (issues?.[id]?.label_ids ?? []).some((labelId) => isHolidayLabelName(getLabelById(labelId)?.name))
+  );
+  // 当月以外のセルには色を付けない。薄いグレーの日付が赤くなると当月より目立つ。
+  const isDimmedDay = isMonthLayout && !date.is_current_month;
+  const dayColor = isDimmedDay ? undefined : dayNumberColor(date.date, isHoliday);
+  // セル全体の淡い赤。ベタ塗りだとカードが読みにくいので薄める。
+  const holidayTint =
+    isHoliday && !isDimmedDay ? `color-mix(in oklch, ${HOLIDAY_TINT} 60%, transparent)` : undefined;
+
   const normalBackground = isWeekend ? "bg-layer-1" : "bg-layer-transparent";
   const draggingOverBackground = isWeekend ? "bg-layer-1" : "bg-layer-transparent-hover";
 
@@ -160,6 +177,7 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
       <div ref={dayTileRef} className="group relative flex h-full w-full flex-col">
         {/* header */}
         <div
+          style={{ color: dayColor, backgroundColor: holidayTint }}
           className={`hidden flex-shrink-0 justify-end px-2 py-1.5 text-right text-11 md:flex ${
             isMonthLayout // if month layout, highlight current month days
               ? date.is_current_month
@@ -181,6 +199,7 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
         {/* content */}
         <div className="hidden h-full w-full md:block">
           <div
+            style={{ backgroundColor: isDraggingOver ? undefined : holidayTint }}
             className={cn(
               `h-full w-full select-none ${isDraggingOver ? `${draggingOverBackground} opacity-70` : normalBackground}`,
               {
@@ -210,6 +229,7 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
         {/* Mobile view content */}
         <div
           onClick={() => setSelectedDate(date.date)}
+          style={{ backgroundColor: holidayTint }}
           className={cn(
             "mx-auto flex h-full w-full cursor-pointer flex-col items-center justify-start py-2.5 text-13 font-medium opacity-80 md:hidden",
             {
@@ -218,6 +238,7 @@ export const CalendarDayTile = observer(function CalendarDayTile(props: Props) {
           )}
         >
           <div
+            style={{ color: isSelectedDate || isToday ? undefined : dayColor }}
             className={cn("flex size-6 items-center justify-center rounded-full", {
               "bg-accent-primary text-on-color": isSelectedDate,
               "bg-accent-primary/10 text-accent-primary": isToday && !isSelectedDate,

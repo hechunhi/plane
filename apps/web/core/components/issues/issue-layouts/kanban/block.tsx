@@ -31,6 +31,7 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useKanbanView } from "@/hooks/store/use-kanban-view";
 import { useProject } from "@/hooks/store/use-project";
 import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-redirection";
+import { useCompactViewport } from "@/hooks/use-compact-viewport";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
@@ -56,7 +57,7 @@ import type { TRenderQuickActions } from "../list/list-view-types";
 import { IssueProperties } from "../properties/all-properties";
 import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
 // BARSOUL DIS: 派生卡片当前态 摘要条 + 全局浮层控制器(整卡 hover 触发)
-import { AICardBar, aiPopover, getCachedAIState } from "./ai-state-line";
+import { AICardBar, aiPopover, getCachedAIState, supportsHover } from "./ai-state-line";
 
 interface IssueBlockProps {
   issueId: string;
@@ -83,6 +84,8 @@ interface IssueDetailsBlockProps {
   quickActions: TRenderQuickActions;
   isReadOnly: boolean;
   isEpic?: boolean;
+  /** BARSOUL 2026-08: 属性チップの「空なら出さない」判定に使う現在の列 id。 */
+  groupId?: string;
 }
 
 const _stopMouseEvent = (e: React.MouseEvent) => {
@@ -105,6 +108,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
     displayProperties,
     isEpic = false,
     hasUnread = false,
+    groupId,
   } = props;
   // refs
   const menuActionRef = useRef<HTMLButtonElement | null>(null);
@@ -112,6 +116,10 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
   const [isMenuActive, setIsMenuActive] = useState(false);
   // hooks
   const { isMobile } = usePlatformOS();
+  // BARSOUL 2026-08: 狭い画面では「値のある属性だけ」の薄いカードにする(Trello 風)。
+  const isCompact = useCompactViewport();
+  const { getProjectIdentifierById } = useProject();
+  const projectIdentifier = getProjectIdentifierById(issue?.project_id);
   // BARSOUL 2026-06-16: 提醒态以 SNOOZE SWR 缓存为准(设/解除即时反应, 消除"消除不掉"),
   // 缓存空(未开过卡)时回退列表给的 issue.remind_at(初次刷新看板用)。
   const { data: _snz } = useSWR<{ set?: boolean; at?: string; note?: string }>(
@@ -180,7 +188,9 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
             タイポ言語)。赤縁取り(親 card border) と合わせて 3 信号同時提示. */}
         <div
-          className={cn("line-clamp-1 w-full text-body-sm-medium text-primary", {
+          /* BARSOUL 2026-08: 狭い画面ではタイトルが「情報の全て」なので 2 行まで見せる。
+             広い画面は列が細いので従来どおり 1 行(高さの揃ったカード)。 */
+          className={cn("w-full text-body-sm-medium text-primary max-md:line-clamp-2 md:line-clamp-1", {
             "!font-bold": hasUnread,
           })}
         >
@@ -209,17 +219,30 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
       )}
 
       <IssueProperties
-        className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary"
+        /* BARSOUL 2026-08: スマホではバッジ間隔を詰めて折返し行数を減らす。 */
+        className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary max-md:gap-1.5"
         issue={issue}
         displayProperties={displayProperties}
         activeLayout="Kanban"
         updateIssue={updateIssue}
         isReadOnly={isReadOnly}
         isEpic={isEpic}
+        compact={isCompact}
+        currentGroupId={groupId}
       />
 
       {/* BARSOUL DIS v3: AI 当前态摘要条(卡底 footer)。整卡 hover → 全局富浮层 */}
-      {issue.project_id && <AICardBar issueId={issue.id} projectId={issue.project_id} />}
+      {issue.project_id && (
+        <AICardBar
+          issueId={issue.id}
+          projectId={issue.project_id}
+          meta={{
+            seq: issue.sequence_id ?? null,
+            identifier: projectIdentifier ?? "",
+            name: issue.name ?? "",
+          }}
+        />
+      )}
 
       {isEpic && displayProperties && (
         <WithDisplayPropertiesHOC
@@ -374,7 +397,11 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
         // make Z-index higher at the beginning of drag, to have a issue drag image of issue block without any overlaps
         className={cn("group/kanban-block relative mb-2", { "z-[1]": isCurrentBlockDragging })}
         // BARSOUL DIS v3: 整卡 hover → 全局 AI 当前态浮层(仅当该卡有派生态时)
+        // BARSOUL 2026-08: 触屏では hover は合成イベントなので信用しない。
+        // (タップ→mouseenter→表示予約→同じタップの click で peek が開き浮層が消える、
+        //  という「一瞬で閉じる」不具合の直接原因。触屏の入口は AICardBar のタップ。)
         onMouseEnter={(e) => {
+          if (!supportsHover()) return;
           const st = issue?.id ? getCachedAIState(issue.id) : null;
           if (st && ((st.ball && st.state !== "UNKNOWN") || st.needs_info) && issue?.project_id) {
             aiPopover.show(issue.id, issue.project_id, e.currentTarget, {
@@ -384,7 +411,10 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
             });
           }
         }}
-        onMouseLeave={() => aiPopover.hide()}
+        onMouseLeave={() => {
+          if (!supportsHover()) return;
+          aiPopover.hide();
+        }}
         // BARSOUL(用户 2026-06-14): 右键菜单弹出时一律隐藏 hover 卡(DIS 浮层), 否则在靠右的卡上会压住右键菜单。
         // capture 阶段(根→目标)→ 早于 ContextMenu 挂在卡上的原生监听, 即使它 stopPropagation 也必触发。
         onContextMenuCapture={() => aiPopover.hide()}
@@ -406,7 +436,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           href={workItemLink}
           ref={cardRef}
           className={cn(
-            "relative block w-full rounded-lg border border-subtle bg-layer-2 p-3 text-13 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
+            "relative block w-full rounded-lg border border-subtle bg-layer-2 p-2.5 text-13 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
             { "hover:cursor-pointer": isDragAllowed },
             { "border border-accent-strong hover:border-accent-strong": getIsIssuePeeked(issue.id) },
             // BARSOUL 未読 v6(2026-05-25, Gmail/Linear 流):
@@ -507,6 +537,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
               isEpic={isEpic}
               hasUnread={hasUnread}
               isMentionUnread={isMentionUnread}
+              groupId={groupId}
             />
           </RenderIfVisible>
         </ControlLink>

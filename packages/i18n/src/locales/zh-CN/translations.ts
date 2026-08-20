@@ -24,7 +24,7 @@ export default {
     intake: "收集",
     recurring: "定期任务",
     tables: "数据表",
-    drafts: "草稿",
+    drafts: "待办",
     favorites: "收藏",
     pro: "专业版",
     upgrade: "升级",
@@ -430,7 +430,7 @@ export default {
   workspace_logo: "工作区标志",
   new_issue: "新工作项",
   your_work: "个人概览",
-  drafts: "草稿",
+  drafts: "待办",
   projects: "项目",
   views: "视图",
   workspace: "工作区",
@@ -2512,6 +2512,42 @@ export default {
     },
   },
   workspace_draft_issues: {
+    /**
+     * BARSOUL 2026-08: 下書き一覧を「個人の ToDo」として使うための文言。
+     * 下書き(draft)という言い方は残っているが、ユーザーに見せる語は ToDo に寄せる。
+     */
+    todo: {
+      toggle_done: "切换完成",
+      unassigned_project: "未归类",
+      quick_add_placeholder: "写下要做的事，按 Enter",
+      create_failed: "添加失败，请重试。",
+      completed: "已完成",
+      no_completed: "还没有完成的事项。",
+      sub_task_placeholder: "写子任务，回车添加",
+      new_placeholder: "写下一件事，回车添加",
+      add_sub_task: "添加子任务",
+      memo: "备注",
+      memo_placeholder: "只给自己看的备注（移入项目时会并入正文）",
+      expand: "展开子任务",
+      collapse: "收起子任务",
+      reorder: "拖动排序",
+      due_date: "截止日",
+      move_up: "上移一位",
+      move_down: "下移一位",
+      pasted: "已添加 {count} 条",
+      paste_limited: "剩下 {count} 行太多，没有添加",
+      nesting_limited: "已经有子任务的条目，不能再变成子任务。",
+      load_more: "加载更多 ↓",
+      keymap: {
+        new_row: "新增一行",
+        indent: "变成子任务",
+        outdent: "升回上一层",
+        toggle_done: "完成 / 取消",
+        memo: "备注",
+        move_focus: "上下移动",
+        paste_lines: "多行一次添加",
+      },
+    },
     draft_an_issue: "起草工作项",
     empty_state: {
       title: "半写的工作项，以及即将推出的评论将在这里显示。",
@@ -2944,6 +2980,7 @@ export default {
     tab_assigned: "待我处理",
     tab_mine: "我发起",
     tab_all: "全部",
+    decide_moved_hint: "待你审批的已移到「我的工作」",
     refresh: "刷新",
     retry: "重试",
     load_failed: "加载失败",
@@ -3021,5 +3058,61 @@ export default {
     mode_desc_any: "任一审批人通过即可",
     mode_desc_all: "需所有审批人都通过",
     mode_desc_sequential: "审批人按顺序依次审批",
+  },
+
+  /**
+   * BARSOUL 2026-08: 手机通知（Web Push）。
+   * 界面上不出现任何技术名词（Service Worker / VAPID / 订阅）。
+   */
+  push_notifications: {
+    heading: "手机通知",
+    description: "有需要你处理的事情时，直接推送到手机上。即使没有打开 BARSOUL Tasks 也能收到。",
+    status: {
+      on: "本设备已开启",
+      off: "本设备未开启",
+      denied: "已被设备屏蔽",
+      needs_install: "iPhone 上还差一步",
+      unsupported: "当前浏览器不支持",
+    },
+    denied_help_ios:
+      "BARSOUL Tasks 的通知权限已被关闭。请到 iPhone 的「设置 \u203a 通知 \u203a BARSOUL Tasks」里重新允许，然后回到本页。",
+    denied_help:
+      "浏览器屏蔽了本站的通知。请点击地址栏左侧的图标，把通知改为「允许」，然后刷新本页。",
+    unsupported_help: "iPhone 请用 Safari，电脑请用 Chrome 或 Edge。",
+    actions: {
+      enable: "开启手机通知",
+      disable: "关闭通知",
+      enabling: "正在开启\u2026",
+    },
+    install: {
+      title: "要在 iPhone 上接收任务通知，请先把 BARSOUL Tasks 添加到主屏幕。",
+      step_1: "点 Safari 底部的分享按钮",
+      step_2: "选择「添加到主屏幕」",
+      step_3: "从主屏幕上新出现的图标重新打开",
+      step_4: "回到这个页面，再开启通知",
+    },
+    devices: {
+      others: "另有 {count} 台设备也已开启",
+    },
+    types: {
+      heading: "接收哪些通知",
+      mention: "有人 @ 我",
+      mention_description: "在任务或评论里被点名时。",
+      comment_reply: "有人回复我的评论",
+      comment_reply_description: "我评论过的任务里出现了新评论。",
+      assigned: "任务分配给我",
+      assigned_description: "我被加为任务负责人时。",
+      deadline: "临近截止",
+      deadline_description: "我负责的任务明天或今天到期时。",
+      important_update: "重要变更",
+      important_update_description: "我负责的任务状态、优先级或截止日发生变化时。",
+    },
+    toasts: {
+      enabled: "手机通知已开启",
+      disabled: "手机通知已关闭",
+      denied: "没有获得通知权限",
+      failed: "设置失败，请再试一次。",
+      update_failed: "保存失败，请再试一次。",
+    },
   },
 } as const;

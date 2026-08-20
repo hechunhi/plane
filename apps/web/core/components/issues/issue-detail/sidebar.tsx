@@ -86,8 +86,11 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
     <>
       <div className="flex h-full w-full flex-col items-center divide-y-2 divide-subtle-1 overflow-hidden">
         <div className="h-full w-full overflow-y-auto px-6">
-          <h5 className="mt-5 text-body-xs-medium">{t("common.properties")}</h5>
-          <div className={`mt-4 mb-2 space-y-2.5 truncate ${!isEditable ? "opacity-60" : ""}`}>
+          <h5 className="mt-4 text-body-xs-medium">{t("common.properties")}</h5>
+          {/* BARSOUL 2026-08: プロパティ 1 行の実高は h-7(30px)なのに space-y-2.5(10px)を
+              足していたので、11 行で 110px が余白だけに消えていた(= 「行間が広い」)。
+              行の高さは触らず、行間だけ 10px → 4px に詰める。 */}
+          <div className={`mt-2 mb-2 space-y-1 truncate ${!isEditable ? "opacity-60" : ""}`}>
             <SidebarPropertyListItem icon={StatePropertyIcon} label={t("common.state")}>
               <StateDropdown
                 value={issue?.state_id}
@@ -96,7 +99,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 disabled={!isEditable}
                 buttonVariant="transparent-with-text"
                 className="group w-full grow"
-                buttonContainerClassName="w-full text-left h-7.5"
+                buttonContainerClassName="w-full text-left h-7"
                 buttonClassName="text-body-xs-regular"
                 dropdownArrow
                 dropdownArrowClassName="h-3.5 w-3.5 hidden group-hover:inline"
@@ -113,7 +116,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 multiple
                 buttonVariant={issue?.assignee_ids?.length > 1 ? "transparent-without-text" : "transparent-with-text"}
                 className="group w-full grow"
-                buttonContainerClassName="w-full text-left h-7.5"
+                buttonContainerClassName="w-full text-left h-7"
                 buttonClassName={`text-body-xs-regular justify-between ${issue?.assignee_ids?.length > 0 ? "" : "text-placeholder"}`}
                 hideIcon={issue.assignee_ids?.length === 0}
                 dropdownArrow
@@ -127,7 +130,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 onChange={(val) => issueOperations.update(workspaceSlug, projectId, issueId, { priority: val })}
                 disabled={!isEditable}
                 buttonVariant="transparent-with-text"
-                className="h-7.5 w-full grow rounded-sm"
+                className="h-7 w-full grow rounded-sm"
                 buttonContainerClassName="size-full text-left"
                 buttonClassName="size-full px-2 py-0.5 whitespace-nowrap [&_svg]:size-3.5"
               />
@@ -155,7 +158,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 disabled={!isEditable}
                 buttonVariant="transparent-with-text"
                 className="group w-full grow"
-                buttonContainerClassName="w-full text-left h-7.5"
+                buttonContainerClassName="w-full text-left h-7"
                 buttonClassName={`text-body-xs-regular ${issue?.start_date ? "" : "text-placeholder"}`}
                 hideIcon
                 clearIconClassName="h-3 w-3 hidden group-hover:inline"
@@ -176,7 +179,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                   disabled={!isEditable}
                   buttonVariant="transparent-with-text"
                   className="group w-full grow"
-                  buttonContainerClassName="w-full text-left h-7.5"
+                  buttonContainerClassName="w-full text-left h-7"
                   buttonClassName={cn("text-body-xs-regular", {
                     "text-placeholder": !issue.target_date,
                     "text-danger-primary": shouldHighlightIssueDueDate(issue.target_date, stateDetails?.group),
@@ -199,7 +202,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                   disabled={!isEditable}
                   buttonVariant="transparent-with-text"
                   className="group w-full grow"
-                  buttonContainerClassName="w-full text-left h-7.5"
+                  buttonContainerClassName="w-full text-left h-7"
                   buttonClassName={`text-body-xs-regular ${issue?.estimate_point !== null ? "" : "text-placeholder"}`}
                   placeholder={t("common.none")}
                   hideIcon
@@ -229,7 +232,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
                 appendElement={<TransferHopInfo workItem={issue} />}
               >
                 <IssueCycleSelect
-                  className="h-7.5 w-full grow"
+                  className="h-7 w-full grow"
                   workspaceSlug={workspaceSlug}
                   projectId={projectId}
                   issueId={issueId}
@@ -241,7 +244,7 @@ export const IssueDetailsSidebar = observer(function IssueDetailsSidebar(props: 
 
             <SidebarPropertyListItem icon={ParentPropertyIcon} label={t("common.parent")}>
               <IssueParentSelectRoot
-                className="h-7.5 w-full grow"
+                className="h-7 w-full grow"
                 workspaceSlug={workspaceSlug}
                 projectId={projectId}
                 issueId={issueId}

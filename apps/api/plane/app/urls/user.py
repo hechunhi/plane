@@ -19,9 +19,17 @@ from plane.app.views import (
     ## End User
     ## Workspaces
     UserWorkSpacesEndpoint,
+    ## BARSOUL 2026-08 Web Push
+    PushConfigEndpoint,
+    PushSubscriptionEndpoint,
+    PushPreferenceEndpoint,
 )
 
 urlpatterns = [
+    # BARSOUL 2026-08: スマホのプッシュ通知。全て「ログイン中の本人」固定。
+    path("users/me/push-config/", PushConfigEndpoint.as_view(), name="push-config"),
+    path("users/me/push-subscriptions/", PushSubscriptionEndpoint.as_view(), name="push-subscriptions"),
+    path("users/me/push-preferences/", PushPreferenceEndpoint.as_view(), name="push-preferences"),
     # User Profile
     path(
         "users/me/",

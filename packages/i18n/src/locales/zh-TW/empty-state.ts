@@ -139,9 +139,10 @@ export default {
       cta_primary: "新增工作項",
     },
     drafts: {
-      title: "半成品工作項",
-      description: "要試用此功能,請開始新增工作項並在中途離開,或在下方建立您的第一個草稿。😉",
-      cta_primary: "建立草稿工作項",
+      title: "清單是空的",
+      description:
+        "在上方輸入框隨手記下要做的事。準備好交給團隊時，再移動到專案裡。",
+      cta_primary: "填詳細資訊新增",
     },
     projects_archived: {
       title: "沒有已封存專案",

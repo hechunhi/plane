@@ -1985,6 +1985,34 @@ class IssueAIStateUpsertAPIEndpoint(BaseAPIView):
 
         # 派生表; soft-deleted 行が OneToOne unique を塞ぐ罠を避け all_objects で逆引き。
         obj = IssueAIState.all_objects.filter(issue=issue).first()
+
+        # ── BARSOUL 2026-08-20: 「要補足(needs_info)」の過剰発火を code 側で止める ──
+        # needs_info は *留痕缺口* — 「書かれている材料と今の状態が食い違う」時だけ。
+        # プロンプト任せにすると LLM は毎回わずかに違う判断をするので、消える条件は
+        # code で確定させる。ここを緩めないと「待補足」は永久に消えず、全員が無視する
+        # ようになる ＝ 機能そのものが死ぬ(hechun 2026-08-20 の指摘)。
+        if fields["needs_info"]:
+            drop = ""
+            # ① コメントが 1 件も無いカード。食い違う材料がそもそも無い。
+            #    実データでは要補足の 12/23 がこれで、中身は出勤シフト / 荷物到着予定 /
+            #    工事日程 のような予定カード。説明する事が無いカードに説明を求めない。
+            if not IssueComment.objects.filter(issue_id=issue.id, deleted_at__isnull=True).exists():
+                drop = "no-material"
+            else:
+                # ② 人が既に答えた(補足した / 「補足不要」と確定した)後。
+                #    人の回答を AI が採点し続けてはいけない。ここは人が最終決定者。
+                #    ただし *その時点の締め* に対してだけ。カードが開き直されて再度
+                #    完了すれば completed_at が進むので、指摘はまた立てられる。
+                answered = obj.info_ack_at if obj else None
+                if obj and not answered and (obj.human_note_zh or obj.human_note_ja):
+                    answered = obj.corrected_at
+                if answered and (issue.completed_at is None or answered >= issue.completed_at):
+                    drop = "answered-by-human"
+            if drop:
+                fields["needs_info"] = False
+                fields["info_gap_zh"] = fields["info_gap_ja"] = ""
+                fields["info_framework_zh"] = fields["info_framework_ja"] = ""
+
         if obj:
             for k, v in fields.items():
                 setattr(obj, k, v)

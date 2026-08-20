@@ -259,14 +259,9 @@ export const WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS: Record<string, IWorkspac
     access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER, EUserWorkspaceRoles.GUEST],
     highlight: (pathname: string, url: string) => pathname.includes(url),
   },
-  // BARSOUL 2026-07-25 審査を一等市民に·受信箱:待我处理/我发起/全部(常显、GUEST 亦可)
-  approvals: {
-    key: "approvals",
-    labelTranslationKey: "sidebar.approvals",
-    href: `/approvals/`,
-    access: [EUserWorkspaceRoles.ADMIN, EUserWorkspaceRoles.MEMBER, EUserWorkspaceRoles.GUEST],
-    highlight: (pathname: string, url: string) => pathname.includes(url),
-  },
+  // BARSOUL 2026-08-07: 「審査」のサイドバー入口は **廃止**。裁決は「我的工作」の
+  // 承認レンズで完結し、台帳(/approvals)はそこからの導線で足りる —— 毎日の動作が
+  // 移った以上、常显の枠を 1 つ占める理由が無い。ルート自体は生きている。
   "your-work": {
     key: "your_work",
     labelTranslationKey: "your_work",
@@ -303,8 +298,6 @@ export const WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS_LINKS: IWorkspaceSidebarN
   WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["my-work"],
   // BARSOUL 週次ミーティング支援:週 1 回だが「探して辿り着く」導線だと開かれない
   WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["weekly"],
-  // BARSOUL 2026-07-25 審査を一等市民に:毎日開く「決めるべきこと」の入口
-  WORKSPACE_SIDEBAR_STATIC_NAVIGATION_ITEMS["approvals"],
 ];
 
 export const WORKSPACE_SIDEBAR_STATIC_PINNED_NAVIGATION_ITEMS_LINKS: IWorkspaceSidebarNavigationItem[] = [

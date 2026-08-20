@@ -225,7 +225,15 @@ class WorkspaceMemberUserEndpoint(BaseAPIView):
 
     def get(self, request, slug):
         draft_issue_count = (
-            DraftIssue.objects.filter(created_by=request.user, workspace_id=OuterRef("workspace_id"))
+            # BARSOUL 2026-08: 済んだ ToDo はバッジに数えない(数え続けると永久に減らない)。
+            # 子タスクも数えない —— バッジは「一覧に何行残っているか」であって、
+            # 分解の細かさで数字が膨らむと意味を失う。
+            DraftIssue.objects.filter(
+                created_by=request.user,
+                workspace_id=OuterRef("workspace_id"),
+                done_at__isnull=True,
+                todo_parent__isnull=True,
+            )
             .values("workspace_id")
             .annotate(count=Count("id"))
             .values("count")

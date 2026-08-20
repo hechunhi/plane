@@ -6,6 +6,7 @@
 
 import { useEffect } from "react";
 import { observer } from "mobx-react";
+import { useSearchParams } from "react-router";
 import { useTheme } from "next-themes";
 import useSWR from "swr";
 // plane imports
@@ -22,6 +23,7 @@ import { PageHead } from "@/components/core/page-title";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
+import { useWorkspaceNotifications } from "@/hooks/store/notifications/use-workspace-notifications";
 import { useProject } from "@/hooks/store/use-project";
 import { useAppRouter } from "@/hooks/use-app-router";
 // layouts
@@ -43,7 +45,10 @@ export const IssueDetailsPage = observer(function IssueDetailsPage({ params }: R
   const {
     fetchIssueWithIdentifier,
     issue: { getIssueById },
+    setScrollToActivityCommentId,
   } = useIssueDetail();
+  const { markIssueNotificationsAsRead } = useWorkspaceNotifications();
+  const [searchParams] = useSearchParams();
   const { getProjectById, getProjectByIdentifier } = useProject();
   const { toggleIssueDetailSidebar, issueDetailSidebarCollapsed } = useAppTheme();
 
@@ -84,6 +89,27 @@ export const IssueDetailsPage = observer(function IssueDetailsPage({ params }: R
     handleToggleIssueDetailSidebar();
     return () => window.removeEventListener("resize", handleToggleIssueDetailSidebar);
   }, [issueDetailSidebarCollapsed, toggleIssueDetailSidebar]);
+
+  /**
+   * BARSOUL 2026-08: スマホ通知（Web Push）からの着地点。
+   *
+   * プッシュの URL は `/{slug}/browse/{IDENT}-{seq}/?comment={id}` まで特定して
+   * ある。ここで ?comment= を読んで、通知中心のカードを押した時と**同じ**
+   * scrollToActivityCommentId 機構に流す（2 つ目のスクロール実装は作らない）。
+   * 同時に、その課題宛の未読通知を既読化してバッジを減らす。
+   */
+  useEffect(() => {
+    if (!issueId) return;
+    const commentId = searchParams.get("comment");
+    if (commentId) setScrollToActivityCommentId(commentId);
+    markIssueNotificationsAsRead(workspaceSlug.toString(), issueId.toString());
+    // 一度使ったら URL から落とす（リロードで毎回スクロールし直さない）
+    if (commentId && typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("comment");
+      window.history.replaceState(window.history.state, "", url.toString());
+    }
+  }, [issueId, searchParams, setScrollToActivityCommentId, markIssueNotificationsAsRead, workspaceSlug]);
 
   useEffect(() => {
     if (data?.is_intake) {

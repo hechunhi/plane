@@ -399,6 +399,10 @@ export abstract class IssueDetail implements IIssueDetail {
   // comment
   fetchComments = async (workspaceSlug: string, projectId: string, issueId: string, loaderType?: TCommentLoader) =>
     this.comment.fetchComments(workspaceSlug, projectId, issueId, loaderType);
+  // BARSOUL: 差分マージではなく丸ごと入れ替える取り直し。削除されたコメントを
+  // 消えたまま反映するために要る。フラット化した窓口も comment ストアへ素通し。
+  fetchCommentsReplace = async (workspaceSlug: string, projectId: string, issueId: string) =>
+    this.comment.fetchCommentsReplace(workspaceSlug, projectId, issueId);
   createComment = async (workspaceSlug: string, projectId: string, issueId: string, data: Partial<TIssueComment>) =>
     this.comment.createComment(workspaceSlug, projectId, issueId, data);
   updateComment = async (

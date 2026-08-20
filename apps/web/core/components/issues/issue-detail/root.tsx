@@ -251,7 +251,8 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
         />
       ) : (
         <div className="flex h-full w-full overflow-hidden">
-          <div className="h-full w-full space-y-6 overflow-y-auto px-9 py-5">
+          {/* BARSOUL 2026-08: 36px 固定の左右余白は 1280/1366 でもスマホでも過大。大画面のみ従来値。 */}
+          <div className="h-full w-full space-y-6 overflow-y-auto px-4 py-4 md:px-6">
             <IssueMainContent
               workspaceSlug={workspaceSlug}
               projectId={projectId}
@@ -265,7 +266,8 @@ export const IssueDetailRoot = observer(function IssueDetailRoot(props: TIssueDe
             // BARSOUL(2026-06-15 用户点名): 右侧属性栏不再 fixed 覆盖主内容 — 改 relative
             // 在 flex 内并排挤(shrink-0 保证不被主内容压没), 任何宽度都不遮挡主容器。
             // 折叠态改 display:none(原 right:-100vw 仅对 fixed 有效)。
-            className="relative z-[5] h-full w-2/5 shrink-0 border-l border-subtle bg-surface-1 sm:w-1/3 md:w-1/4 lg:min-w-80 xl:min-w-96"
+            // BARSOUL 2026-08: 最低幅 384px(xl)は 1280/1366 で本文を圧迫するため 2xl 以上に限定。
+            className="relative z-[5] h-full w-2/5 shrink-0 border-l border-subtle bg-surface-1 sm:w-1/3 md:w-1/4 lg:min-w-80"
             style={issueDetailSidebarCollapsed ? { display: "none" } : {}}
           >
             <IssueDetailsSidebar

@@ -736,7 +736,11 @@ export function AIDigestView({
   const { setPeekIssue } = issueDetail;
   const { data: currentUser } = useUser();
   const { getProjectById } = useProject();
-  const openCard = (s: DigestItem) => setPeekIssue({ workspaceSlug: slug, projectId: pidOf(s), issueId: s.issue_id });
+  // 審批行は DigestItem ではなく TPendingApprovalItem(id だけ持つ)なので、
+  // id 直指定の入口も要る。ここを通さないと peek が issueId=undefined で開く。
+  const openIssue = (issueId: string, pid?: string | null) =>
+    setPeekIssue({ workspaceSlug: slug, projectId: pid || projectId || "", issueId });
+  const openCard = (s: DigestItem) => openIssue(s.issue_id, pidOf(s));
   const { items: myApprovals } = useMyPendingApprovals(); // 我作为审批人的待裁决(权威台账)
 
   const [items, setItems] = useState<DigestItem[] | null>(null);
@@ -1546,7 +1550,7 @@ export function AIDigestView({
                       modeLabel={a.mode === "ALL" ? T.apprAll : a.mode === "SEQUENTIAL" ? T.apprSeq : T.apprAny}
                       roleLabel={T.apprPendingLabel}
                       queued={false}
-                      onOpen={() => a.issue_id && openCard(a.issue_id)}
+                      onOpen={() => a.issue_id && openIssue(a.issue_id, a.project_id)}
                     />
                   ))}
                   {queuedAppr.map((a) => (
@@ -1558,7 +1562,7 @@ export function AIDigestView({
                       modeLabel={a.mode === "ALL" ? T.apprAll : a.mode === "SEQUENTIAL" ? T.apprSeq : T.apprAny}
                       roleLabel={T.apprQueuedLabel}
                       queued={true}
-                      onOpen={() => a.issue_id && openCard(a.issue_id)}
+                      onOpen={() => a.issue_id && openIssue(a.issue_id, a.project_id)}
                     />
                   ))}
                 </div>

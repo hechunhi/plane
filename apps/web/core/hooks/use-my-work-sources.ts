@@ -8,9 +8,10 @@
  *   ・自分が承認者の申請                    → 承認台帳(Temporal が書く SoR)
  * すべて読み取り専用。ここから SoR を書くことは無い。
  */
+import { useMemo } from "react";
 import useSWR from "swr";
 import { useUser } from "@/hooks/store/user";
-import { useMyPendingApprovals } from "@/hooks/use-my-pending-approvals";
+import { myPendingOf, useApprovalInbox } from "@/hooks/use-approval-inbox";
 import type { DerivedIssueState } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 
 export type TWorkDigestItem = DerivedIssueState & {
@@ -84,12 +85,18 @@ export function useMyWorkSources(workspaceSlug: string) {
     { revalidateOnFocus: true, dedupingInterval: 30_000 }
   );
 
-  const approvals = useMyPendingApprovals();
+  // 承認: 2026-08-07 から **裁決もここで**やる。だから件数バッジ用の軽い端点
+  // (/__approval/my-pending) ではなく、/approvals と**同じ受信箱**を引く
+  // (同じ SWR キー = 両画面を開いても 1 回)。行も ApprovalInboxRow を共用。
+  const inbox = useApprovalInbox(workspaceSlug, "assigned", "open");
+  // filter は毎 render 新しい配列を返す。依存配列に混ざると効果が毎フレーム
+  // 走るので、ここで identity を止めておく(取得ループの再発防止)。
+  const pending = useMemo(() => myPendingOf(inbox.items), [inbox.items]);
 
   return {
     digest: digest ?? [],
     assigned: assigned ?? [],
-    approvals,
+    approvals: { items: pending, isLoading: inbox.isLoading, refresh: inbox.refresh },
     isLoading: digestLoading || assignedLoading,
   };
 }

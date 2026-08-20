@@ -26,6 +26,8 @@ from plane.db.models import (
 )
 from django.db.models import Subquery
 
+from plane.bgtasks.web_push_task import push_notifications
+
 # Third Party imports
 from celery import shared_task
 from bs4 import BeautifulSoup
@@ -667,6 +669,12 @@ def notifications(
             )
             # Bulk create notifications
             Notification.objects.bulk_create(bulk_notifications, batch_size=100)
+            # BARSOUL 2026-08: ここが「アプリ内通知が生まれる唯一の場所」なので、
+            # スマホへのプッシュもここから枝分かれさせる。どれを実際に鳴らすかの
+            # 選別(全部は鳴らさない)は web_push_task 側の責務。
+            # 投げっぱなし: プッシュが落ちてもベルの作成は既に確定している。
+            if bulk_notifications:
+                push_notifications.delay([str(n.id) for n in bulk_notifications])
             EmailNotificationLog.objects.bulk_create(bulk_email_logs, batch_size=100, ignore_conflicts=True)
         return
     except Exception as e:

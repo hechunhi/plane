@@ -203,7 +203,7 @@ function matchRule(raw: unknown, op: FilterOp, value: string, t: TSmartColumnTyp
   if (op === "notempty") return !isEmpty;
   if (op === "checked") return !!raw;
   if (op === "unchecked") return !raw;
-  if (NUMERIC_TYPES.includes(t) && ["eq", "neq", "gt", "lt", "gte", "lte"].includes(op)) {
+  if (NUMERIC_TYPES.has(t) && ["eq", "neq", "gt", "lt", "gte", "lte"].includes(op)) {
     const n = Number(raw),
       nv = Number(value);
     if (!Number.isFinite(n) || !Number.isFinite(nv)) return op === "neq";
@@ -890,7 +890,7 @@ export function SmartTablesRoot() {
   const sortRows = useCallback((key: string, dir: "asc" | "desc") => {
     setTable((prev) => {
       if (!prev) return prev;
-      const sorted = prev.rows.toSorted((a, b) => {
+      const sorted = [...prev.rows].sort((a, b) => {
         const as = a.cells[key] == null ? "" : String(a.cells[key]);
         const bs = b.cells[key] == null ? "" : String(b.cells[key]);
         const an = Number(as),
@@ -1100,7 +1100,7 @@ export function SmartTablesRoot() {
           data: "",
           displayData: text,
           allowOverlay: false,
-          contentAlign: NUMERIC_TYPES.includes(c.type) ? "right" : undefined,
+          contentAlign: NUMERIC_TYPES.has(c.type) ? "right" : undefined,
         };
       }
       const r = displayRows[rowIdx];

@@ -13,8 +13,43 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * BARSOUL 2026-08 — 「ページ全体が上下左右にプルンと動く」を止める。
+ *
+ * このアプリは全画面 SPA で、スクロールは常に内側のコンテナが持つ。
+ * にも関わらず html/body 自身がスクロール主体のままだったので、
+ * iPhone では
+ *   - 一覧の端まで来た後さらに引くと**ページ全体**がゴムのように剥がれる
+ *   - 横スワイプで盤面ごと左右にずれる
+ *   - 引き下ろすと PWA が勝手にリロードされる(pull-to-refresh)
+ * が起きていた。ヘッダも下部タブも一緒にずれるので「作りが雑」に見える主因。
+ *
+ * overscroll-behavior: none が pull-to-refresh とチェーン(親への伝播)の両方を
+ * 断つ。overflow: hidden はドキュメント自身のスクロールを封じる
+ * (アプリ側のルートが既に h-dvh + overflow-hidden なので機能上の損失は無い)。
+ * position: fixed まではやらない — 入力欄フォーカス時のキーボード挙動が
+ * 端末ごとに壊れるため。
+ */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   @apply font-body bg-canvas text-primary;
+}
+
+/*
+ * 内側のスクロール領域も、端まで来たら親へ伝播させない。
+ * (Tailwind の `overflow-y-auto` / `overflow-auto` が付いた全要素が対象。
+ *  個別に overscroll-contain を書いて回るより漏れが無い。)
+ */
+[class*="overflow-y-auto"],
+[class*="overflow-auto"],
+[class*="overflow-y-scroll"] {
+  overscroll-behavior: contain;
 }
 
 /* emoji icon picker */

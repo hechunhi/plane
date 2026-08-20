@@ -10,6 +10,7 @@
  * 全部読み取り専用の投影。DIS も承認台帳も、ここからは書かない。
  */
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { AlarmClock, AtSign, CircleHelp, Inbox, Reply, ShieldCheck, UserCheck } from "lucide-react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
@@ -21,9 +22,11 @@ import { useMyWorkSources, type TWorkAssignedItem, type TWorkDigestItem } from "
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
+import { useUser } from "@/hooks/store/user";
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import { NotificationListRoot } from "@/plane-web/components/workspace-notifications/list-root";
-import { dueInfo, pick, useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
+import { ApprovalInboxRow } from "@/components/approvals/inbox-row";
+import { dueInfo, isMyBall, pick, useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 import { WorkCard } from "./work-card";
 
 type Lens = "feed" | "mention" | "need" | "gap" | "approval" | "overdue" | "assigned";
@@ -32,7 +35,7 @@ type Lens = "feed" | "mention" | "need" | "gap" | "approval" | "overdue" | "assi
 const LENSES: { key: Lens; label: { zh: string; ja: string }; icon: typeof Inbox; urgent?: boolean }[] = [
   { key: "feed", label: { zh: "动态", ja: "動き" }, icon: Inbox },
   { key: "mention", label: { zh: "@我", ja: "@自分" }, icon: AtSign, urgent: true },
-  { key: "need", label: { zh: "待我回球", ja: "自社ボール" }, icon: Reply, urgent: true },
+  { key: "need", label: { zh: "待我回球", ja: "自分の番" }, icon: Reply, urgent: true },
   { key: "gap", label: { zh: "需补充", ja: "情報不足" }, icon: CircleHelp, urgent: true },
   { key: "approval", label: { zh: "待审批", ja: "承認待ち" }, icon: ShieldCheck, urgent: true },
   { key: "overdue", label: { zh: "逾期", ja: "期限超過" }, icon: AlarmClock, urgent: true },
@@ -46,6 +49,10 @@ const emptyLine = (text: string) => <p className="px-6 py-16 text-center text-12
 export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { workspaceSlug: string }) {
   const zh = useZh();
   const { currentWorkspace } = useWorkspace();
+  // 個人スコープの素。ball(= 会社単位)だけで絞ると同僚のカードが流れ込む。
+  const { data: currentUser } = useUser();
+  const myId = currentUser?.id;
+  const myName = (currentUser?.display_name || "").trim() || undefined;
   const { setPeekIssue } = useIssueDetail();
   const { getProjectById } = useProject();
   const {
@@ -83,13 +90,25 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
     if (tab && tab !== currentNotificationTab) setCurrentNotificationTab(tab);
   }, [lens, currentNotificationTab, setCurrentNotificationTab]);
 
-  const need = useMemo(() => digest.filter((d) => d.ball === "SELF"), [digest]);
-  const gap = useMemo(() => digest.filter((d) => d.needs_info), [digest]);
-  const overdue = useMemo(() => assigned.filter((a) => isOverdue(a.target_date)), [assigned]);
-  const approvalItems = useMemo(
-    () => approvals.items.filter((i) => i.issue_id && i.project_id && i.role === "pending_approver"),
-    [approvals.items]
+  // ★ ball は **会社単位**(SELF = 自社の番)であって「私の番」ではない。ここで ball だけ
+  //    見ると同僚が抱えているカードまで自分の列に入る(実測: 17 件中 14 件が他人の番)。
+  //    人単位の判定は isMyBall に一本化する。
+  const need = useMemo(() => digest.filter((d) => isMyBall(d, myId, myName)), [digest, myId, myName]);
+  // 「需补充」も個人の列。ただし **完了カードでは ball / state が消える**(_dis_normalize)ので
+  //    ball では絞れない。行動人 actor_user_id、無ければ担当者 owner(連結名)で見る。
+  const gap = useMemo(
+    () =>
+      digest.filter((d) => {
+        if (!d.needs_info) return false;
+        if (d.actor_user_id) return !!myId && d.actor_user_id === myId;
+        return !!myName && !!d.owner && d.owner.includes(myName);
+      }),
+    [digest, myId, myName]
   );
+  const overdue = useMemo(() => assigned.filter((a) => isOverdue(a.target_date)), [assigned]);
+  // 既に「自分の裁決待ち」だけに絞られている(use-my-work-sources の myPendingOf)。
+  // ここで issue 紐づきを条件に足さないこと —— 独立審査が黙って消える。
+  const approvalItems = approvals.items;
 
   const countOf = (k: Lens): number => {
     switch (k) {
@@ -169,12 +188,13 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
       return <NotificationListRoot workspaceSlug={workspaceSlug} workspaceId={workspaceId} />;
     }
 
-    if (isLoading && !digest.length && !assigned.length) return <NotificationsLoader />;
+    if (lens === "approval" && approvals.isLoading && !approvalItems.length) return <NotificationsLoader />;
+    if (lens !== "approval" && isLoading && !digest.length && !assigned.length) return <NotificationsLoader />;
 
     if (lens === "need")
       return need.length
         ? need.map((d) => digestRow(d, "need"))
-        : emptyLine(zh ? "球不在你这边" : "自社ボールはありません");
+        : emptyLine(zh ? "球不在你这边" : "あなたの番のカードはありません");
     if (lens === "gap")
       return gap.length
         ? gap.map((d) => digestRow(d, "gap"))
@@ -186,22 +206,18 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
         ? assigned.map(assignedRow)
         : emptyLine(zh ? "没有指派给你的卡片" : "担当のカードはありません");
 
-    // 承認だけは課題ではなく申請。開き先はその申請が乗っているカード。
-    return approvalItems.length
-      ? approvalItems.map((i) => (
-          <WorkCard
-            key={i.no}
-            workspaceSlug={workspaceSlug}
-            projectId={i.project_id!}
-            issueId={i.issue_id!}
-            icon={<ShieldCheck className="size-5 text-warning-primary" strokeWidth={1.75} />}
-            iconClassName="bg-warning-subtle"
-            title={i.subject || (zh ? "等待你审批" : "承認をお待ちしています")}
-            subtitle={i.no}
-            onClick={() => openIssue(i.project_id!, i.issue_id!)}
-          />
-        ))
-      : emptyLine(zh ? "没有待你审批的申请" : "承認待ちはありません");
+    // 承認だけは課題ではなく申請 —— 見るだけでは終わらず **決める** 必要がある。
+    // だから WorkCard(流の行)ではなく、裁決 UI を持つ ApprovalInboxRow をそのまま
+    // 使う(/approvals と同一実装)。見た目が違うのは意図的: ここは押す場所。
+    return approvalItems.length ? (
+      <div className="flex flex-col gap-2.5 px-4 py-3">
+        {approvalItems.map((i) => (
+          <ApprovalInboxRow key={i.no} item={i} workspaceSlug={workspaceSlug} onDecided={approvals.refresh} />
+        ))}
+      </div>
+    ) : (
+      emptyLine(zh ? "没有待你审批的申请" : "承認待ちはありません")
+    );
   };
 
   return (
@@ -249,6 +265,17 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
           <div className="shrink-0 border-l border-subtle pl-2">
             <NotificationSidebarHeaderOptions workspaceSlug={workspaceSlug} />
           </div>
+        )}
+
+        {/* 2026-08-07:「審査」のサイドバー入口を廃止したので、台帳(我发起/全部/起票)
+            への唯一の導線がここ。裁決は左の一覧で終わる、追跡だけ台帳へ。 */}
+        {lens === "approval" && (
+          <Link
+            href={`/${workspaceSlug}/approvals/`}
+            className="shrink-0 border-l border-subtle pl-2 text-11 whitespace-nowrap text-tertiary transition-colors hover:text-accent-primary"
+          >
+            {zh ? "审批台账" : "審査台帳"}
+          </Link>
         )}
       </div>
 

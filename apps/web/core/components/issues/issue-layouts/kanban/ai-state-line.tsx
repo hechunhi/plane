@@ -46,6 +46,8 @@ export type DerivedIssueState = {
   needs_info: boolean;         // 信息完整性/留痕缺口:状态与材料矛盾/不足 → 要求人补充
   info_gap: Bilingual;         // 缺什么/请补什么(双语)
   info_framework: Bilingual;   // 补充框架(AI 理解 + 待澄清点;告诉补充人该写什么)
+  info_ack_at?: string | null; // 「补充不要」を人が確定した時刻(要補足の打ち切り)
+  info_ack_by?: string | null; // 打ち切った人
   // BARSOUL DIS 子树 rollup:有直接子卡的父任务才有 family(否则 null/缺)。
   // 计数/球/下一步全由 ai-bot code 确定性汇总;tension=gemma 点名的子卡口径矛盾。
   family?: {
@@ -89,9 +91,29 @@ export const BALL_META = {
 };
 /** 视角相关的「球在谁手」: actor=阅览者 → 需我处理(暖琥珀);其他人(同事或外部)→ 球在{具体名}(冷灰),
  *  靠 icon 区分 同事(人)/外部(送出)。myId 来自当前登录用户。 */
+/** このカードの「今の番」が閲覧者本人か。
+ *
+ *  **ball は会社単位の概念** — SELF = 自社ボール(我々の会社の番)であって「私の番」ではない。
+ *  個人の作業リストで ball だけを見ると、同僚が抱えているカードまで自分の列に流れ込む
+ *  (実測: 何淳の「待我回球」17 件中、本人の番は 3 件だけ。11 件は山下さんの番だった)。
+ *  人単位で聞きたい時は必ずこの述語を通す。
+ *
+ *  myName は AI が行動人を社員に紐付けられなかった時(actor_user_id=null)の保険。
+ *  owner は担当者名の連結("何淳, 熊磊")なので部分一致で見る。渡さなければ厳密判定。 */
+export function isMyBall(
+  s: Pick<DerivedIssueState, "ball" | "actor_user_id" | "owner">,
+  myId?: string,
+  myName?: string
+): boolean {
+  if (s.ball !== "SELF") return false;
+  if (s.actor_user_id) return !!myId && s.actor_user_id === myId;
+  const owner = (s.owner || "").trim();
+  return !!myName && !!owner && owner.includes(myName);
+}
+
 export function ballView(s: DerivedIssueState, zh: boolean, myId?: string): { label: string; bg: string; border: string; text: string; dot: string; icon: string[]; mine: boolean } {
   const actor = (s.actor_name || "").trim();
-  const mine = s.ball === "SELF" && !!myId && !!s.actor_user_id && s.actor_user_id === myId;
+  const mine = isMyBall(s, myId);
   if (mine) return { mine: true, label: zh ? "需我处理" : "自分が対応", bg: "#fef3e2", border: "#f3d3a0", text: "#9a5b08", dot: "#d97a0a", icon: ICON.inbox };
   const external = s.ball === "OTHER" || s.actor_kind === "external";
   const name = actor || (external ? (zh ? "对方" : "先方") : (zh ? "他人" : "担当者"));
@@ -232,7 +254,15 @@ export function useIssueAIState(slug: string | undefined, projectId: string | nu
 // ── 全局单浮层 控制器(item 1)──────────────────────────────────────────────
 export type AIPopoverMeta = { seq: number | null; identifier: string; name: string };
 export type AIPopSide = "right" | "left" | "below";
-type ActivePop = { issueId: string; projectId: string; el: HTMLElement; meta: AIPopoverMeta; side: AIPopSide } | null;
+type ActivePop = {
+  issueId: string;
+  projectId: string;
+  el: HTMLElement;
+  meta: AIPopoverMeta;
+  side: AIPopSide;
+  /** true = タップで明示的に開いた(触屏)。hover 系の hide() では閉じない。 */
+  sticky?: boolean;
+} | null;
 let _active: ActivePop = null;
 let _showT: ReturnType<typeof setTimeout> | null = null;
 let _hideT: ReturnType<typeof setTimeout> | null = null;
@@ -277,8 +307,21 @@ function _chooseSide(rect: DOMRect, srcId: string): AIPopSide {
   }
   return best.side;
 }
+/**
+ * BARSOUL 2026-08: hover を持つポインタが本当にあるか。
+ * `usePlatformOS().isMobile` は UA 判定なので、Windows タッチノートや
+ * デスクトップの縮小表示では実態と合わない。ここで見たいのは
+ * 「hover イベントが信用できる入力装置か」だけなので media query で判定する。
+ */
+export function supportsHover(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return true;
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
 export const aiPopover = {
   show(issueId: string, projectId: string, el: HTMLElement, meta: AIPopoverMeta) {
+    // タップで開いた(sticky)浮層は hover 由来の show/hide では触らない。
+    if (_active?.sticky) return;
     if (_hideT) { clearTimeout(_hideT); _hideT = null; }
     if (_active && _active.issueId === issueId) return;
     if (_showT) clearTimeout(_showT);
@@ -290,13 +333,34 @@ export const aiPopover = {
       _emitPop();
     }, 120);
   },
+  /**
+   * 触屏用の明示的なオープン。デバウンス無しで即開き、sticky を立てて
+   * カード側の mouseleave(タップ後に合成される)で消えないようにする。
+   * これが無いと「一瞬光って消える」= 今回のバグそのもの。
+   */
+  openSticky(issueId: string, projectId: string, el: HTMLElement, meta: AIPopoverMeta) {
+    if (_showT) { clearTimeout(_showT); _showT = null; }
+    if (_hideT) { clearTimeout(_hideT); _hideT = null; }
+    if (_active) _highlight(_active.el, false);
+    _active = { issueId, projectId, el, meta, side: _chooseSide(el.getBoundingClientRect(), issueId), sticky: true };
+    _highlight(el, true);
+    _emitPop();
+  },
   hide() {
+    if (_active?.sticky) return; // sticky は close() でしか閉じない
     if (_showT) { clearTimeout(_showT); _showT = null; }
     if (_hideT) clearTimeout(_hideT);
     _hideT = setTimeout(() => {
       if (_active) _highlight(_active.el, false);
       _active = null; _emitPop();
     }, 80);
+  },
+  /** 遮罩タップ / 閉じるボタン / カードを開く 時の確定クローズ(sticky も閉じる)。 */
+  close() {
+    if (_showT) { clearTimeout(_showT); _showT = null; }
+    if (_hideT) { clearTimeout(_hideT); _hideT = null; }
+    if (_active) _highlight(_active.el, false);
+    _active = null; _emitPop();
   },
   keep() { if (_hideT) { clearTimeout(_hideT); _hideT = null; } }, // 鼠标移到浮层上 → 取消隐藏
   get() { return _active; },
@@ -327,22 +391,49 @@ function FamilyChip({ fam, zh }: { fam: NonNullable<DerivedIssueState["family"]>
   );
 }
 
-export function AICardBar({ issueId, projectId }: { issueId: string; projectId: string | null | undefined }) {
+export function AICardBar({
+  issueId,
+  projectId,
+  meta,
+}: {
+  issueId: string;
+  projectId: string | null | undefined;
+  /** 触屏でタップ表示する浮層のヘッダ用。省略時はタップ操作を出さない。 */
+  meta?: AIPopoverMeta;
+}) {
   const { workspaceSlug } = useParams();
   const zh = useZh();
   const { data: currentUser } = useUser();
   const s = useIssueAIState(workspaceSlug?.toString(), projectId, issueId);
+
+  // BARSOUL 2026-08 触屏修正:
+  // 元々この行は hover 専用だった。触屏では「合成 mouseenter → 120ms 後に表示」と
+  // 「同じタップの click → peek が開く(浮層は peek 中 null を返す)」が競合し、
+  // 一瞬だけ光って消えていた。触屏ではこの行のタップを浮層専用にし(preventDefault で
+  // カード遷移を止める)、カードを開きたい時は本文のどこでも / 浮層内のボタンから開く。
+  const handleBarTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (supportsHover() || !projectId || !meta) return; // デスクトップは従来どおり
+    const card = (e.currentTarget as HTMLElement).closest('[id^="issue-"]') as HTMLElement | null;
+    if (!card) return;
+    e.preventDefault();
+    e.stopPropagation();
+    aiPopover.openSticky(issueId, projectId, card, meta);
+  };
+
   if (!s) return null; // 无派生 → 不渲染
 
   const sep = { marginTop: 8, paddingTop: 7, borderTop: "1px solid #f0f1f3" } as const;
-  const row = "flex items-center gap-1.5 min-w-0 cursor-pointer rounded transition-colors group-hover/kanban-block:bg-[rgba(0,0,0,0.03)]";
+  // 触屏では 44px 相当のタップ領域を確保(paddingBlock 4 + 行高 ≒ 28 で実測 36〜40px)。
+  const row =
+    "flex items-center gap-1.5 min-w-0 cursor-pointer rounded transition-colors group-hover/kanban-block:bg-[rgba(0,0,0,0.03)] max-md:py-1 max-md:-mx-1 max-md:px-1 max-md:active:bg-[rgba(124,92,255,0.08)]";
+  const tapProps = { onClick: handleBarTap } as const;
   const spark = <span style={{ marginLeft: "auto", flex: "none", color: "#c0b6f0" }}><Ico d={ICON.sparkle} size={11} sw={1.6} /></span>;
 
   // 留痕缺口(最高优先):状态与材料矛盾/不足 → 醒目「要補足」,提醒补充以完整留痕
   if (s.needs_info) {
     const gap = pick(s.info_gap, zh);
     return (
-      <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3, color: "#b06d09" }}
+      <div {...tapProps} className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3, color: "#b06d09" }}
         title={gap || (zh ? "状态变更原因不明,请补充说明(留痕)" : "状態変更の理由が不明、補足してください(履歴)")}>
         <Ico d={ICON.alert} size={12} sw={2} color="#d97706" />
         <span style={{ fontWeight: 700, flex: "none" }}>{zh ? "要补充" : "要補足"}</span>
@@ -362,7 +453,7 @@ export function AICardBar({ issueId, projectId }: { issueId: string; projectId: 
     const bv = s.ball ? ballView(s, zh, currentUser?.id) : null;
     const next = pick(s.next_action, zh);
     return (
-      <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3 }}>
+      <div {...tapProps} className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3 }}>
         {bv ? <Ico d={bv.icon} size={12} sw={1.8} color={bv.dot} />
             : <Ico d={ICON.subtree} size={12} sw={1.7} color="#9499a0" />}
         {bv && <span style={{ fontWeight: 600, color: bv.text, flex: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 96 }}>{bv.label}</span>}
@@ -378,7 +469,7 @@ export function AICardBar({ issueId, projectId }: { issueId: string; projectId: 
   // 空状态兜底(minor b): UNKNOWN / 无 ball → 谦逊提示, 不给笃定结论
   if (s.state === "UNKNOWN" || !s.ball) {
     return (
-      <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3, color: "#9499a0" }}>
+      <div {...tapProps} className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3, color: "#9499a0" }}>
         <Ico d={ICON.sparkle} size={11} color="#c4c7cc" />
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{zh ? "信息不足,建议补充评论" : "情報不足、コメント追記を推奨"}</span>
       </div>
@@ -390,7 +481,7 @@ export function AICardBar({ issueId, projectId }: { issueId: string; projectId: 
   const alert = topAlert(s, zh);
   const lowConf = s.confidence < LOW_CONF;
   return (
-    <div className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3 }}>
+    <div {...tapProps} className={row} style={{ ...sep, fontSize: 11.5, lineHeight: 1.3 }}>
       <Ico d={bv.icon} size={12} sw={1.8} color={bv.dot} />
       <span style={{ fontWeight: 600, color: bv.text, flex: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{bv.label}</span>
       {next && (<>

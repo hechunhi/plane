@@ -12,6 +12,7 @@ import { CustomMenu, Row } from "@plane/ui";
 import { ModuleLayoutIcon } from "@/components/modules";
 import { useModuleFilter } from "@/hooks/store/use-module-filter";
 import { useProject } from "@/hooks/store/use-project";
+import { MOBILE_HEADER_INLINE_CLASS, MOBILE_HEADER_ITEM_CLASS } from "@/components/core/app-header";
 
 export const ModulesListMobileHeader = observer(function ModulesListMobileHeader() {
   const { currentProjectDetails } = useProject();
@@ -19,17 +20,17 @@ export const ModulesListMobileHeader = observer(function ModulesListMobileHeader
   const { t } = useTranslation();
 
   return (
-    <div className="flex justify-start md:hidden">
+    <div className={MOBILE_HEADER_INLINE_CLASS}>
       <CustomMenu
         maxHeight={"md"}
-        className="flex flex-grow justify-start border-b border-subtle bg-surface-1 py-2 text-13 text-secondary"
+        className={MOBILE_HEADER_ITEM_CLASS}
         // placement="bottom-start"
         customButton={
-          <Row className="flex flex-grow justify-center gap-2 text-13 text-secondary">
+          <Row className="flex items-center gap-1 text-13 text-secondary">
             <span>Layout</span> <ChevronDownIcon className="my-auto h-4 w-4 text-secondary" strokeWidth={1} />
           </Row>
         }
-        customButtonClassName="flex flex-grow justify-center items-center text-secondary text-13"
+        customButtonClassName="flex items-center text-secondary text-13"
         closeOnSelect
       >
         {MODULE_VIEW_LAYOUTS.map((layout) => {

@@ -67,6 +67,33 @@ class DraftIssue(WorkspaceBaseModel):
     completed_at = models.DateTimeField(null=True)
     external_source = models.CharField(max_length=255, null=True, blank=True)
     external_id = models.CharField(max_length=255, blank=True, null=True)
+    # BARSOUL 2026-08: 個人 ToDo の「済」。
+    # `completed_at` は下の save() で state.group に縛られている(= プロジェクトの
+    # ワークフロー由来)ので、そこに個人の「済」を相乗りさせると
+    # 「州を選ぶと勝手に済になる」事故が起きる。だから独立した列を持つ。
+    # 下書きは list() が created_by=request.user で絞る **本人だけの持ち物** なので、
+    # ここに済を書くのは派生投影ではなく自分の SoR への書き込み。
+    # (他人の Issue に個人状態を書かない、という紅線とは別物)
+    done_at = models.DateTimeField(null=True, blank=True)
+    # BARSOUL 2026-08: 個人 ToDo の「一段だけの子タスク」。
+    # 既存の `parent` は **チームの Issue** を指す別物(下書きの親課題)なので
+    # 相乗りできない。自己参照で 1 段だけ持つ —— 個人の ToDo に無限の入れ子は
+    # 要らないし、入れ子が深いリストは畳んだ瞬間に中身を忘れる。
+    todo_parent = models.ForeignKey(
+        "db.DraftIssue",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="todo_children",
+    )
+    # BARSOUL 2026-08: 個人のメモ。`description_html` はリッチテキストで
+    # 「チームに出す本文」の下書き。メモは自分だけの走り書きなので別列。
+    # (プロジェクトへ移す時は本文へ畳み込む。捨てない)
+    memo = models.TextField(blank=True, default="")
+    # BARSOUL 2026-08: 個人 ToDo の並び順(小さいほど上)。
+    # `sort_order` は save() が project+state 単位で書き換えるので使えない。
+    # 既定 65535 のままの既存行は created_at の降順に退化する(従来と同じ見え方)。
+    todo_order = models.FloatField(default=65535)
     type = models.ForeignKey(
         "db.IssueType",
         on_delete=models.SET_NULL,

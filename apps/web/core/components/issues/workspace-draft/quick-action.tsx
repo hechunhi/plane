@@ -22,9 +22,19 @@ export const WorkspaceDraftIssueQuickActions = observer(function WorkspaceDraftI
 
   const { t } = useTranslation();
 
+  // ContextMenu(右クリック側)は title をそのまま出す。ここが鍵のままだと
+  // 右クリックの時だけ `make_a_copy` のような生の文字列が並ぶ。訳を先に当てて、
+  // 両方の menu に同じ文言を渡す。
+  // shouldRender は ContextMenu 側だけが見ている。ここで先に落としておかないと、
+  // 「…」の方にだけ出るはずの無い項目が並ぶ。
+  const translatedItems = MENU_ITEMS.filter((item) => item.shouldRender !== false).map((item) => ({
+    ...item,
+    title: t(item.title || ""),
+  }));
+
   return (
     <>
-      <ContextMenu parentRef={parentRef} items={MENU_ITEMS} />
+      <ContextMenu parentRef={parentRef} items={translatedItems} />
       <CustomMenu
         ellipsis
         placement="bottom-end"
@@ -33,7 +43,7 @@ export const WorkspaceDraftIssueQuickActions = observer(function WorkspaceDraftI
         useCaptureForOutsideClick
         closeOnSelect
       >
-        {MENU_ITEMS.map((item) => (
+        {translatedItems.map((item) => (
           <CustomMenu.MenuItem
             key={item.key}
             onClick={() => {
@@ -50,7 +60,7 @@ export const WorkspaceDraftIssueQuickActions = observer(function WorkspaceDraftI
           >
             {item.icon && <item.icon className={cn("h-3 w-3", item.iconClassName)} />}
             <div>
-              <h5>{t(item.title || "")}</h5>
+              <h5>{item.title}</h5>
               {item.description && (
                 <p
                   className={cn("whitespace-pre-line text-tertiary", {

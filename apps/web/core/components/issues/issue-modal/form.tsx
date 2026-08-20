@@ -288,10 +288,12 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
         isDraft: true,
       });
 
+      // data は TIssue、moveIssue が要るのは下書き行の型。両者は完全には
+      // 重ならない(done_at 等)ので、差を承知の上で読み替える。
       await moveIssue(workspaceSlug.toString(), data.id, {
         ...data,
         ...getValues(),
-      } as TWorkspaceDraftIssue);
+      } as unknown as TWorkspaceDraftIssue);
     } catch {
       setToast({
         type: TOAST_TYPE.ERROR,

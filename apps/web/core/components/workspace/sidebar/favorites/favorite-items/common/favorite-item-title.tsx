@@ -8,8 +8,8 @@ import React from "react";
 import { observer } from "mobx-react";
 import Link from "next/link";
 import { Tooltip } from "@plane/propel/tooltip";
-import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 
 type Props = {
   href: string;
@@ -20,12 +20,10 @@ type Props = {
 export const FavoriteItemTitle = observer(function FavoriteItemTitle(props: Props) {
   const { href, title, icon } = props;
   // store hooks
-  const { toggleSidebar } = useAppTheme();
   const { isMobile } = usePlatformOS();
-
-  const handleOnClick = () => {
-    if (isMobile) toggleSidebar();
-  };
+  // BARSOUL 2026-08: 以前は UA ベースの isMobile で判定していたため、
+  // デスクトップの狭幅表示ではメニューが残っていた。ビューポート幅で統一する。
+  const handleOnClick = useCloseSidebarOnNavigate();
 
   return (
     <Tooltip tooltipContent={title} isMobile={isMobile} position="right" className="ml-8">

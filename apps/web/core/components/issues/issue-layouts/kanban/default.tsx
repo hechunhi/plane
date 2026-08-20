@@ -20,6 +20,7 @@ import type {
 } from "@plane/types";
 // constants
 import { ContentWrapper } from "@plane/ui";
+import { cn } from "@plane/utils";
 // components
 import RenderIfVisible from "@/components/core/render-if-visible-HOC";
 import { KanbanColumnLoader } from "@/components/ui/loader/layouts/kanban-layout-loader";
@@ -33,6 +34,7 @@ import type { TRenderQuickActions } from "../list/list-view-types";
 import type { GroupDropLocation } from "../utils";
 import { getGroupByColumns, isWorkspaceLevel, getApproximateCardHeight } from "../utils";
 // components
+import { KANBAN_COLUMN_GAP_CLASS, KANBAN_COLUMN_SURFACE_CLASS, KANBAN_COLUMN_WIDTH_CLASS } from "./column-width";
 import { HeaderGroupByCard } from "./headers/group-by-card";
 import { KanbanGroup } from "./kanban-group";
 
@@ -144,7 +146,7 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
   const isSubGroup = !!sub_group_id && sub_group_id !== "null";
 
   return (
-    <ContentWrapper className={`relative flex-row gap-4 !pt-2 !pb-0`}>
+    <ContentWrapper className={cn("relative flex-row !pt-2 !pb-0", KANBAN_COLUMN_GAP_CLASS)}>
       {list &&
         list.length > 0 &&
         list.map((subList: IGroupByColumn, groupIndex) => {
@@ -161,12 +163,14 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
           return (
             <div
               key={subList.id}
-              className={`group relative flex flex-shrink-0 flex-col ${
-                groupByVisibilityToggle.showIssues ? `w-[350px]` : ``
-              } `}
+              className={cn(
+                "group relative flex flex-shrink-0 flex-col",
+                groupByVisibilityToggle.showIssues && KANBAN_COLUMN_WIDTH_CLASS,
+                groupByVisibilityToggle.showIssues && KANBAN_COLUMN_SURFACE_CLASS
+              )}
             >
               {sub_group_by === null && (
-                <div className="sticky top-0 z-[2] w-full flex-shrink-0 bg-surface-2 py-1">
+                <div className="sticky top-0 z-[2] w-full flex-shrink-0 bg-surface-2 py-1 max-sm:bg-layer-1 max-sm:py-0.5">
                   <HeaderGroupByCard
                     sub_group_by={sub_group_by}
                     group_by={group_by}

@@ -38,13 +38,24 @@ export interface IPinnedIssuesStore {
   togglePin: (workspaceSlug: string, issueId: string, projectId: string) => Promise<void>;
 }
 
+/**
+ * APIService は「直接 new させない」ため abstract。ここは素の GET/POST/DELETE
+ * しか要らないので、最小の具象を 1 つ置いて済ませる(専用サービス層を作るほどの
+ * 面ではない)。baseURL は空 = 同一オリジンの相対パス。
+ */
+class PinnedIssuesAPIService extends APIService {
+  constructor() {
+    super("");
+  }
+}
+
 export class PinnedIssuesStore implements IPinnedIssuesStore {
   pinMap: Record<string, TPinRecord> = {};
   fetchedWS: Set<string> = new Set();
-  private api: APIService;
+  private api: PinnedIssuesAPIService;
 
   constructor() {
-    this.api = new APIService("");
+    this.api = new PinnedIssuesAPIService();
     makeObservable(this, {
       pinMap: observable,
       pinnedSet: computed,

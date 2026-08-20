@@ -20,6 +20,7 @@ import type {
   TIssueOrderByOptions,
 } from "@plane/types";
 import { Row } from "@plane/ui";
+import { cn } from "@plane/utils";
 // hooks
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 // plane web imports
@@ -29,6 +30,7 @@ import type { TRenderQuickActions } from "../list/list-view-types";
 import type { GroupDropLocation } from "../utils";
 import { getGroupByColumns, isWorkspaceLevel } from "../utils";
 import { KanBan } from "./default";
+import { KANBAN_COLUMN_GAP_CLASS, KANBAN_COLUMN_WIDTH_CLASS } from "./column-width";
 import { HeaderGroupByCard } from "./headers/group-by-card";
 import { HeaderSubGroupByCard } from "./headers/sub-group-by-card";
 
@@ -72,7 +74,7 @@ const SubGroupSwimlaneHeader = observer(function SubGroupSwimlaneHeader({
   const { getIsWorkflowWorkItemCreationDisabled } = useWorkFlowFDragNDrop(group_by, sub_group_by);
 
   return (
-    <div className="relative flex h-max min-h-full w-full items-center gap-4">
+    <div className={cn("relative flex h-max min-h-full w-full items-center", KANBAN_COLUMN_GAP_CLASS)}>
       {list &&
         list.length > 0 &&
         list.map((_list: IGroupByColumn) => {
@@ -83,7 +85,7 @@ const SubGroupSwimlaneHeader = observer(function SubGroupSwimlaneHeader({
           if (subGroupByVisibilityToggle === false) return <></>;
 
           return (
-            <div key={`${sub_group_by}_${_list.id}`} className="flex w-[350px] flex-shrink-0 flex-col">
+            <div key={`${sub_group_by}_${_list.id}`} className={cn("flex flex-shrink-0 flex-col", KANBAN_COLUMN_WIDTH_CLASS)}>
               <HeaderGroupByCard
                 sub_group_by={sub_group_by}
                 group_by={group_by}

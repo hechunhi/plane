@@ -48,7 +48,10 @@ function LeftItem(props: HeaderProps) {
   return (
     <div
       className={cn(
-        "flex max-w-[80%] flex-grow flex-wrap items-center gap-2 overflow-ellipsis whitespace-nowrap",
+        // BARSOUL 2026-08: 固定の max-w-[80%] は右側が小さいときも左側を 80% で頭打ちにし、
+        // 低解像度ほど横幅を捨てていた。min-w-0 + 伸長にして、縮む責任は flex に任せる
+        // (右側は RightItem 側で flex-shrink-0 にして潰れないようにしてある)。
+        "flex min-w-0 flex-grow flex-wrap items-center gap-2 overflow-ellipsis whitespace-nowrap",
         props.className
       )}
     >
@@ -63,7 +66,7 @@ function RightItem(props: HeaderProps) {
   return (
     <div
       className={cn(
-        "flex w-auto items-center justify-end gap-2",
+        "flex w-auto flex-shrink-0 items-center justify-end gap-2",
         {
           "items-baseline": variant === EHeaderVariant.TERNARY,
         },

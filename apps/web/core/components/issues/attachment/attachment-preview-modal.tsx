@@ -35,6 +35,8 @@ export function AttachmentPreviewModal({ isOpen, onClose, kind, assetUrl, fileNa
   };
 
   const baseURL = getFileURL(assetUrl);
+  // URL が解決できない添付(assetUrl が空)は開いても白い枠が出るだけ。何も出さない。
+  if (!baseURL) return null;
   const inlineURL = baseURL + (baseURL.includes("?") ? "&" : "?") + "disposition=inline";
   const downloadFile = () => window.open(baseURL, "_blank"); // attachment disposition → 浏览器下载
 

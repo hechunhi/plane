@@ -16,6 +16,7 @@ import { EIssuesStoreType } from "@plane/types";
 import { CustomMenu } from "@plane/ui";
 // components
 import { WorkItemsModal } from "@/components/analytics/work-items/modal";
+import { MOBILE_HEADER_INLINE_CLASS, MOBILE_HEADER_ITEM_CLASS } from "@/components/core/app-header";
 import { DisplayFiltersSelection, FiltersDropdown } from "@/components/issues/issue-layouts/filters";
 import { IssueLayoutIcon } from "@/components/issues/issue-layouts/layout-icon";
 // hooks
@@ -96,15 +97,15 @@ export const CycleIssuesMobileHeader = observer(function CycleIssuesMobileHeader
         onClose={() => setAnalyticsModal(false)}
         cycleDetails={cycleDetails ?? undefined}
       />
-      <div className="flex justify-evenly border-b border-subtle bg-surface-1 py-2 md:hidden">
+      <div className={MOBILE_HEADER_INLINE_CLASS}>
         <CustomMenu
           maxHeight={"md"}
-          className="flex flex-grow justify-center text-13 text-secondary"
+          className={MOBILE_HEADER_ITEM_CLASS}
           placement="bottom-start"
           customButton={
-            <span className="flex flex-grow justify-center text-13 text-secondary">{t("common.layout")}</span>
+            <span className={MOBILE_HEADER_ITEM_CLASS}>{t("common.layout")}</span>
           }
-          customButtonClassName="flex flex-grow justify-center text-secondary text-13"
+          customButtonClassName="flex items-center text-secondary text-13"
           closeOnSelect
         >
           {SUPPORTED_LAYOUTS.map((layout, index) => (
@@ -120,7 +121,7 @@ export const CycleIssuesMobileHeader = observer(function CycleIssuesMobileHeader
             </CustomMenu.MenuItem>
           ))}
         </CustomMenu>
-        <div className="flex flex-grow items-center justify-center border-l border-subtle text-13 text-secondary">
+        <div className={MOBILE_HEADER_ITEM_CLASS}>
           <FiltersDropdown
             title={t("common.display")}
             placement="bottom-end"
@@ -148,7 +149,7 @@ export const CycleIssuesMobileHeader = observer(function CycleIssuesMobileHeader
 
         <span
           onClick={() => setAnalyticsModal(true)}
-          className="flex flex-grow justify-center border-l border-subtle text-13 text-secondary"
+          className={MOBILE_HEADER_ITEM_CLASS}
         >
           {t("common.analytics")}
         </span>

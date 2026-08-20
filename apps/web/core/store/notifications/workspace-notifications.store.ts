@@ -20,6 +20,7 @@ import type {
 } from "@plane/types";
 // helpers
 import { convertToEpoch } from "@plane/utils";
+import { getNotificationAnchorId } from "@/lib/notification-anchor";
 // services
 import workspaceNotificationService from "@/services/workspace-notification.service";
 // store
@@ -465,7 +466,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
    */
   /**
    * BARSOUL: 指定 issue の「最も古い未読通知」が指す活動アンカー
-   * (issue_comment 優先、無ければ activity id) を返す。カード(peek)を
+   * (コメントならコメント id、それ以外は activity id) を返す。カード(peek)を
    * 開いた時、未読が始まる位置へ自動スクロール＆ハイライトするのに使う
    * （= 通知中心クリック時と同じ scrollToActivityCommentId 機構を再利用）。
    * 既読化の前に呼ぶこと（read 後も data は変わらないが意図を明確に）。
@@ -477,8 +478,7 @@ export class WorkspaceNotificationStore implements IWorkspaceNotificationStore {
       if (!n) continue;
       const nIssueId = n.data?.issue?.id || n.entity_identifier;
       if (nIssueId !== issueId || n.read_at || n.archived_at || n.snoozed_till) continue;
-      const act = n.data?.issue_activity;
-      const target = act?.issue_comment || act?.id || undefined;
+      const target = getNotificationAnchorId(n.data?.issue_activity);
       if (!target) continue;
       const ts = n.created_at ? new Date(n.created_at).getTime() : 0;
       if (!best || ts < best.ts) best = { ts, target };

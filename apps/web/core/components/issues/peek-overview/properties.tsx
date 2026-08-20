@@ -81,7 +81,9 @@ export const PeekOverviewProperties = observer(function PeekOverviewProperties(p
   return (
     <div>
       <h6 className="text-body-xs-medium">{t("common.properties")}</h6>
-      <div className={`mt-3 w-full space-y-3 ${disabled ? "opacity-60" : ""}`}>
+      {/* BARSOUL 2026-08: 1 行の実高は 24px なのに space-y-3(9.6px)を足していたので、
+          11 行で 100px 以上が余白だけに消えていた(= 「行間が広い」)。行の高さは触らず行間だけ詰める。 */}
+      <div className={`mt-2 w-full space-y-1 ${disabled ? "opacity-60" : ""}`}>
         <SidebarPropertyListItem icon={StatePropertyIcon} label={t("common.state")}>
           <StateDropdown
             value={issue?.state_id}

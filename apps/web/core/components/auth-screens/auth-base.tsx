@@ -18,7 +18,7 @@ type AuthBaseProps = {
 // ブランドロゴ)はマーケ要素なので非表示。Google のみのカードを縦中央に配置。
 export function AuthBase({ authType }: AuthBaseProps) {
   return (
-    <div className="relative z-10 flex h-screen w-screen flex-col overflow-hidden overflow-y-auto px-8 py-6">
+    <div className="relative z-10 flex h-dvh w-full flex-col overflow-hidden overflow-y-auto px-8 py-6">
       <AuthHeader type={authType} />
       <div className="flex w-full flex-1 items-center justify-center">
         <AuthRoot authMode={authType} />

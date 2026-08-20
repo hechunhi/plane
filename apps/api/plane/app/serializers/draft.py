@@ -38,6 +38,10 @@ class DraftIssueCreateSerializer(BaseSerializer):
     parent_id = serializers.PrimaryKeyRelatedField(
         source="parent", queryset=Issue.objects.all(), required=False, allow_null=True
     )
+    # BARSOUL 2026-08: 個人 ToDo の子タスク(自己参照)。`parent_id` は Issue を指す別物。
+    todo_parent_id = serializers.PrimaryKeyRelatedField(
+        source="todo_parent", queryset=DraftIssue.objects.all(), required=False, allow_null=True
+    )
     label_ids = serializers.ListField(
         child=serializers.PrimaryKeyRelatedField(queryset=Label.objects.all()),
         write_only=True,
@@ -314,6 +318,12 @@ class DraftIssueSerializer(BaseSerializer):
             "state_id",
             "sort_order",
             "completed_at",
+            # BARSOUL 2026-08: 個人 ToDo の「済」(state 連動の completed_at とは別物)
+            "done_at",
+            # BARSOUL 2026-08: 個人 ToDo の木構造 / メモ / 並び順
+            "todo_parent_id",
+            "memo",
+            "todo_order",
             "estimate_point",
             "priority",
             "start_date",

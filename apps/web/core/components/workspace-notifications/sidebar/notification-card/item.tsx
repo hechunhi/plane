@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
-import { Clock, AlarmClock, Repeat } from "lucide-react";
+import { Clock, AlarmClock, CalendarClock, Repeat } from "lucide-react";
 // plane imports
 import { Avatar, Row } from "@plane/ui";
 import { cn, calculateTimeAgo, renderFormattedDate, renderFormattedTime, getFileURL } from "@plane/utils";
@@ -15,6 +15,7 @@ import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { useNotification } from "@/hooks/store/notifications/use-notification";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useWorkspace } from "@/hooks/store/use-workspace";
+import { getNotificationAnchorId } from "@/lib/notification-anchor";
 // local imports
 import { NotificationContent } from "./content";
 import { NotificationOption } from "./options";
@@ -47,7 +48,10 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
   const _kind = (notification?.data as { kind?: string })?.kind;
   const isReminder = _kind === "reminder";
   const isRecurring = _kind === "recurring";
-  const isBell = isReminder || isRecurring;
+  // BARSOUL 2026-08: 期限リマインド(deadline_sweep が作る)も issue_activity を持たない。
+  // 同じ「表示型通知」の仲間なので isBell に入れて守衛を通す。
+  const isDeadline = _kind === "deadline";
+  const isBell = isReminder || isRecurring || isDeadline;
 
   const handleNotificationIssuePeekOverview = async () => {
     if (workspaceSlug && projectId && issueId && !isSnoozeStateModalOpen && !customSnoozeModal) {
@@ -67,10 +71,9 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
         if (!getIsIssuePeeked(issueId)) {
           setPeekIssue({ workspaceSlug, projectId, issueId });
         }
-        // BARSOUL: 滚动定位到该通知对应的评论/活动（评论 id 优先，
-        // 否则活动 id）。活动feed异步加载完后由 activity-comment-root 滚动。
-        const _act = notification?.data?.issue_activity;
-        const _target = _act?.issue_comment || _act?.id || undefined;
+        // BARSOUL: 滚动定位到该通知对应的评论/活动。id の解決は
+        // getNotificationAnchorId に一本化（issue_comment は本文テキストで id ではない）。
+        const _target = getNotificationAnchorId(notification?.data?.issue_activity);
         if (_target) setScrollToActivityCommentId(_target);
       }
     }
@@ -105,6 +108,8 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
         <div className="pointer-events-none absolute top-1/2 right-[-6px] z-0 -translate-y-1/2" aria-hidden="true">
           {isReminder ? (
             <AlarmClock style={{ width: 78, height: 78, color: "#7c5cff", opacity: 0.07 }} />
+          ) : isDeadline ? (
+            <CalendarClock style={{ width: 78, height: 78, color: "#b45309", opacity: 0.08 }} />
           ) : (
             <Repeat style={{ width: 78, height: 78, color: "#7a7d85", opacity: 0.06 }} />
           )}
@@ -114,10 +119,20 @@ export const NotificationItem = observer(function NotificationItem(props: TNotif
       <div className="relative z-[1] flex w-full gap-2">
         <div
           className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-layer-1"
-          style={isReminder ? { background: "#f1edff" } : isRecurring ? { background: "#eef0f2" } : undefined}
+          style={
+            isReminder
+              ? { background: "#f1edff" }
+              : isDeadline
+                ? { background: "#fdf1dd" }
+                : isRecurring
+                  ? { background: "#eef0f2" }
+                  : undefined
+          }
         >
           {isReminder ? (
             <AlarmClock style={{ width: 21, height: 21, color: "#7c5cff" }} />
+          ) : isDeadline ? (
+            <CalendarClock style={{ width: 21, height: 21, color: "#b45309" }} />
           ) : isRecurring ? (
             <Repeat style={{ width: 20, height: 20, color: "#6b6f77" }} />
           ) : (

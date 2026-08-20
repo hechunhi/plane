@@ -56,10 +56,29 @@ export interface IIssueProperties {
   className: string;
   activeLayout: string;
   isEpic?: boolean;
+  /**
+   * BARSOUL 2026-08: 「狭い画面向けの薄いカード」モード。
+   * on にすると **値が入っていない属性のチップを出さない**。スマホのカンバンカードが
+   * 空の丸アイコンだらけ(優先度なし・期日なし・担当なし…)になるのを止めるためのもの。
+   * 属性を消しているわけではなく、値が無いものを描かないだけ。設定はカードを開けば
+   * これまで通り全部できる(狭い画面では 26px のチップは実際タップできない)。
+   */
+  compact?: boolean;
+  /** compact 時、グルーピング列と同じ値の属性(= 列名の重複表示)を落とすための現在の列 id。 */
+  currentGroupId?: string;
 }
 
 export const IssueProperties = observer(function IssueProperties(props: IIssueProperties) {
-  const { issue, updateIssue, displayProperties, isReadOnly, className, isEpic = false } = props;
+  const {
+    issue,
+    updateIssue,
+    displayProperties,
+    isReadOnly,
+    className,
+    isEpic = false,
+    compact = false,
+    currentGroupId,
+  } = props;
   // i18n
   const { t } = useTranslation();
   // store hooks
@@ -183,6 +202,12 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
 
   const defaultLabelOptions = issue?.label_ids?.map((id) => labelMap[id]) || [];
 
+  /**
+   * BARSOUL 2026-08: compact(狭い画面)では値の無いチップを描かない。
+   * 通常時は常に true を返すので、既存レイアウト(リスト/スプレッドシート等)は一切変わらない。
+   */
+  const keepIfEmpty = (hasValue: boolean) => !compact || hasValue;
+
   const minDate = getDate(issue.start_date);
   const maxDate = getDate(issue.target_date);
 
@@ -195,7 +220,12 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
     <div className={className}>
       {/* basic properties */}
       {/* state */}
-      <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="state">
+      <WithDisplayPropertiesHOC
+        displayProperties={displayProperties}
+        displayPropertyKey="state"
+        /* compact: 列そのものがステータスなので、同じ値のチップは重複。 */
+        shouldRenderProperty={() => keepIfEmpty(!!issue.state_id && issue.state_id !== currentGroupId)}
+      >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <StateDropdown
             buttonContainerClassName="truncate max-w-40"
@@ -211,7 +241,11 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       </WithDisplayPropertiesHOC>
 
       {/* priority */}
-      <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="priority">
+      <WithDisplayPropertiesHOC
+        displayProperties={displayProperties}
+        displayPropertyKey="priority"
+        shouldRenderProperty={() => keepIfEmpty(!!issue.priority && issue.priority !== "none")}
+      >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <PriorityDropdown
             value={issue?.priority}
@@ -228,7 +262,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey={["start_date", "due_date"]}
-        shouldRenderProperty={() => isDateRangeEnabled}
+        shouldRenderProperty={() => isDateRangeEnabled && keepIfEmpty(!!issue.start_date || !!issue.target_date)}
       >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <DateRangeDropdown
@@ -263,7 +297,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="start_date"
-        shouldRenderProperty={() => !isDateRangeEnabled}
+        shouldRenderProperty={() => !isDateRangeEnabled && keepIfEmpty(!!issue.start_date)}
       >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <DateDropdown
@@ -286,7 +320,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="due_date"
-        shouldRenderProperty={() => !isDateRangeEnabled}
+        shouldRenderProperty={() => !isDateRangeEnabled && keepIfEmpty(!!issue.target_date)}
       >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <DateDropdown
@@ -310,7 +344,11 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       </WithDisplayPropertiesHOC>
 
       {/* assignee */}
-      <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="assignee">
+      <WithDisplayPropertiesHOC
+        displayProperties={displayProperties}
+        displayPropertyKey="assignee"
+        shouldRenderProperty={() => keepIfEmpty(!!issue.assignee_ids?.length)}
+      >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <MemberDropdown
             projectId={issue?.project_id}
@@ -334,7 +372,11 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
           <>
             {/* modules */}
             {projectDetails?.module_view && (
-              <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="modules">
+              <WithDisplayPropertiesHOC
+                displayProperties={displayProperties}
+                displayPropertyKey="modules"
+                shouldRenderProperty={() => keepIfEmpty(!!issue.module_ids?.length)}
+              >
                 <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
                   <ModuleDropdown
                     buttonContainerClassName="truncate max-w-40"
@@ -354,7 +396,11 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
 
             {/* cycles */}
             {projectDetails?.cycle_view && (
-              <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="cycle">
+              <WithDisplayPropertiesHOC
+                displayProperties={displayProperties}
+                displayPropertyKey="cycle"
+                shouldRenderProperty={() => keepIfEmpty(!!issue.cycle_id)}
+              >
                 <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
                   <CycleDropdown
                     buttonContainerClassName="truncate max-w-40"
@@ -375,7 +421,11 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
 
       {/* estimates */}
       {projectId && areEstimateEnabledByProjectId(projectId?.toString()) && (
-        <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="estimate">
+        <WithDisplayPropertiesHOC
+          displayProperties={displayProperties}
+          displayPropertyKey="estimate"
+          shouldRenderProperty={() => keepIfEmpty(issue.estimate_point !== null && issue.estimate_point !== undefined)}
+        >
           <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
             <EstimateDropdown
               value={issue.estimate_point ?? undefined}
@@ -475,7 +525,11 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WorkItemLayoutAdditionalProperties displayProperties={displayProperties} issue={issue} />
 
       {/* label */}
-      <WithDisplayPropertiesHOC displayProperties={displayProperties} displayPropertyKey="labels">
+      <WithDisplayPropertiesHOC
+        displayProperties={displayProperties}
+        displayPropertyKey="labels"
+        shouldRenderProperty={() => keepIfEmpty(!!issue.label_ids?.length)}
+      >
         <IssuePropertyLabels
           projectId={issue?.project_id || null}
           value={issue?.label_ids || []}

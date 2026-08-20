@@ -33,7 +33,11 @@ export type TNotificationData = {
     id: string | undefined;
     actor: string | undefined;
     field: string | undefined;
+    // BARSOUL 注意: issue_comment は「コメント本文のテキスト」であって id ではない。
+    // コメントの id は new_identifier に入る(getNotificationAnchorId を使うこと)。
     issue_comment: string | undefined;
+    new_identifier?: string | null;
+    old_identifier?: string | null;
     verb: "created" | "updated" | "deleted";
     new_value: string | undefined;
     old_value: string | undefined;

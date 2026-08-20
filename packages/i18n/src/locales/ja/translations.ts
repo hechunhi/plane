@@ -24,7 +24,7 @@ export default {
     intake: "インテーク",
     recurring: "定期タスク",
     tables: "テーブル",
-    drafts: "下書き",
+    drafts: "ToDo",
     favorites: "お気に入り",
     pro: "プロ",
     upgrade: "アップグレード",
@@ -439,7 +439,7 @@ export default {
   workspace_logo: "ワークスペースのロゴ",
   new_issue: "新規作業項目",
   your_work: "あなたの作業",
-  drafts: "下書き",
+  drafts: "ToDo",
   projects: "プロジェクト",
   views: "ビュー",
   workspace: "ワークスペース",
@@ -2571,6 +2571,42 @@ export default {
     },
   },
   workspace_draft_issues: {
+    /**
+     * BARSOUL 2026-08: 下書き一覧を「個人の ToDo」として使うための文言。
+     * 下書き(draft)という言い方は残っているが、ユーザーに見せる語は ToDo に寄せる。
+     */
+    todo: {
+      toggle_done: "完了を切り替え",
+      unassigned_project: "未分類",
+      quick_add_placeholder: "やることを書いて Enter",
+      create_failed: "追加できませんでした。もう一度お試しください。",
+      completed: "完了したもの",
+      no_completed: "まだ完了したものはありません。",
+      sub_task_placeholder: "子タスクを書いて Enter",
+      new_placeholder: "次のやることを書いて Enter",
+      add_sub_task: "子タスクを追加",
+      memo: "メモ",
+      memo_placeholder: "自分用のメモ(プロジェクトへ移す時は本文に引き継ぎます)",
+      expand: "子タスクを開く",
+      collapse: "子タスクを畳む",
+      reorder: "並べ替え",
+      due_date: "期日",
+      move_up: "1 つ上へ",
+      move_down: "1 つ下へ",
+      pasted: "{count} 件を追加しました",
+      paste_limited: "残り {count} 行は多すぎたので入れていません",
+      nesting_limited: "子タスクを持つ行は、子タスクにできません。",
+      load_more: "もっと読む ↓",
+      keymap: {
+        new_row: "行を追加",
+        indent: "子にする",
+        outdent: "親に戻す",
+        toggle_done: "完了",
+        memo: "メモ",
+        move_focus: "行を移動",
+        paste_lines: "複数行を一気に",
+      },
+    },
     draft_an_issue: "作業項目の下書き",
     empty_state: {
       title: "書きかけの作業項目、そしてまもなくコメントがここに表示されます。",
@@ -3005,6 +3041,7 @@ export default {
     tab_assigned: "自分が処理",
     tab_mine: "自分が起票",
     tab_all: "すべて",
+    decide_moved_hint: "あなたの承認待ちは「自分の仕事」に移動しました",
     refresh: "更新",
     retry: "再試行",
     load_failed: "読み込みに失敗しました",
@@ -3082,5 +3119,61 @@ export default {
     mode_desc_any: "いずれか1名が承認すれば可決",
     mode_desc_all: "全員の承認が必要",
     mode_desc_sequential: "上から順番に承認していく",
+  },
+
+  /**
+   * BARSOUL 2026-08: スマホ通知（Web Push）。
+   * 画面に技術用語（Service Worker / VAPID / 購読）は一切出さない。
+   */
+  push_notifications: {
+    heading: "スマホ通知",
+    description: "自分に関係する動きがあった時に、スマホへ直接お知らせします。アプリを閉じていても届きます。",
+    status: {
+      on: "この端末はオンです",
+      off: "この端末はまだオフです",
+      denied: "端末側でブロックされています",
+      needs_install: "iPhone ではあと一手だけ必要です",
+      unsupported: "このブラウザーでは使えません",
+    },
+    denied_help_ios:
+      "BARSOUL Tasks の通知が拒否されています。iPhone の「設定 \u203a 通知 \u203a BARSOUL Tasks」で許可し直してから、この画面に戻ってください。",
+    denied_help:
+      "このサイトの通知がブラウザで拒否されています。アドレスバー左のアイコンから通知を「許可」にして、この画面を再読み込みしてください。",
+    unsupported_help: "iPhone は Safari、パソコンは Chrome か Edge でお試しください。",
+    actions: {
+      enable: "通知をオンにする",
+      disable: "オフにする",
+      enabling: "設定中\u2026",
+    },
+    install: {
+      title: "iPhone で通知を受け取るには、まず BARSOUL Tasks をホーム画面に追加してください。",
+      step_1: "Safari の下にある共有ボタンをタップ",
+      step_2: "「ホーム画面に追加」を選ぶ",
+      step_3: "ホーム画面にできたアイコンから開き直す",
+      step_4: "この画面に戻って通知をオンにする",
+    },
+    devices: {
+      others: "ほかに {count} 台でオンになっています",
+    },
+    types: {
+      heading: "受け取る通知",
+      mention: "自分へのメンション",
+      mention_description: "課題やコメントで名前を呼ばれた時。",
+      comment_reply: "自分のコメントへの返信",
+      comment_reply_description: "自分がコメントした課題に、新しいコメントが付いた時。",
+      assigned: "自分への担当割り当て",
+      assigned_description: "課題の担当者に自分が入った時。",
+      deadline: "期限のお知らせ",
+      deadline_description: "担当している課題の期限が明日、または今日の時。",
+      important_update: "重要な変更",
+      important_update_description: "担当している課題の状態・優先度・期限が変わった時。",
+    },
+    toasts: {
+      enabled: "スマホ通知をオンにしました",
+      disabled: "スマホ通知をオフにしました",
+      denied: "通知が許可されませんでした",
+      failed: "設定できませんでした。もう一度お試しください。",
+      update_failed: "保存できませんでした。もう一度お試しください。",
+    },
   },
 } as const;

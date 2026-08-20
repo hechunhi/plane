@@ -303,8 +303,9 @@ const IssueRowDetails = observer(function IssueRowDetails(props: IssueRowDetails
             {/* Workitem section */}
             <div
               className={cn("flex flex-grow items-center gap-0.5 py-2", {
-                "min-w-[360px]": !displayProperties?.key,
-                "min-w-60": displayProperties?.key,
+                // BARSOUL 2026-08: 狭い画面では固定 360px が横スクロールを増やすだけなので段階化
+                "min-w-[240px] sm:min-w-[360px]": !displayProperties?.key,
+                "min-w-40 sm:min-w-60": displayProperties?.key,
               })}
             >
               {/* select checkbox */}

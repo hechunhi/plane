@@ -142,7 +142,7 @@ export default {
   workspace_logo: "Workspace logo",
   new_issue: "New work item",
   your_work: "Your work",
-  drafts: "Drafts",
+  drafts: "To-dos",
   projects: "Projects",
   views: "Views",
   workspace: "Workspace",
@@ -2307,6 +2307,42 @@ export default {
     },
   },
   workspace_draft_issues: {
+    /**
+     * BARSOUL 2026-08: 下書き一覧を「個人の ToDo」として使うための文言。
+     * 下書き(draft)という言い方は残っているが、ユーザーに見せる語は ToDo に寄せる。
+     */
+    todo: {
+      toggle_done: "Toggle done",
+      unassigned_project: "Unfiled",
+      quick_add_placeholder: "Add a to-do and press Enter",
+      create_failed: "Couldn't add. Please try again.",
+      completed: "Completed",
+      no_completed: "Nothing completed yet.",
+      sub_task_placeholder: "Write a subtask, press Enter",
+      new_placeholder: "Write the next one, press Enter",
+      add_sub_task: "Add subtask",
+      memo: "Memo",
+      memo_placeholder: "A note just for you (folded into the body when you move this to a project)",
+      expand: "Show subtasks",
+      collapse: "Hide subtasks",
+      reorder: "Reorder",
+      due_date: "Due date",
+      move_up: "Move up",
+      move_down: "Move down",
+      pasted: "Added {count} items",
+      paste_limited: "{count} more lines were left out",
+      nesting_limited: "A row that already has subtasks can't become one.",
+      load_more: "Load more ↓",
+      keymap: {
+        new_row: "New row",
+        indent: "Make subtask",
+        outdent: "Unnest",
+        toggle_done: "Done",
+        memo: "Memo",
+        move_focus: "Move between rows",
+        paste_lines: "Paste many lines",
+      },
+    },
     draft_an_issue: "Draft a work item",
     empty_state: {
       title: "Half-written work items, and soon, comments will show up here.",
@@ -2939,6 +2975,7 @@ export default {
     tab_assigned: "To review",
     tab_mine: "Started by me",
     tab_all: "All",
+    decide_moved_hint: "Approvals waiting on you now live in My work",
     refresh: "Refresh",
     retry: "Retry",
     load_failed: "Failed to load",
@@ -3016,5 +3053,61 @@ export default {
     mode_desc_any: "Approved once any one approver signs off",
     mode_desc_all: "Requires every approver to sign off",
     mode_desc_sequential: "Approvers sign off one after another, in order",
+  },
+
+  /**
+   * BARSOUL 2026-08: スマホ通知（Web Push）。
+   * 画面に技術用語（Service Worker / VAPID / 購読）は一切出さない。
+   */
+  push_notifications: {
+    heading: "Phone notifications",
+    description: "Get a notification on your phone when something needs you \u2014 even when BARSOUL Tasks is closed.",
+    status: {
+      on: "On for this device",
+      off: "Off for this device",
+      denied: "Blocked by your device",
+      needs_install: "One more step on iPhone",
+      unsupported: "Not available in this browser",
+    },
+    denied_help_ios:
+      "Notifications are turned off for BARSOUL Tasks. Allow them again in your iPhone Settings \u203a Notifications \u203a BARSOUL Tasks, then come back here.",
+    denied_help:
+      "Notifications are blocked for this site. Click the icon on the left of the address bar, allow notifications, then reload this page.",
+    unsupported_help: "Try Safari on iPhone, or Chrome and Edge on your computer.",
+    actions: {
+      enable: "Turn on notifications",
+      disable: "Turn off",
+      enabling: "Turning on\u2026",
+    },
+    install: {
+      title: "To get notifications on your iPhone, add BARSOUL Tasks to your Home Screen first.",
+      step_1: "Tap the share button at the bottom of Safari",
+      step_2: "Choose \u201cAdd to Home Screen\u201d",
+      step_3: "Open BARSOUL Tasks from the new Home Screen icon",
+      step_4: "Come back to this page and turn on notifications",
+    },
+    devices: {
+      others: "Also on for {count} other device(s)",
+    },
+    types: {
+      heading: "What to notify me about",
+      mention: "Mentions",
+      mention_description: "Someone mentions you in a work item or a comment.",
+      comment_reply: "Replies to my comments",
+      comment_reply_description: "Someone comments on a work item you have commented on.",
+      assigned: "Assigned to me",
+      assigned_description: "A work item is assigned to you.",
+      deadline: "Due dates",
+      deadline_description: "A work item you own is due tomorrow or today.",
+      important_update: "Important changes",
+      important_update_description: "Status, priority or due date changes on work items assigned to you.",
+    },
+    toasts: {
+      enabled: "Phone notifications are on",
+      disabled: "Phone notifications are off",
+      denied: "Notifications were not allowed",
+      failed: "Couldn\u2019t change the setting. Please try again.",
+      update_failed: "Couldn\u2019t save. Please try again.",
+    },
   },
 } as const;

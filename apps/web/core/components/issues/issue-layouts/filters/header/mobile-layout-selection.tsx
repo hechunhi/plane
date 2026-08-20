@@ -26,7 +26,7 @@ export function MobileLayoutSelection({
   return (
     <CustomMenu
       maxHeight={"md"}
-      className="flex flex-grow justify-center text-13 text-secondary"
+      className="flex items-center text-13 text-secondary"
       placement="bottom-start"
       customButton={
         <Button variant="secondary" className="relative px-2">
@@ -36,7 +36,7 @@ export function MobileLayoutSelection({
           <ChevronDownIcon className="my-auto size-3 text-secondary" strokeWidth={2} />
         </Button>
       }
-      customButtonClassName="flex flex-grow justify-center text-secondary text-13"
+      customButtonClassName="flex items-center text-secondary text-13"
       closeOnSelect
     >
       {ISSUE_LAYOUTS.filter((l) => layouts.includes(l.key)).map((layout, index) => (

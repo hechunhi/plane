@@ -107,6 +107,8 @@ from .recent_visit import UserRecentVisit
 from .label import Label
 
 from .device import Device, DeviceSession
+# BARSOUL 2026-08: Web Push(PWA のプッシュ通知)
+from .push import WebPushSubscription, WebPushPreference
 
 from .sticky import Sticky
 

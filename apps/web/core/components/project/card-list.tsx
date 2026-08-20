@@ -102,7 +102,10 @@ export const ProjectCardList = observer(function ProjectCardList(props: TProject
 
   return (
     <ContentWrapper>
-      <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-3">
+      {/* BARSOUL 2026-08: gap-8(32px)はどの画面幅でも一律で、1280/1366 では
+          カード列の間に無駄な帯ができていた。狭いほど詰め、2xl では 1 列増やす。
+          カードのサイズ・情報量は不変。 */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 lg:gap-6 2xl:grid-cols-4">
         {filteredProjectIds.map((projectId) => {
           const projectDetails = getProjectById(projectId);
           if (!projectDetails) return;

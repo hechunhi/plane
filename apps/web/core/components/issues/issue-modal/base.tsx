@@ -172,7 +172,9 @@ export const CreateUpdateIssueModalBase = observer(function CreateUpdateIssueMod
       let response: TIssue | undefined;
       // if draft issue, use draft issue store to create issue
       if (is_draft_issue) {
-        response = (await draftIssues.createIssue(workspaceSlug.toString(), payload)) as TIssue;
+        // 下書きストアは TWorkspaceDraftIssue を返す(sequence_id 等を持たない)。
+        // 呼び元は TIssue しか受けないので、構造の差を承知の上で読み替える。
+        response = (await draftIssues.createIssue(workspaceSlug.toString(), payload)) as unknown as TIssue;
       }
       // if cycle id in payload does not match the cycleId in url
       // or if the moduleIds in Payload does not match the moduleId in url

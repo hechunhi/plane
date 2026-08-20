@@ -125,7 +125,7 @@ export function RecurringRuleEditor({ ws, pid, rule, seed, onClose, onSaved }: P
       const cur = new Set(a.weekdays ?? []);
       if (cur.has(d)) cur.delete(d);
       else cur.add(d);
-      return { ...a, weekdays: [...cur].toSorted() };
+      return { ...a, weekdays: [...cur].sort() };
     });
   }, []);
 

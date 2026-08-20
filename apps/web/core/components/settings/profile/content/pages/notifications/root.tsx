@@ -11,6 +11,7 @@ import { useTranslation } from "@plane/i18n";
 // components
 import { ProfileSettingsHeading } from "@/components/settings/profile/heading";
 import { EmailSettingsLoader } from "@/components/ui/loader/settings/email";
+import { PushNotificationSettings } from "@/components/web-push";
 // services
 import { UserService } from "@/services/user.service";
 // local imports
@@ -31,12 +32,14 @@ export const NotificationsProfileSettings = observer(function NotificationsProfi
 
   return (
     <div className="size-full">
-      <ProfileSettingsHeading
-        title={t("account_settings.notifications.heading")}
-        description={t("account_settings.notifications.description")}
-      />
+      {/* BARSOUL 2026-08: このページはもう「メール通知」専用ではなく、
+          メール通知 + スマホ通知の 2 ブロックになったので見出しを一段上げる。 */}
+      <ProfileSettingsHeading title={t("notifications")} description={t("account_settings.notifications.description")} />
       <div className="mt-7">
+        <h3 className="mb-1 text-body-sm-semibold text-primary">{t("email_notifications")}</h3>
         <NotificationsProfileSettingsForm data={data} />
+        {/* BARSOUL 2026-08: メール通知の下に「スマホ通知」ブロック */}
+        <PushNotificationSettings />
       </div>
     </div>
   );

@@ -10,7 +10,7 @@ import { Links, Meta, Outlet, Scripts } from "react-router";
 import type { LinksFunction } from "react-router";
 import { ThemeProvider, useTheme } from "next-themes";
 // plane imports
-import { SITE_DESCRIPTION, SITE_NAME } from "@plane/constants";
+import { SITE_DESCRIPTION } from "@plane/constants";
 import { cn } from "@plane/utils";
 // types
 // assets
@@ -35,11 +35,21 @@ import "@fontsource/ibm-plex-mono";
 
 const APP_TITLE = "Plane | Simple, extensible, open-source project management tool.";
 
+/**
+ * BARSOUL 2026-08: ホーム画面に追加した時に出るアプリ名。
+ * manifest.json の "name" と必ず同じ文字列にする(片方だけ変えると
+ * iOS はホーム画面のラベルだけ古いままになる)。
+ */
+const PWA_APP_NAME = "BARSOUL Tasks";
+
 export const links: LinksFunction = () => [
   { rel: "icon", type: "image/png", sizes: "32x32", href: favicon32 },
   { rel: "icon", type: "image/png", sizes: "16x16", href: favicon16 },
   { rel: "shortcut icon", href: faviconIco },
-  { rel: "manifest", href: "/site.webmanifest.json" },
+  // BARSOUL 2026-08: manifest は 1 本だけ。以前は site.webmanifest.json と
+  // manifest.json の 2 本を link していて、ブラウザは先に来た方(= 名前 "Plane"、
+  // アイコンが 1 枚だけの site.webmanifest.json)を採用していた。
+  // ホーム画面に追加した時のアプリ名が "Plane" になっていたのはこれが原因。
   { rel: "apple-touch-icon", href: icon512 },
   { rel: "apple-touch-icon", sizes: "180x180", href: icon180 },
   { rel: "apple-touch-icon", sizes: "512x512", href: icon512 },
@@ -75,13 +85,30 @@ export function Layout({ children }: { children: ReactNode }) {
           }}
         />
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="theme-color" content="#fff" />
+        {/* BARSOUL 2026-08: iPhone の PWA 対応。
+            - viewport-fit=cover: セーフエリアを自分で制御する宣言。これが無いと
+              env(safe-area-inset-*) が常に 0 になり、下部タブをホームインジケータの
+              上に逃がせない(= ラベルが切れる)。
+            - maximum-scale / user-scalable は指定しない。ピンチ拡大は
+              アクセシビリティ機能なので潰さない。
+            - interactive-widget=resizes-content: ソフトキーボードが出た時に
+              ビューポート自体を縮める(= 100dvh が追従する)。Android Chrome 向け。 */}
+        <meta
+          name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+        />
+        {/* BARSOUL 2026-08: ステータスバー/アドレスバーの色をテーマに追従させる。
+            media 付きを 2 本置くのが仕様どおりの書き方で、ダークだけ黒くなる。 */}
+        <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+        <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d0d0d" />
         {/* Meta info for PWA */}
-        <meta name="application-name" content="Plane" />
+        <meta name="application-name" content={PWA_APP_NAME} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content={SITE_NAME} />
+        {/* black-translucent = ステータスバーの下まで web view が広がる。
+            viewport-fit=cover + ルートの pt-[env(safe-area-inset-top)] と対で機能し、
+            上端に灰色の帯が出ない。 */}
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content={PWA_APP_NAME} />
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <Meta />
@@ -157,7 +184,22 @@ clientLoader.hydrate = true as const;
 export default function Root() {
   return (
     <AppProvider>
-      <div className={cn("relative flex h-screen w-full flex-col overflow-hidden bg-canvas", "desktop-app-container")}>
+      <div
+        className={cn(
+          // BARSOUL 2026-08: h-screen(=100vh) は iOS でビューポートより背が高くなる。
+          // (Safari はツールバーぶんを含んだ「最大」の高さを 100vh として返し、
+          //  standalone PWA でもホームインジケータ帯を含む。)
+          // その結果アプリ最下段 = 下部タブバーが画面外にはみ出し、ラベルが
+          // 半分に切れていた。100dvh は「今実際に見えている」高さなので切れない。
+          // セーフエリアはここで一括して逃がす。上端は bg-canvas 帯になり、
+          // 直下の TopNavigationRoot も bg-canvas なので継ぎ目は出ない。
+          // 下端は下部タブバー側が自前で pb を持つのでここでは足さない
+          // (二重に足すとタブが浮く)。
+          "relative flex h-dvh w-full flex-col overflow-hidden bg-canvas",
+          "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]",
+          "desktop-app-container"
+        )}
+      >
         <main className="relative h-full w-full overflow-hidden">
           <Outlet />
         </main>
@@ -178,7 +220,7 @@ export function HydrateFallback() {
   if (!hydrated || resolvedTheme === undefined) return <div />;
 
   return (
-    <div className="relative flex h-screen w-full items-center justify-center bg-canvas">
+    <div className="relative flex h-dvh w-full items-center justify-center bg-canvas">
       <LogoSpinner />
     </div>
   );

@@ -15,6 +15,8 @@ import { DAYS_LIST } from "@/constants/calendar";
 // helpers
 // hooks
 import { useUserProfile } from "@/hooks/store/user";
+// local imports
+import { HOLIDAY_TEXT, SATURDAY_TEXT } from "./holiday";
 
 const DATE_FNS_LOCALE_MAP: Record<string, Locale | undefined> = {
   ja,
@@ -57,7 +59,19 @@ export const CalendarWeekHeader = observer(function CalendarWeekHeader(props: Pr
           return null;
 
         return (
-          <div key={day.shortTitle} className="flex h-11 items-center justify-center bg-layer-1 px-4 md:justify-end">
+          <div
+            key={day.shortTitle}
+            // BARSOUL: 日曜=赤 / 土曜=青。日付セル側(day-tile)と揃える。
+            style={{
+              color:
+                day.value === EStartOfTheWeek.SUNDAY
+                  ? HOLIDAY_TEXT
+                  : day.value === EStartOfTheWeek.SATURDAY
+                    ? SATURDAY_TEXT
+                    : undefined,
+            }}
+            className="flex h-11 items-center justify-center bg-layer-1 px-4 md:justify-end"
+          >
             {getLocalizedWeekday(day.value)}
           </div>
         );

@@ -25,6 +25,7 @@ import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useWorkspace } from "@/hooks/store/use-workspace";
 import { useUser, useUserProfile } from "@/hooks/store/user";
 import { useInstance } from "@/hooks/store/use-instance";
+import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 // components
 import { WorkspaceLogo } from "../logo";
 import SidebarDropdownItem from "./dropdown-item";
@@ -36,7 +37,8 @@ type WorkspaceMenuRootProps = {
 export const WorkspaceMenuRoot = observer(function WorkspaceMenuRoot(props: WorkspaceMenuRootProps) {
   const { variant } = props;
   // store hooks
-  const { toggleSidebar, toggleAnySidebarDropdown } = useAppTheme();
+  const { toggleAnySidebarDropdown } = useAppTheme();
+  const closeSidebarOnNavigate = useCloseSidebarOnNavigate();
   const { config } = useInstance();
   const { data: currentUser } = useUser();
   const { signOut } = useUser();
@@ -61,11 +63,7 @@ export const WorkspaceMenuRoot = observer(function WorkspaceMenuRoot(props: Work
     );
   };
 
-  const handleItemClick = () => {
-    if (window.innerWidth < 768) {
-      toggleSidebar();
-    }
-  };
+  const handleItemClick = closeSidebarOnNavigate;
   const workspacesList = orderWorkspacesList(Object.values(workspaces ?? {}));
   // TODO: fix workspaces list scroll
 

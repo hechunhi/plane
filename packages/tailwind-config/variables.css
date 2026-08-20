@@ -1307,3 +1307,65 @@
   --tw-prose-th-borders: var(--border-color-subtle);
   --tw-prose-td-borders: var(--border-color-subtle);
 }
+
+/* ==================================================================================
+ * BARSOUL 2026-08  デスクトップ密度(density)チューニング
+ * ----------------------------------------------------------------------------------
+ * 現場フィードバック:「Windows ノートでカードが大きい / 文字が大きい / 行間が広い」。
+ * 個々のコンポーネントにマジックナンバーを撒くのではなく、Tailwind v4 のデザイン
+ * トークンをここ 1 か所で段階的に上書きする方式にしている。
+ *
+ *   --spacing   … Tailwind v4 の間隔スケールの元。`p-3` は
+ *                 `padding: calc(var(--spacing) * 3)` にコンパイルされるので、
+ *                 ここを 1 つ動かすだけで padding / margin / gap / space-y /
+ *                 leading-* / size-* が同じ比率で縮む(= 余白だけが減る)。
+ *   --text-NN   … `.text-13` は `font-size: var(--text-13)`。
+ *                 `--text-body-*` / `--text-h*` も var(--text-NN) 経由なので、
+ *                 ここを動かすとタイポスケール全体が 1 段下がる。
+ *   --padding-page-x / --height-header … ページ左右余白とヘッダ高さ。
+ *
+ * 方針
+ *   - モバイル(< 768px)は --spacing とタイポスケールを既定のまま据え置く。
+ *     h-11 = 44px のタッチ目標を崩さないため。左右余白だけ詰める。
+ *   - デスクトップ(>= 768px)は一段詰める。1536px 以上だけ元に戻す、という
+ *     以前の作りは「広い画面ほど何も変わらない」ことになるのでやめた。
+ *   - 文字は 1px 刻みで 1 段だけ(13→12 / 14→13 / 16→14 …)。Windows の
+ *     125〜150% 表示スケールでは実効サイズがまだ十分読める大きさになる。
+ *   - transform: scale() は使っていない。すべて実寸の CSS。
+ * ================================================================================== */
+
+@media (min-width: 768px) {
+  :root {
+    /* 間隔スケール 4px → 3.2px / step (-20%)
+       例: p-3 12→9.6px / gap-2 8→6.4px / space-y-2.5 10→8px / leading-5 20→16px */
+    --spacing: 0.2rem;
+
+    /* タイポスケールを 1 段下げる (px 換算: 13→12 / 14→13 / 16→14 / 18→16 / 20→18 / 24→20) */
+    --text-13: 0.75rem;
+    --text-14: 0.8125rem;
+    --text-16: 0.875rem;
+    --text-18: 1rem;
+    --text-20: 1.125rem;
+    --text-24: 1.25rem;
+
+    /* ページ左右余白とヘッダ高さも 1 本化(以前は 1536px 以上だけ 1.35rem / 3.25rem に戻していた) */
+    --padding-page: 1rem;
+    --padding-page-x: 1rem;
+    --height-header: 2.75rem;
+  }
+}
+
+/* モバイル: 余白とヘッダだけ詰める。--spacing / タイポスケールは既定のまま。 */
+@media (max-width: 767px) {
+  :root {
+    --padding-page: 0.75rem;
+    --padding-page-x: 0.75rem;
+    --height-header: 2.75rem;
+  }
+}
+@media (max-width: 399px) {
+  :root {
+    --padding-page: 0.625rem;
+    --padding-page-x: 0.625rem;
+  }
+}

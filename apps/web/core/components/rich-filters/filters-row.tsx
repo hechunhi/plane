@@ -125,10 +125,12 @@ export const FiltersRow = observer(function FiltersRow<K extends TFilterProperty
   );
 
   const mainContent = (
-    <div className="flex w-full items-start gap-2 rounded-lg bg-layer-1 px-4 py-2">
+    // BARSOUL 2026-08: フィルタ行の内側余白も大画面のみ従来値。ノート/スマホでは
+    // チップの表示本数を稼ぐため一段細くする(チップ自体のサイズは不変)。
+    <div className="flex w-full items-start gap-2 rounded-lg bg-layer-1 px-2.5 py-1.5">
       <div className="flex w-full flex-wrap items-center gap-2">{leftContent}</div>
       <div
-        className={cn("flex items-center gap-2 border-l border-subtle pl-4", {
+        className={cn("flex items-center gap-2 border-l border-subtle pl-2.5", {
           "border-l-transparent pl-0": !hasAvailableOperations,
         })}
       >

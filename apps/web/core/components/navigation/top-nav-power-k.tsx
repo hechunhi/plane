@@ -207,10 +207,13 @@ export const TopNavPowerK = observer(() => {
   );
 
   return (
-    <div ref={containerRef} className="relative">
+    // BARSOUL 2026-08: 以前は幅 364px 固定 + 親も shrink-0 だったため、768px 未満では
+    // この検索欄だけで横幅を食い尽くし、右側の Inbox / ヘルプ / ユーザーメニューが
+    // 画面外に押し出されて「押せない」状態になっていた。md 未満では縮められるようにする。
+    <div ref={containerRef} className="relative min-w-0 flex-1 md:flex-none">
       <div
-        className={cn("relative z-30 flex w-[364px] items-center transition-all duration-300 ease-in-out", {
-          "w-[554px]": isOpen,
+        className={cn("relative z-30 flex w-full items-center transition-all duration-300 ease-in-out md:w-[364px]", {
+          "md:w-[554px]": isOpen,
         })}
       >
         <div
@@ -249,7 +252,8 @@ export const TopNavPowerK = observer(() => {
         className={cn(
           "shadow-lg absolute -top-[6px] left-1/2 z-20 flex -translate-x-1/2 flex-col overflow-hidden rounded-md border border-subtle bg-surface-1 px-0 pt-10 transition-all duration-300 ease-in-out",
           {
-            "max-h-[80vh] w-[574px] opacity-100": isOpen,
+            // BARSOUL 2026-08: 574px 固定はスマホで画面外にはみ出すため、画面幅で頭打ちにする。
+            "max-h-[80vh] w-[min(574px,calc(100vw-1.5rem))] opacity-100": isOpen,
             "h-0 w-0 opacity-0": !isOpen,
           }
         )}

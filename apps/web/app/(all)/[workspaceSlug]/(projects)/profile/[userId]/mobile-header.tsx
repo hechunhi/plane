@@ -13,6 +13,7 @@ import { EIssueFilterType, ISSUE_LAYOUTS, ISSUE_DISPLAY_FILTERS_BY_PAGE } from "
 import { useTranslation } from "@plane/i18n";
 // icons
 import { ChevronDownIcon } from "@plane/propel/icons";
+import { MOBILE_HEADER_INLINE_CLASS, MOBILE_HEADER_ITEM_CLASS } from "@/components/core/app-header";
 // types
 import type {
   IIssueDisplayFilterOptions,
@@ -84,10 +85,10 @@ export const ProfileIssuesMobileHeader = observer(function ProfileIssuesMobileHe
   );
 
   return (
-    <div className="flex justify-evenly border-b border-subtle py-2 md:hidden">
+    <div className={MOBILE_HEADER_INLINE_CLASS}>
       <CustomMenu
         maxHeight={"md"}
-        className="flex flex-grow justify-center text-13 text-secondary"
+        className={MOBILE_HEADER_ITEM_CLASS}
         placement="bottom-start"
         customButton={
           <div className="flex-center flex text-13 text-secondary">
@@ -95,7 +96,7 @@ export const ProfileIssuesMobileHeader = observer(function ProfileIssuesMobileHe
             <ChevronDownIcon className="my-auto ml-2 h-4 w-4 text-secondary" strokeWidth={2} />
           </div>
         }
-        customButtonClassName="flex flex-center text-secondary text-13"
+        customButtonClassName="flex items-center text-secondary text-13"
         closeOnSelect
       >
         {ISSUE_LAYOUTS.map((layout, index) => {
@@ -114,7 +115,7 @@ export const ProfileIssuesMobileHeader = observer(function ProfileIssuesMobileHe
           );
         })}
       </CustomMenu>
-      <div className="flex flex-grow items-center justify-center border-l border-subtle text-13 text-secondary">
+      <div className={MOBILE_HEADER_ITEM_CLASS}>
         <FiltersDropdown
           title={t("common.display")}
           placement="bottom-end"

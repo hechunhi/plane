@@ -71,3 +71,6 @@ opentelemetry-exporter-otlp==1.28.1
 drf-spectacular==0.28.0
 # html sanitizer
 nh3==0.2.18
+# BARSOUL 2026-08: Web Push(PWA プッシュ通知)。VAPID 署名 + aes128gcm 暗号化。
+# 2.4.0 は cryptography>=47 を要求し、上でピンしている 46.0.6 と衝突するので上げない。
+pywebpush==2.3.0

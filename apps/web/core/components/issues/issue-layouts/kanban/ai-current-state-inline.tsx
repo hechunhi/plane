@@ -95,6 +95,36 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({
     setBusy(false);
   };
 
+  /** 「このカードは補足する事が無い」を人が確定 = 要補足の打ち切り。
+   *
+   *  出口の無い指摘は必ず全員に無視される。実際「待補充」は 25% のカードに出て、
+   *  半分は説明する事の無い定型カードだった → 誰も読まなくなった(hechun 2026-08-20)。
+   *  ここは AI の再判定ではなく **人の最終決定**なので即座に消える(再判定を待たない)。 */
+  const ackNoInfo = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/workspaces/${slug}/projects/${projectId}/issues/${issueId}/ai-state/ack-info/`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+        body: "{}",
+      });
+      if (r.ok) {
+        setOpen(false);
+        setText("");
+        try {
+          invalidateAIState(issueId);
+        } catch {
+          /* noop */
+        }
+      }
+    } catch {
+      /* noop */
+    }
+    setBusy(false);
+  };
+
   // 补足/纠正 表单(无论是否已有派生态都允许)
   const correctUI = (
     <div style={{ marginTop: 9 }}>
@@ -226,6 +256,31 @@ export const AICurrentStateInline = observer(function AICurrentStateInline({
             >
               {zh ? "取消" : "キャンセル"}
             </button>
+            {/* 要補足の出口。説明する事が無いカードにまで説明を求め続けると、
+                「待補充」自体が読まれなくなる。ここで人が打ち切れるようにする。 */}
+            {s.needs_info && (
+              <button
+                type="button"
+                onClick={ackNoInfo}
+                disabled={busy}
+                title={zh ? "这张卡没有需要说明的内容,不再提示" : "このカードは説明する事が無い。以後表示しない"}
+                style={{
+                  height: 26,
+                  padding: "0 10px",
+                  marginLeft: "auto",
+                  border: "1px solid #e3e5e9",
+                  borderRadius: 6,
+                  background: "#fff",
+                  color: "#71757c",
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  fontFamily: "inherit",
+                  cursor: busy ? "default" : "pointer",
+                }}
+              >
+                {zh ? "无需补充" : "補足は不要"}
+              </button>
+            )}
           </div>
         </div>
       ) : (
