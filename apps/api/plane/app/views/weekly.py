@@ -96,6 +96,24 @@ def _meeting_json(m, entries=None, page_projects=None):
     return d
 
 
+def _entries_qs(meeting):
+    """会期の週報行。**開催中(OPEN)の会期に出すのは「今の名簿」に居る人だけ**。
+
+    退職者の行は消さない — content_html は本人が書いた SoR(層③)。会期を確定すれば
+    その時の記録としてそのまま残り、まだ開いている会期の議事からだけ外れる
+    (会議は「人 → 人」で進むので、その場に居ない人の欄が並ぶと順番が止まる)。
+    入社した人は次の再集計で自動的に並ぶ — 名簿は WorkspaceMember が唯一の出所。
+    """
+    qs = (
+        WeeklyReportEntry.objects.filter(meeting=meeting, deleted_at__isnull=True)
+        .select_related("member", "edited_by")
+        .order_by("member__display_name")
+    )
+    if meeting.status == WeeklyMeeting.STATUS_OPEN:
+        qs = qs.filter(member_id__in=workspace_member_ids(meeting.workspace_id))
+    return qs
+
+
 def _notes_skeleton(meeting):
     """ノートの初期骨組み = **人の名前の見出しだけ**。
 
@@ -104,12 +122,7 @@ def _notes_skeleton(meeting):
     """
     from django.utils.html import escape
 
-    names = (
-        WeeklyReportEntry.objects.filter(meeting=meeting, deleted_at__isnull=True)
-        .select_related("member")
-        .order_by("member__display_name")
-        .values_list("member__display_name", flat=True)
-    )
+    names = _entries_qs(meeting).values_list("member__display_name", flat=True)
     body = "".join(f"<h2>{escape(n or '—')}</h2><p></p>" for n in names)
     return body or "<p></p>"
 
@@ -162,10 +175,7 @@ class WeeklyMeetingListEndpoint(BaseAPIView):
             .first()
         )
         if open_m:
-            entries = list(
-                WeeklyReportEntry.objects.filter(meeting=open_m, deleted_at__isnull=True)
-                .select_related("member", "edited_by")
-            )
+            entries = list(_entries_qs(open_m))
             return Response(_meeting_json(open_m, entries), status=status.HTTP_200_OK)
 
         start, end = _default_period(ws.id)
@@ -210,11 +220,9 @@ def _rebuild(meeting, generate_draft=True, member_id=None):
     if queued:
         generate_weekly_drafts.delay(str(meeting.id), [str(i) for i in queued])
 
-    return (
-        WeeklyReportEntry.objects.filter(id__in=[e.id for e in out])
-        .select_related("member", "edited_by")
-        .order_by("member__display_name")
-    )
+    # 返すのは「今の名簿の全員」— member_id 指定の 1 人再生成でも、画面が丸ごと
+    # 差し替える作りなので他の人の週報が消えないようにする。
+    return _entries_qs(meeting)
 
 
 class WeeklyMeetingDetailEndpoint(BaseAPIView):
@@ -227,11 +235,7 @@ class WeeklyMeetingDetailEndpoint(BaseAPIView):
     def get(self, request, slug, meeting_id):
         ws = _ws(slug)
         m = WeeklyMeeting.objects.get(id=meeting_id, workspace_id=ws.id, deleted_at__isnull=True)
-        entries = list(
-            WeeklyReportEntry.objects.filter(meeting=m, deleted_at__isnull=True)
-            .select_related("member", "edited_by")
-            .order_by("member__display_name")
-        )
+        entries = list(_entries_qs(m))
         return Response(_meeting_json(m, entries), status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
@@ -359,11 +363,7 @@ class WeeklyMeetingActionEndpoint(BaseAPIView):
             m.status = WeeklyMeeting.STATUS_OPEN
             m.held_at = None
             m.save()
-            entries = (
-                WeeklyReportEntry.objects.filter(meeting=m, deleted_at__isnull=True)
-                .select_related("member", "edited_by")
-                .order_by("member__display_name")
-            )
+            entries = _entries_qs(m)
             return Response(_meeting_json(m, entries), status=status.HTTP_200_OK)
 
         return Response({"error": "unknown action"}, status=status.HTTP_400_BAD_REQUEST)
