@@ -1188,6 +1188,12 @@ export default {
     },
     comments: {
       placeholder: "コメントを追加",
+      reply: {
+        action: "このコメントに返信",
+        cancel: "返信をやめる",
+        deleted: "削除されたコメント",
+        jump_to_original: "元のコメントへ移動",
+      },
       switch: {
         private: "プライベートコメントに切り替え",
         public: "公開コメントに切り替え",

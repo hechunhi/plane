@@ -61,8 +61,8 @@ const JA_PARTICLE_G = /[がはをにでとのもか]/g;
 function isMixedCnJa(text: string): boolean {
   const kana = (text.match(KANA_STRICT_G) || []).length;
   if (kana < 6) return false; // 日文素材が薄い → 従来判定でよい
-  const cn = (text.match(CN_CHARS_G) || []).length;
-  return cn >= 2; // 中文の地の文(简体专属字>=2) + 実質日文 = 混合
+  const cnChars = (text.match(CN_CHARS_G) || []).length;
+  return cnChars >= 2; // 中文の地の文(简体专属字>=2) + 実質日文 = 混合
 }
 function detectSrc(text: string): "ja" | "zh" | null {
   // 混合(中文地の文 + 日文素材)は地の文=中文 → src=zh(「翻訳元」も訳方向も
@@ -80,8 +80,17 @@ function detectSrc(text: string): "ja" | "zh" | null {
 }
 // 翻訳元アイコン(X の "⌀" 相当のミニ globe)。
 const TranslateGlyph = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-70">
+  <svg
+    width="11"
+    height="11"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="shrink-0 opacity-70"
+  >
     <circle cx="12" cy="12" r="10" />
     <path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
   </svg>
@@ -127,7 +136,8 @@ function useAutoTranslatePref(): [boolean, (v: boolean) => void] {
 // ノードだけ翻訳し同じ DOM へ書き戻す → 訳文 HTML がそのまま「排版一模一样」。
 // frontend は target_lang を送り、返ってきた訳文 HTML を read-only editor で描画
 // するだけ(tokenize/rebuild 不要)。src 判定用に平文だけ DOM から取り出す。
-function htmlToPlain(html: string): string {
+// BARSOUL: 引用行(返信のプレビュー)からも使うので export。
+export function htmlToPlain(html: string): string {
   if (typeof window === "undefined") return (html || "").replace(/<[^>]+>/g, " ");
   try {
     const d = new DOMParser().parseFromString(html || "", "text/html");
@@ -143,21 +153,20 @@ const otherLang = (l: "zh" | "ja"): "zh" | "ja" => (l === "zh" ? "ja" : "zh");
 // 説明は Tooltip(Plane 標準、衝突回避済)。
 function InlineAutoToggle(props: { enabled: boolean; onChange: (v: boolean) => void; viewer: "zh" | "ja" }) {
   const { enabled, onChange, viewer } = props;
-  const T = viewer === "zh"
-    ? { label: "自动翻译", on: "开", off: "关", tip: "外语评论自动译成你的语言。关闭后默认显示原文。" }
-    : { label: "自動翻訳", on: "ON", off: "OFF", tip: "外国語コメントを自動で日本語へ。OFF で既定は原文表示。" };
+  const T =
+    viewer === "zh"
+      ? { label: "自动翻译", on: "开", off: "关", tip: "外语评论自动译成你的语言。关闭后默认显示原文。" }
+      : { label: "自動翻訳", on: "ON", off: "OFF", tip: "外国語コメントを自動で日本語へ。OFF で既定は原文表示。" };
   return (
     <Tooltip tooltipContent={T.tip} position="top-left">
       <button
         type="button"
         onClick={() => onChange(!enabled)}
-        className="inline-flex items-center gap-1 hover:text-secondary transition-colors outline-none"
+        className="inline-flex items-center gap-1 transition-colors outline-none hover:text-secondary"
         aria-pressed={enabled}
       >
         <span>{T.label}</span>
-        <span className={enabled ? "text-accent-primary font-medium" : "opacity-50"}>
-          {enabled ? T.on : T.off}
-        </span>
+        <span className={enabled ? "font-medium text-accent-primary" : "opacity-50"}>{enabled ? T.on : T.off}</span>
       </button>
     </Tooltip>
   );
@@ -204,32 +213,35 @@ function CommentTranslatable(props: {
   // BARSOUL 2026-05-31: force=true で手動リトライ(fetchedRef ガードを跨ぐ)。
   // 旧実装は失敗後 fetchedRef=true のままで二度と再取得できなかった(hechun 指摘)。
   // hy-mt2 はメモリ圧でコールドスタート時に間欠 timeout する → リトライで殆ど回復。
-  const doFetch = useCallback(async (force = false) => {
-    if (fetchedRef.current && !force) return;
-    fetchedRef.current = true;
-    setErrorMsg(null);
-    setLoading(true);
-    try {
-      const r = await fetch(
-        `/api/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issueId}/comments/${comment.id}/translate/`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-          // text 無し → サーバが comment_html を構造保持翻訳し訳文 HTML を返す。
-          body: JSON.stringify({ target_lang: target, source: src, force }),
-        }
-      );
-      const j = await r.json();
-      // 生エラー文("translation failed")は出さず、穏やかな再試行可能メッセージに。
-      if (!r.ok) setErrorMsg(viewer === "zh" ? "翻译暂时不可用" : "翻訳が一時的に失敗しました");
-      else setTrHtml(j.text || ""); // 構造保持 HTML をそのまま描画
-    } catch {
-      setErrorMsg(viewer === "zh" ? "网络错误，请重试" : "ネットワークエラー、再試行してください");
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceSlug, projectId, issueId, comment.id, target, src, viewer]);
+  const doFetch = useCallback(
+    async (force = false) => {
+      if (fetchedRef.current && !force) return;
+      fetchedRef.current = true;
+      setErrorMsg(null);
+      setLoading(true);
+      try {
+        const r = await fetch(
+          `/api/workspaces/${workspaceSlug}/projects/${projectId}/issues/${issueId}/comments/${comment.id}/translate/`,
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+            // text 無し → サーバが comment_html を構造保持翻訳し訳文 HTML を返す。
+            body: JSON.stringify({ target_lang: target, source: src, force }),
+          }
+        );
+        const j = await r.json();
+        // 生エラー文("translation failed")は出さず、穏やかな再試行可能メッセージに。
+        if (!r.ok) setErrorMsg(viewer === "zh" ? "翻译暂时不可用" : "翻訳が一時的に失敗しました");
+        else setTrHtml(j.text || ""); // 構造保持 HTML をそのまま描画
+      } catch {
+        setErrorMsg(viewer === "zh" ? "网络错误，请重试" : "ネットワークエラー、再試行してください");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [workspaceSlug, projectId, issueId, comment.id, target, src, viewer]
+  );
 
   useEffect(() => {
     if (wantTranslation && !trHtml && !fetchedRef.current) doFetch();
@@ -239,23 +251,24 @@ function CommentTranslatable(props: {
 
   const tgtName = LANG_NAME[target][viewer];
   const srcName = LANG_NAME[src!][viewer];
-  const L = viewer === "zh"
-    ? {
-        showOrig: "显示原文",
-        showTr: isSelf ? `查看${tgtName}译文` : "显示译文",
-        from: isSelf ? `机器译文 · ${tgtName}` : `翻译自 ${srcName}`,
-        loading: "翻译中…",
-        retr: "重新翻译",
-        retrTip: "译文有误/缺失时重新翻译",
-      }
-    : {
-        showOrig: "原文を表示",
-        showTr: isSelf ? `${tgtName}訳を見る` : "訳文を表示",
-        from: isSelf ? `機械翻訳 · ${tgtName}` : `${srcName}から翻訳`,
-        loading: "翻訳中…",
-        retr: "再翻訳",
-        retrTip: "訳文に誤り/欠落がある場合に再翻訳",
-      };
+  const L =
+    viewer === "zh"
+      ? {
+          showOrig: "显示原文",
+          showTr: isSelf ? `查看${tgtName}译文` : "显示译文",
+          from: isSelf ? `机器译文 · ${tgtName}` : `翻译自 ${srcName}`,
+          loading: "翻译中…",
+          retr: "重新翻译",
+          retrTip: "译文有误/缺失时重新翻译",
+        }
+      : {
+          showOrig: "原文を表示",
+          showTr: isSelf ? `${tgtName}訳を見る` : "訳文を表示",
+          from: isSelf ? `機械翻訳 · ${tgtName}` : `${srcName}から翻訳`,
+          loading: "翻訳中…",
+          retr: "再翻訳",
+          retrTip: "訳文に誤り/欠落がある場合に再翻訳",
+        };
 
   const showingTranslation = !!trHtml && wantTranslation;
 
@@ -266,11 +279,15 @@ function CommentTranslatable(props: {
         <TranslateGlyph />
         {loading ? (
           <span className="inline-flex items-center gap-1">
-            <span className="inline-block size-3 border border-tertiary border-t-transparent rounded-full animate-spin" />
+            <span className="border-tertiary inline-block size-3 animate-spin rounded-full border border-t-transparent" />
             {L.loading}
           </span>
         ) : (
-          <button type="button" onClick={() => setOverride(showingTranslation)} className="text-accent-primary hover:underline">
+          <button
+            type="button"
+            onClick={() => setOverride(showingTranslation)}
+            className="text-accent-primary hover:underline"
+          >
             {showingTranslation ? L.showOrig : L.showTr}
           </button>
         )}
@@ -290,9 +307,13 @@ function CommentTranslatable(props: {
                 force=true 跳过后端缓存,强制重新翻译并覆盖坏结果。
                 2026-06-10: 蓝字「重新翻译」与「显示原文」同色易误点 → 弱化成
                 灰色刷新小图标(hover 才提亮, tooltip 说明)。 */}
-            <button type="button" onClick={() => void doFetch(true)} title={L.retrTip}
+            <button
+              type="button"
+              onClick={() => void doFetch(true)}
+              title={L.retrTip}
               aria-label={L.retr}
-              className="grid size-4 place-items-center rounded text-tertiary transition-colors hover:bg-layer-1 hover:text-secondary">
+              className="grid size-4 place-items-center rounded text-tertiary transition-colors hover:bg-layer-1 hover:text-secondary"
+            >
               <RefreshCw className="size-3" strokeWidth={1.75} />
             </button>
           </>
@@ -322,11 +343,7 @@ function CommentTranslatable(props: {
       {errorMsg && !loading && (
         <div className="mt-1 flex items-center gap-2 text-[11px] text-tertiary">
           <span>{errorMsg}</span>
-          <button
-            type="button"
-            onClick={() => void doFetch(true)}
-            className="text-accent-primary hover:underline"
-          >
+          <button type="button" onClick={() => void doFetch(true)} className="text-accent-primary hover:underline">
             {viewer === "zh" ? "重试" : "再試行"}
           </button>
         </div>
@@ -349,6 +366,8 @@ export type TCommentCardDisplayProps = {
   setIsEditing?: (isEditing: boolean) => void;
   renderFooter?: (ReactionsComponent: ReactNode | null) => ReactNode;
   renderQuickActions?: () => ReactNode;
+  /** BARSOUL: 返信の引用一行(作者行と本文の間)。返信でないカードは undefined。 */
+  renderReplyQuote?: () => ReactNode;
 };
 
 export const CommentCardDisplay = observer(function CommentCardDisplay(props: TCommentCardDisplayProps) {
@@ -365,6 +384,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
     setIsEditing,
     renderFooter,
     renderQuickActions,
+    renderReplyQuote,
   } = props;
   // states
   const [highlightClassName, setHighlightClassName] = useState("");
@@ -458,6 +478,9 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
           </div>
         )}
       </div>
+      {/* BARSOUL: 引用一行は作者行のすぐ下 = 本文を読む前に「何への返事か」が分かる位置。
+          編集中は出さない(直しているのは本文であって引用先ではない)。 */}
+      {!isEditing && renderReplyQuote ? renderReplyQuote() : null}
       {isEditing && setIsEditing ? (
         <CommentCardEditForm
           activityOperations={activityOperations}

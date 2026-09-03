@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useForm, Controller } from "react-hook-form";
+import { CornerUpLeft, X } from "lucide-react";
 // plane imports
 import { EIssueCommentAccessSpecifier } from "@plane/constants";
 import { COMMENT_INTENT_EVENT, buildCommentSlashOptions } from "@plane/editor";
@@ -19,6 +20,9 @@ import { cn, isCommentEmpty } from "@plane/utils";
 // BARSOUL 2026-07-25: 斜杠命令 —— `/審査` は公開(全員に届く)、`/愛ちゃん` は私聊(自分だけ)
 import { AichanApprovalButton } from "@/components/comments/aichan-approval-button";
 import { AichanChatPanel } from "@/components/comments/aichan-chat";
+// BARSOUL コメント返信 A 案: 返信先の受け渡しは reply-context (設計背景もそこ)
+import { useCommentQuotePreview } from "@/components/comments/card/reply-quote";
+import { useCommentReply } from "@/components/comments/reply-context";
 import { LiteTextEditor } from "@/components/editor/lite-text";
 // hooks
 import { useWorkspace } from "@/hooks/store/use-workspace";
@@ -64,6 +68,9 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     entityTitle,
   } = props;
   const { t } = useTranslation();
+  // BARSOUL: 今どのコメントに返そうとしているか(カードの返信ボタンから来る)。
+  const { replyToId, setReplyToId } = useCommentReply();
+  const replyPreview = useCommentQuotePreview(replyToId);
   // states
   const [uploadedAssetIds, setUploadedAssetIds] = useState<string[]>([]);
   // BARSOUL: スラッシュ命令で開いた意図(審査モーダル / 愛ちゃん私聊)
@@ -101,7 +108,11 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
 
   const onSubmit = async (formData: Partial<TIssueComment>) => {
     try {
-      const comment = await activityOperations.createComment(formData);
+      // BARSOUL: 返信先はここで一度だけ載せる。以後の編集では付け替えない
+      //   (backend も partial_update で parent を落とす) — 「何への返事か」は
+      //   書いた瞬間の事実で、後から書き換わると読み手が騙される。
+      const comment = await activityOperations.createComment(replyToId ? { ...formData, parent: replyToId } : formData);
+      setReplyToId(undefined);
       if (comment?.id) onSubmitCallback?.(comment.id);
       // B-7: 发送成功 → 清草稿(否则下次进来又恢复已发出的内容)
       try {
@@ -154,6 +165,13 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     [t]
   );
 
+  // BARSOUL: 返信ボタンを押したら入力欄まで連れて行って、そのまま打てる状態にする
+  //   (返信先を選んだのに画面のどこかで入力欄を探す、が起きない)。
+  useEffect(() => {
+    if (!replyToId) return;
+    editorRef.current?.focus("end", { scrollIntoView: true });
+  }, [replyToId]);
+
   // 意図イベントはエディタ DOM から冒泡してくる。この受け皿が張られている
   // コンテナ = そのコメント欄の課題 —— DOM の入れ子がそのままスコープになるので
   // surfaceId もレジストリも要らない。
@@ -180,7 +198,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       .map((line) => `<p>${line.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c)}</p>`)
       .join("");
     editorRef.current?.insertText(html, true);
-    editorRef.current?.focus({ scrollIntoView: true });
+    editorRef.current?.focus("end", { scrollIntoView: true });
   }, []);
 
   // 私聊の返答をそのまま審査の下敷きにする(私聊→公開の、もう一つの明示的な出口)。
@@ -229,7 +247,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
           issueTitle={entityTitle}
           onClose={() => {
             setIntent(null);
-            editorRef.current?.focus({ scrollIntoView: false });
+            editorRef.current?.focus("end", { scrollIntoView: false });
           }}
           onQuote={quoteToComment}
           onEscalate={escalateToApproval}
@@ -253,6 +271,31 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       )}
 
       <div className={cn(isChatOpen && "hidden")}>
+        {/* BARSOUL: 「今これに返している」帯。カード上端の引用行と同じ字面
+            (useCommentQuotePreview 共用) なので、投稿前と投稿後で見え方が変わらない。 */}
+        {replyToId && (
+          <div className="flex items-center gap-1.5 rounded-t border border-b-0 border-subtle bg-layer-2 px-2 py-1">
+            <CornerUpLeft className="size-3 shrink-0 text-placeholder" strokeWidth={2} />
+            {replyPreview.isDeleted ? (
+              <span className="min-w-0 truncate text-[11px] text-placeholder italic">
+                {t("issue.comments.reply.deleted")}
+              </span>
+            ) : (
+              <>
+                <span className="shrink-0 text-[11px] font-medium text-secondary">{replyPreview.authorName}</span>
+                <span className="min-w-0 flex-1 truncate text-[11px] text-tertiary">{replyPreview.quote}</span>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setReplyToId(undefined)}
+              aria-label={t("issue.comments.reply.cancel")}
+              className="shrink-0 rounded p-0.5 text-placeholder hover:bg-layer-3 hover:text-secondary"
+            >
+              <X className="size-3" strokeWidth={2} />
+            </button>
+          </div>
+        )}
         <Controller
           name="access"
           control={control}

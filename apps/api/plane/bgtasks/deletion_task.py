@@ -14,6 +14,10 @@ from django.db.models.fields.related import OneToOneRel
 from celery import shared_task
 
 
+# BARSOUL: (model_name, related_name) — soft delete で NULL 化しない関係。
+SOFT_DELETE_KEEP_PARENT_FK = {("issuecomment", "parent_issue_comment")}
+
+
 @shared_task
 def soft_delete_related_objects(app_label, model_name, instance_pk, using=None):
     """
@@ -45,6 +49,17 @@ def soft_delete_related_objects(app_label, model_name, instance_pk, using=None):
         on_delete_name = relation.on_delete.__name__ if hasattr(relation.on_delete, "__name__") else ""
 
         if on_delete_name == "DO_NOTHING":
+            continue
+
+        # BARSOUL 2026-09-03 (hechun): soft delete のときだけ親 id を残す関係。
+        # コメント返信 (IssueComment.parent) は SET_NULL にしてあるが、それは
+        # **hard delete で返信ごと消えないため**。soft delete でまで親 id を
+        # 消すと、返信は残るのに「何への返信か」が失われ、引用行が黙って消える。
+        # 親の実体は soft delete 済で API に出てこない → 画面は id だけを頼りに
+        # 「削除されたコメント」と出す (weekly の reply_to と同じ見え方)。
+        # hard delete 経路は Django の collector が FK を NULL にするのでこの
+        # 例外は効かない = 参照切れは起きない。
+        if (model_name, related_name) in SOFT_DELETE_KEEP_PARENT_FK:
             continue
 
         elif on_delete_name == "SET_NULL":

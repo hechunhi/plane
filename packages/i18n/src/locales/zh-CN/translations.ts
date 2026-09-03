@@ -1174,6 +1174,12 @@ export default {
     },
     comments: {
       placeholder: "添加评论",
+      reply: {
+        action: "回复这条评论",
+        cancel: "取消回复",
+        deleted: "该评论已删除",
+        jump_to_original: "跳转到原评论",
+      },
       switch: {
         private: "切换为私密评论",
         public: "切换为公开评论",
@@ -3076,8 +3082,7 @@ export default {
     },
     denied_help_ios:
       "BARSOUL Tasks 的通知权限已被关闭。请到 iPhone 的「设置 \u203a 通知 \u203a BARSOUL Tasks」里重新允许，然后回到本页。",
-    denied_help:
-      "浏览器屏蔽了本站的通知。请点击地址栏左侧的图标，把通知改为「允许」，然后刷新本页。",
+    denied_help: "浏览器屏蔽了本站的通知。请点击地址栏左侧的图标，把通知改为「允许」，然后刷新本页。",
     unsupported_help: "iPhone 请用 Safari，电脑请用 Chrome 或 Edge。",
     actions: {
       enable: "开启手机通知",

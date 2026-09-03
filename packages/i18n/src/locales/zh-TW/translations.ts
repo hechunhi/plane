@@ -1173,6 +1173,12 @@ export default {
     },
     comments: {
       placeholder: "新增留言",
+      reply: {
+        action: "回覆這則留言",
+        cancel: "取消回覆",
+        deleted: "該留言已刪除",
+        jump_to_original: "跳至原留言",
+      },
       switch: {
         private: "切換為私人留言",
         public: "切換為公開留言",
@@ -3093,8 +3099,7 @@ export default {
     },
     denied_help_ios:
       "BARSOUL Tasks 的通知權限已被關閉。請到 iPhone 的「設定 \u203a 通知 \u203a BARSOUL Tasks」重新允許，然後回到本頁。",
-    denied_help:
-      "瀏覽器封鎖了本站的通知。請點選網址列左側的圖示，把通知改為「允許」，然後重新整理本頁。",
+    denied_help: "瀏覽器封鎖了本站的通知。請點選網址列左側的圖示，把通知改為「允許」，然後重新整理本頁。",
     unsupported_help: "iPhone 請用 Safari，電腦請用 Chrome 或 Edge。",
     actions: {
       enable: "開啟手機通知",

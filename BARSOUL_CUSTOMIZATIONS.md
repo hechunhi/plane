@@ -24,28 +24,31 @@
 
 ### A1. 已提交 commits（`git log` 可见）
 
-| commit | 内容 |
-|---|---|
-| `313c77b8` | **Authelia OIDC SSO provider** 新增（`authentication/provider/oauth/authelia.py` + `views/app/authelia.py` + urls + adapter）|
-| `eed50c64` | Authelia provider: 内外 URL 分离（`AUTHELIA_INTERNAL_URL` 容器内调用）|
-| `3ac03835` | Authelia provider: 注入 `X-Forwarded-{Proto,Host}`（Authelia 4.39 严格校验）|
-| `84d0589f` | **SSO 用户 auto-join** 默认 workspace（`post_user_auth_workflow` / `default_workspace_auto_join`）|
-| `f94fa3fa` | 修 pnpm 11 PATH bug（4 个 frontend Dockerfile）|
-| `9a81d242` | `build.sh` — barsoul 本地镜像构建脚本 |
+| commit     | 内容                                                                                                                          |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `313c77b8` | **Authelia OIDC SSO provider** 新增（`authentication/provider/oauth/authelia.py` + `views/app/authelia.py` + urls + adapter） |
+| `eed50c64` | Authelia provider: 内外 URL 分离（`AUTHELIA_INTERNAL_URL` 容器内调用）                                                        |
+| `3ac03835` | Authelia provider: 注入 `X-Forwarded-{Proto,Host}`（Authelia 4.39 严格校验）                                                  |
+| `84d0589f` | **SSO 用户 auto-join** 默认 workspace（`post_user_auth_workflow` / `default_workspace_auto_join`）                            |
+| `f94fa3fa` | 修 pnpm 11 PATH bug（4 个 frontend Dockerfile）                                                                               |
+| `9a81d242` | `build.sh` — barsoul 本地镜像构建脚本                                                                                         |
 
 ### A2. 未提交工作树改动（本会话/早期，**升级前先 commit 或记录**）
 
 **SSO / 前端登录**
+
 - `apps/api/plane/license/api/views/instance.py` — 加 `IS_AUTHELIA_ENABLED` 到 instance config 输出
 - `apps/api/plane/utils/instance_config_variables/core.py` — `authelia_config_variables`
 - `packages/types/src/instance/base.ts` — `is_authelia_enabled: boolean`
 - `apps/web/core/hooks/oauth/core.tsx` — Authelia 登录按钮
 
 **前端稳定性（SPA hydration）**
+
 - `apps/web/app/entry.client.tsx` + `apps/web/app/root.tsx` — `clientLoader`+`HydrateFallback`（ssr:false SPA 的 #418/#423 hydration mismatch 真修）
 - `apps/web/ce/store/issue/issue-details/activity.store.ts` — `uniqBy(id)` 去重（评论重复渲染）
 
 **前端稳定性（接续）**
+
 - `apps/web/core/layouts/auth-layout/project-wrapper.tsx` — intake-state useSWR 加 `shouldRetryOnError:false`（community 版无 intake，404 无限重试 → API/console 404 风暴真修）
 - `apps/api/plane/app/views/state/base.py` `IntakeStateEndpoint.get` — 无 triage state 时返 **`200 {}` 而非 404**（「没 API 就补 API」：上游设计性 404，前端已优雅吞但浏览器必记 Console/Network；改 200 根除 DevTools intake-state 404 噪音。前端 `intakeStateResponse?.id` 偽 → 正常「无 Intake」无副作用）。**升级冲突点**
 - `apps/web/core/store/state.store.ts` `fetchProjectIntakeState` — try/catch 吞 404/失败（防未捕获 rejection 连锁 #418/#423；与上面后端改互为防御）
@@ -54,20 +57,24 @@
 - **根因备忘**：上游把 `favorite.entity_data`、`activity.{project,issue,actor}_detail` 等类型标注成**非空**但 API 运行时返 null → tsc 抓不到这类崩。彻底治理可把这些类型改 `| null` 强制全 reader 加守卫（大改，需 tsc 验，暂缓）
 
 **数据一致性**
+
 - `apps/api/plane/app/views/search/issue.py` — `.distinct()`（工单搜索 dup）
 - `apps/api/plane/app/views/workspace/member.py` + `app/views/project/member.py` — `is_active=True` 过滤（@suspended user / member dup 根因：soft-delete 残留行）
 
 **运维稳定性（关键 — 不 re-apply 会 worker 全挂）**
+
 - `apps/api/plane/utils/telemetry.py` + `license/bgtasks/tracer.py` — 禁 Plane 遥测 phone-home（gRPC fork-unsafe，Celery prefork 永久 hang。`OTEL_ENABLED=1` 可恢复）
 - `apps/api/plane/celery.py` — 禁 email notification beat（SMTP 未配 → ConnectionRefused 堵 worker；配 SMTP 后恢复）
 - `apps/api/plane/middleware/logger.py` — 停 API 审计日志 enqueue（unregistered task 风暴）
 - `apps/api/plane/api/views/issue.py` — API 评论传 `notification=True`（Ai bot @mention 进收件箱；上游漏传）
 
 **UI 裁剪**
+
 - `apps/web/styles/globals.css` — 末尾 3 段 `display:none`：① sidebar 底部 h-12 栏 ② 顶部 promo a.bg-layer-2 ③ `a[href*="/settings/billing"]`
 - `apps/web/core/components/workspace/sidebar/help-section/root.tsx` — 帮助「?」菜单只留「键盘快捷键」+ 版本号
 
 **爱酱发起审批入口（评论框去污染, 2026-06-06）**
+
 - `apps/api/plane/app/views/issue/comment.py` — 新增 `IssueAIApprovalEndpoint`（认证代理 → ai-bot `/ai/invoke`|`/ai/compose-approval`，X-Cards-Token，actor=request.user.id 服务端解析）
 - `apps/api/plane/app/views/__init__.py` — 导出 `IssueAIApprovalEndpoint`
 - `apps/api/plane/app/urls/issue.py` — import + path `.../issues/<iid>/ai-approval/`
@@ -78,6 +85,7 @@
 - 配套（非 fork source）: ai-bot `server.py` `/ai/invoke`+`/ai/compose-approval`；`approval.py` `LARK_REACHABLE=set()`（审批裁决去飞书，走 issue 内 barsoulCard）
 
 **全站统一 emoji 选择器 → emoji-mart（升级唯一共享内核 EmojiRoot, 2026-06-07）**
+
 - 全站 13 个 picker 入口（7 icon/logo + 6 reaction, 含 apps/space）都渲染同一个 `EmojiRoot`。把它**内核从 frimousse 换成 emoji-mart**，一处改、13 处全升级。内置: 最近使用/底部分类导航/搜索/肤色/暗色/多语言 chrome。
 - 依赖: `packages/propel/package.json` +`@emoji-mart/data`+`@emoji-mart/react`+`emoji-mart` **-frimousse**；`apps/web/package.json` **-emoji-picker-react**（死依赖）。**改依赖后必重新生成并提交根 `pnpm-lock.yaml`**（两个 Dockerfile `--frozen-lockfile`，否则构建硬失败）。host 无 pnpm → 用 docker `node:20`+corepack 跑 `pnpm install --lockfile-only` 重生锁文件（不写 host node_modules）。
 - `…/emoji-icon-picker/emoji/emoji.tsx`（**核心重写**）: `"use client"` + emoji-mart `<Picker>`；**保持 `onChange(emoji.native)` 契约**（下游 emojiToString + 13 caller 零改动）；`data={async()=>import("@emoji-mart/data")}` **懒加载**（~1.6MB 独立 chunk，严禁静态 import）；`dynamicWidth`/`navPosition=bottom`/`maxFrequentRows=2`/`previewPosition=none`/`skinTonePosition=search`。
@@ -89,6 +97,7 @@
 - **tsc 备注**: `npx tsc -p apps/web/tsconfig.json` 单独跑 exit 1 且无诊断（缺 react-router typegen），别信其"clean"；真闸门是 `docker build` 的 `react-router build`。
 
 **附件内联预览（图片/PDF/文本, 2026-06-07）**
+
 - `apps/api/plane/app/views/issue/attachment.py` — issue attachment GET 支持 `?disposition=inline`（默认仍 `attachment` 下载, 权限不变）。PDF/文本 iframe 内联需要。**升级冲突点**
 - `packages/types/src/issues/issue_attachment.ts` — `attributes.type?`（mime, 上游漏声明, 预览判定用）
 - `packages/utils/src/attachment.ts` — `getAttachmentPreviewKind(mime, ext)` + `TAttachmentPreviewKind`
@@ -97,15 +106,29 @@
 - 原理: `/api/assets` cookie 鉴权端点; `<img>`/`<iframe>` 忽略 Content-Disposition 内联渲染（同编辑器内嵌图先例）; svg 经 `<img>` 不执行脚本(安全)
 
 **「（共有）」カード自動仕分け — 外部 API 端点（2026-06-09）**
+
 > 用途: ai-bot(愛ちゃん)が「（共有）」カードをナレッジ Page 化 + アーカイブ退避し、
->       ユーザーの unarchive で自動 undo するための、token-auth(X-Api-Key=愛ちゃん)端点。
->       CE の v1 公開 API には Pages も issue archive も無いため新設。**升级冲突点**(全新文件优先)
+> ユーザーの unarchive で自動 undo するための、token-auth(X-Api-Key=愛ちゃん)端点。
+> CE の v1 公開 API には Pages も issue archive も無いため新設。**升级冲突点**(全新文件优先)
+
 - `apps/api/plane/api/views/page.py` — **新建** `PageListCreateAPIEndpoint`(POST 建 Project Page, html-only, owned_by=request.user=愛ちゃん, **`parent` 対応→ カテゴリ親ページの子ページとしてネスト**; Page tree は parent_id 駆動=base.py:65 再帰CTE, sub_pages_data は触らず) + `PageDetailAPIEndpoint`(**DELETE** 削除 + **PUT** description_html 全差し替え[binary=None リセット→ live が html から再 hydrate]、所有者限定)。月次「共有ナレッジ」ログを台帳から再生成→PUT する用途。app 层 `PageViewSet.create/destroy/partial_update` を踏襲、`ProjectLitePermission` 再利用
 - `apps/api/plane/api/urls/page.py` — **新建** 上記 2 端点の url(`.../projects/<pid>/pages/`, `.../pages/<page_id>/`)
 - `apps/api/plane/api/views/issue.py` — 追加 `IssueArchiveUnarchiveAPIEndpoint`(POST=archive / DELETE=unarchive)。app `IssueArchiveViewSet` と異なり **state.group 制約なし**(Backlog の共有カードも archive 可)。issue_activity + realtime webhook_activity は app と同一
 - `apps/api/plane/api/urls/work_item.py` — 追加 `.../work-items/<pk>/archive/`(POST+DELETE) + import
 - `apps/api/plane/api/views/__init__.py` / `apps/api/plane/api/urls/__init__.py` — 上記 export + url 登録(`page_patterns`)
 - 赤線: SoR 書込はこれら端点 + 愛ちゃん token のみ(ADR-015); permission は既存再利用; plane-mq 不動(ADR-003); ai-bot 側ロジックは `~/llm-tools/ai-bot/server.py` `handle_share_router`(fork 外)
+
+**コメント返信（A 案 = 引用式, 2026-09-03 hechun）** — BS-424「反馈が大量にぶら下がる課題で、どの一件への返事か言えない」の解。
+
+- `apps/api/plane/db/models/issue.py` — `IssueComment.parent` を **CASCADE → SET_NULL**。★理由: Plane の削除は soft delete で `soft_delete_related_objects` が CASCADE 逆参照を**再帰的に soft delete** する = 親 1 本消すと**他人の返信が全部巻き添え**。返信は発言者本人の SoR。
+- `apps/api/plane/db/migrations/0160_issue_comment_reply.py` — **新規**（手書き, 依存 0159）。FK の削除時挙動のみ、データ移行なし。
+- `apps/api/plane/bgtasks/deletion_task.py` — `SOFT_DELETE_KEEP_PARENT_FK={("issuecomment","parent_issue_comment")}` 例外。**soft delete では親 id を残す**（返信は残るのに「何への返信か」が消えると引用行が黙って落ちる）。hard delete は Django collector が SET_NULL するので参照切れなし。
+- `apps/api/plane/app/views/issue/comment.py` — `create` で `parent` 検問（UUID 形式 + **同一 issue/project/workspace に実在**）。`partial_update` は `parent` を payload から落とす（**編集で返信先を付け替えさせない** = 「何への返事か」は書いた瞬間の事実）。
+- `apps/api/plane/api/serializers/issue.py` / `apps/api/plane/space/serializer/issue.py` — `parent` を `read_only_fields` へ。外部 API と公開 space からは**書かせない**（検問のある app 経路だけ）。読み出しには出る。
+- 前端: `apps/web/core/components/comments/reply-context.tsx`（**新規** — 設計判断も全部ここ）/ `card/reply-quote.tsx`（**新規**, `useCommentQuotePreview` をカードと入力欄で共用）/ `card/display.tsx`（`renderReplyQuote` スロット + `htmlToPlain` を export）/ `card/root.tsx`（返信ボタン, 既存の死に prop `enableReplies` を起こす）/ `comment-create.tsx`（返信中の帯 + `parent` 送信）/ `comments.tsx`・`issues/issue-detail/issue-activity/root.tsx`（Provider 包み）。
+- **木構造にしなかった**: 新着返信が画面の上に埋もれる。データ（`parent`）は同じなので、後から折り畳み表示を足しても作り直しにならない。
+- i18n: `issue.comments.reply.{action,cancel,deleted,jump_to_original}` を ja/zh-CN/zh-TW/en。
+- **★ editorRef.focus() の署名バグ（同日 即修）**: `packages/editor/src/core/types/editor.ts` + `core/helpers/editor-ref.ts` — ref の `focus` が **第 1 引数しか通していなかった**ため `focus({ scrollIntoView: true })` が _position にオブジェクトを渡す_ 形になり、tiptap `resolveFocusPosition` → `minMax(object)=NaN` → **`RangeError: Position NaN out of range` で編集パネルごとクラッシュ**。`(...args)` 透過に直し、呼び出し 3 箇所（返信フォーカス / 愛ちゃん引用 / 私聊パネル閉じ）を `focus("end", { scrollIntoView: … })` へ。**先の 2 箇所は 2026-06 から潜在していた**（発火頻度が低く露見せず）。
 
 ---
 
@@ -114,6 +137,7 @@
 > 升级 Plane 不影响这些，但环境迁移/重建时需要。
 
 ### B1. Plane DB 状态（非代码）
+
 - `愛ちゃん` user（`ai@barsoul.jp`, is_bot=f, bot_type=ai-assistant）+ api_token(label=ai-bot) + workspace/project member
 - 愛ちゃん avatar：`file_assets` cd9d9534… (USER_AVATAR) + `users.avatar_asset_id`
 - Plane webhook `aa1c1b9f`（→ `host.docker.internal:8098` ai-bot, issue+issue_comment）
@@ -121,6 +145,7 @@
 - soft-delete 残留行 is_active 修复（一次性 DML）
 
 ### B1b. 経理服务端化（keiri-api，新建，2026-05-17 起）
+
 - `~/stack/keiri/PRODUCT_PLAN.md` — 最终规划（真相源=keiri-api / Go+PG / P0→P3）
 - `~/stack/keiri/api/` — keiri-api Go 服务（system-of-record）+ `migrations/0001_init.sql` + `cmd/import`
 - `~/stack/keiri/compose.yml` — `keiri-api:local` 容器（net `stack`）
@@ -128,7 +153,7 @@
 - Caddyfile `keiri.barsoul.jp`：`/api/*`→keiri-api:8099，其余仍静态（P1 后退役静态）
 - **P0 完成**：schema+导入+对照校验全绿（55 orders 等值 DATA.json）
 - **P1 完成（big-bang 真相源切换）**：
-  - dashboard `web/index.html`（fork 自旧 0_📊_売上台帳.html）5 个 I/O 原语改指 keiri-api：`imgSrc`→/api/assets、`bootApp`→GET /api/ledger、`writeBackData`→PUT /api/ledger、`writeImageToDir`→POST /api/assets、`appendActionLog`→POST /api/audit、删单→DELETE /api/assets（全带 `BARSOUL P1` 注释）
+  - dashboard `web/index.html`（fork 自旧 0*📊*売上台帳.html）5 个 I/O 原语改指 keiri-api：`imgSrc`→/api/assets、`bootApp`→GET /api/ledger、`writeBackData`→PUT /api/ledger、`writeImageToDir`→POST /api/assets、`appendActionLog`→POST /api/audit、删单→DELETE /api/assets（全带 `BARSOUL P1` 注释）
   - keiri-api 新增 `internal/{model,ledger,assets}` + 路由 ledger GET/PUT、assets GET/POST/DELETE、audit、内嵌 dashboard `/`
   - migrations 0002(channel)/0003(note_images) + 回填
   - Caddy `keiri.barsoul.jp` 全量反代 keiri-api（静态/srv/keiri+publish.sh 退役→`publish.sh.retired-P1`）
@@ -171,6 +196,7 @@
   - guard plist `com.local.llm.guard.plist`（FAST/CODER→:8001 gemma-4-26b）
 
 ### B1c. P5 仕入/原価（★地基，2026-05-17）
+
 - migration `0004_purchase.sql`：supplier / purchase_order / purchase_item + `sku_cost` view（仅 入荷+ 计成本）
 - `internal/http/purchase.go`（inline-pgx，预建）：suppliers / purchases CRUD + 状态机 `poTransitionOK`（発注→入荷→検収→支払→完了 严格单步，非终态→取消；终态锁定）+ sku 加权均价；server.go 补 `GET /api/purchases/{id}` + `GET /api/order-margin/{id}`（毛利反查；**路径避 /api/orders/{id}/... 防 Go1.22 ServeMux 与 by-plane 冲突 panic**）
 - ai-bot：`tool_keiri_list_unreceived` / `tool_keiri_create_purchase`（@愛ちゃん 可起票/查未入荷；走 KEIRI_API host）
@@ -179,6 +205,7 @@
 - kill-switch 硬化：`~/.hermes/.c1_disabled` 现也挡 ai-bot Lark 状态卡（批量改状态零刷屏）
 
 ### B1d. P6 経営BI（依赖 P5，2026-05-17）
+
 - `internal/http/analytics.go`（全派生无新表）：`GET /api/kpis`（受注/客数/売上/原価/粗利/粗利率/客単価/応収账龄分桶）+ `GET /api/analytics?dim=month|customer|sku`（各桶 rev/cost/gross/margin）
 - 成本口径与 order-margin 一致（勾稽 purchase_item 优先，否则 sku_cost 加权均价）；多币种原值聚合 + `currency_note`（並币精算 P6+ 细化）
 - ai-bot：`tool_keiri_kpis` / `tool_keiri_analytics`（@愛ちゃん 答「本月利益率?」）
@@ -186,6 +213,7 @@
 - 现 cost=0 margin=1 属正常（未录仕入；P5 起票后毛利变真）
 
 ### B1e. P7 物流追跡（2026-05-17）
+
 - migration `0005_shipping.sql`：`order` 加 forwarder/tracking_no/customs_status(未/通関中/通関済)/ship_date/eta/track_token（不可猜随机，可置空失效）
 - `internal/http/shipping.go`：承运商→官网外链表（SF/EMS/Yamato/佐川/日本郵便+17TRACK兜底，纯字符串零API）；`PATCH/GET /api/order-shipping/{id}`（首次设生成 token）；`GET /t/{token}` 客户只读 HTML 页（不暴露金额/明细）
 - **Caddyfile keiri.barsoul.jp 改结构**：`@track path /t/*` → 免 Authelia 反代；其余 `handle{}` 内 import authelia（财务仍强保护）。实测 /t 200 免登录、/ 仍 302
@@ -193,6 +221,7 @@
 - 一单多包 shipment 子表 = P7+（当前单発送覆盖绝大多数）
 
 ### B1f. P8 CS 顧客360（roadmap 末项，2026-05-17）
+
 - migration `0006_interaction.sql`：interaction 沟通史表（wechat/lark/mail/phone/other）
 - `internal/http/customer.go`：`GET /api/customers`（rollup）、`GET /api/customer-overview/{name}`（注文+入金+粗利+配送中+単票+沟通史一坨，按 customer_name 聚合）、`POST /api/interactions`
 - ai-bot：`tool_keiri_customer`（@愛ちゃん 答「这个客户现状」）
@@ -201,6 +230,7 @@
 > **roadmap 后端完结**：P0–P8 全部上线并 E2E 自验证。余 = keiri dashboard 重 UI 批次（仕入/経営/物流/顧客 Tab，**批在 P1 浏览器写回环用户亲验之后**）+ SOP Lark Wiki 侧线（零基建）+ P1 用户亲验（唯一硬阻塞）。
 
 ### B1g. Plane 评论「行动卡」审批（签名链接，2026-05-19）
+
 - **背景**：Plane comment_html 仅静态 HTML 子集，无交互组件 → 真·按钮卡片不可能。用「卡片样式 HTML + HMAC 签名 `<a>` 链接」代替（同 P7 token 套路）。
 - `~/llm-tools/ai-bot/approval.py`：`approve_sig/approve_link/fetch_chain`（HMAC=APPROVAL_LINK_SECRET 或 AI_BOT_WEBHOOK_SECRET；签 `no|approver_id|decision`，无 token 存储、防伪、approver_id 身分束缚）；`create_approval` 评论尾追加 blockquote 行动卡（每审批人 ✅承認/❌却下 签名链 + 🔗进捗閲覧）
 - `~/llm-tools/ai-bot/server.py`：`GET /__approve`（验签→`approval.apply_decision(channel="Web")` 与 Lark/关键词同一引擎；view 只读链页）
@@ -209,6 +239,7 @@
 - 验证：签名确定/决策&身份绑定、篡改→403、路由隔离、引擎接通全绿；**真实一单审查回环待用户实操**（同 P1，需活 Plane @mention + Bitable）
 
 ### B1h. cards 微服务 — 评论内交互卡片引擎（2026-05-19, v1）
+
 - **架构**：薄缝 + 自有引擎。「威力在自有代码、Plane fork 压成一个冻结稳定缝」
 - `~/stack/cards/`（新服务，Go/distroless，stack 网，host 127.0.0.1:8100；共享 postgres 库 `cards`：card/card_action_log）
   - `POST /api/cards` 愛ちゃん compose（声明式区块 spec → 存 + 回降级 embed_html）
@@ -216,7 +247,7 @@
   - `GET /c/{id}.{sig}` 渲染（runtime/?as=view 只读链）
   - `GET /__act?c&u&a&s` 签名动作 → 验签 → 路由域引擎
   - 签名：HMAC(CARDS_SIGN_SECRET, id|actor|act)，不可猜/防伪/actor 绑定；闭单引擎幂等拒=天然失效
-- `~/llm-tools/ai-bot/server.py`：`POST /approval/decide`（X-Cards-Token 信任边界 → approval.apply_decision，与 Lark/关键词/__approve 同一引擎）
+- `~/llm-tools/ai-bot/server.py`：`POST /approval/decide`（X-Cards-Token 信任边界 → approval.apply_decision，与 Lark/关键词/\_\_approve 同一引擎）
 - `~/llm-tools/ai-bot/approval.py`：`compose_card()` + `create_approval` 改调 cards 引擎；**cards 不可达自动回退内联签名卡**（审查绝不中断）
 - `~/stack/caddy/Caddyfile` tasks.barsoul.jp：`@cards path /__act* /c/*`→`cards:8100`（无 Authelia，签名=凭证），catch-all 前
 - secrets：`CARDS_SIGN_SECRET`/`CARDS_INTERNAL_TOKEN`（~/stack/.env + ~/.hermes/.secrets.env，须一致）
@@ -227,12 +258,12 @@
   - `apps/api/plane/utils/content_validator.py`：CUSTOM_TAGS 加 `barsoul-card` + ATTRIBUTES 加 `data-card`（**升级冲突点**）
   - cards `/c/<ref>?as=spec` 返结构化 JSON（actions 按 approver 展开签名 href，节点保持「笨」）
   - approval.py：compose 成功→评论嵌 `<barsoul-card data-card=ref>` + 永久安全 `<a>?as=view` 兜底；cards 不可达→callout HTML→内联签名卡（三级降级）
-  - 验证：`?as=spec` 结构✓、`<barsoul-card>` 过 nh3 存活✓、前后端镜像重建部署✓、/__act 全链✓
+  - 验证：`?as=spec` 结构✓、`<barsoul-card>` 过 nh3 存活✓、前后端镜像重建部署✓、/\_\_act 全链✓
   - **根因修复（2026-05-19）**：实测「只见文字」根因 = live 审批引擎是 **Temporal**（`APPROVAL_ENGINE=temporal`），create_approval 命中 Temporal 分支提前 return，卡注入只在 legacy(Bitable) 分支 → 不执行。修：
     - ai-bot `server.py` `/wf/act` 加 `compose_card` op（复用 approval.compose_card，与 legacy 单一源）
     - hermes-wf `internal/approval/activities.go` 加 `ComposeCard` 活动；`workflow.go` 审査のお願い 评论前调 ComposeCard→注入 `<barsoul-card>`+安全兜底链（失败空 ref→平文，编排不中断）
     - `~/stack/services/hermes-wf` 重建；`~/stack/workflow` 用**自身 .env**重部署（**注意：勿对 workflow 栈传 `--env-file ~/stack/.env`，会清空 `TEMPORAL_PG_PWD` 致 temporal 认证崩溃**——本次曾自伤、已恢复）
-  - 边界验证全绿：`/wf/act compose_card`→embed_ref、nh3 存活、/__act 全链
+  - 边界验证全绿：`/wf/act compose_card`→embed_ref、nh3 存活、/\_\_act 全链
 - **R1+R2（2026-05-19，产品规划见 `~/stack/cards/PRODUCT_PLAN.md`）**：
   - R1 信息进卡+审批链/方式可视化：ai-bot `/approval/state`（X-Cards-Token，复用 fetch_chain → mode/status/progress/approvers[state]）；cards `resolveSpec` 出 `modebadge`(ALL全員/ANYいずれか1名)+`chain`(进捗+每人 pending/approved/rejected)+`detail` 透传；workflow.go 加 detail 区块；block.tsx 渲染状态点列/徽章/可折叠详情
   - R2 按权限渲染：block.tsx 用 **Plane 自身 `/api/users/me/`（session cookie，零代码耦合）** 取当前用户→`?me=`；cards 仅对「本人且待决」出签名按钮，me 空→authhint 只读，非审批人→只读无噪音。**签名口径永不被 me 放宽**（安全仍=HMAC 签名+audit，me 仅控渲染）
@@ -252,12 +283,14 @@
   - **未做（薄弱处）**：`image` 0/5（bench scenarios 无 img URL；要 receipt OCR pipeline 喂 src，待轴 F 接通 PaddleOCR/MiniCPM-V）、telemetry dashboard（现仅 raw JSON endpoint，UI 看板待做）、critic 用 LLM（现 regex 已够强；若需更细致语义检查可后续接 qwen3.5-4b）
 
 ### B2. stack 配置（`~/stack/`）
+
 - `caddy/Caddyfile` + `caddy/build/Dockerfile`(cloudflare-dns plugin) + `caddy/.env`(CF token) — `*.barsoul.jp` LE + Cloudflare DNS-01
 - `authelia/config/configuration.yml` — barsoul.jp session domain + OIDC client `plane` + `search.email`
 - `plane/plane.env` — `APP_DOMAIN/WEB_URL/CORS_ALLOWED_ORIGINS/AUTHELIA_HOST → tasks.barsoul.jp`，`AUTHELIA_*`，`PLANE_DEFAULT_WORKSPACE_SLUG/ROLE/AUTO_JOIN_PROJECTS`
 - `n8n/compose.yml` `N8N_HOST` / `.env.example`
 
 ### B3. 自建服务（`~/llm-tools/` `~/.hermes/` `~/Library/LaunchAgents/`）
+
 - **`~/llm-tools/llm-gateway/`（Go, host, 2026-05-19）— LLM 削峰填谷网关（单点·所有 LLM 必经）**
   - 问题：M4 Pro 单 GPU 同驻 3 模型（coder-30b@8000/gemma-26b@8001/qwen-4b@8002），多源同步直怼 → 突发拥塞 60s 超时/ConnectError → 审批丑回退
   - 方案：`com.local.llm.gateway.plist` 127.0.0.1:**8200**。OpenAI 兼容，按请求体 `model` 多上游路由（`ROUTES` env，默认 8000/8001/8002）；**单一全局 GPU 队列**(MAXQ=48) + 集中超时(UP_TIMEOUT_S=180)+重试(RETRY=2) + **队满立即 503 `llm_busy`**（快速降级，非慢挂）；`X-LLM-Priority: interactive(默认)|background`（审批组合=background 让路用户面）
@@ -287,6 +320,7 @@
 - `~/.hermes/employee_uins.yml` — WeChat UIN + plane_email + lark_email + lark_open_id 映射
 
 ### B4. 凭证（在 `~/.hermes/.secrets.env` / `~/.lark-cli/` / keychain — **泄露过需 rotate**）
+
 - Cloudflare DNS token、Resend、Lark App ID/Secret + OAuth token、Plane API key、AI_BOT token/webhook secret、backup 加密 key
 
 ---

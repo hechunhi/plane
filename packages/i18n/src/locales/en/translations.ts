@@ -894,6 +894,12 @@ export default {
     },
     comments: {
       placeholder: "Add comment",
+      reply: {
+        action: "Reply to this comment",
+        cancel: "Cancel reply",
+        deleted: "Deleted comment",
+        jump_to_original: "Jump to the original comment",
+      },
       switch: {
         private: "Switch to private comment",
         public: "Switch to public comment",

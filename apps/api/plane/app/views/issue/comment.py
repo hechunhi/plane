@@ -29,6 +29,7 @@ import re
 import hashlib as _hashlib
 import logging
 import requests as _req
+import uuid as _uuid
 from .. import BaseAPIView
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,29 @@ class IssueCommentViewSet(BaseViewSet):
                 {"error": "You are not allowed to comment on the issue"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # BARSOUL 2026-09-03 (hechun): 返信先 (parent) の検問。
+        # serializer は fields="__all__" なので parent は素通しで書けてしまい、
+        # **他の issue のコメントにもぶら下げられる**(id さえ当てれば横断で親を
+        # 指定できる = 画面に出ない引用が生える)。ここで「同じ issue の、生きて
+        # いるコメント」だけに絞る。IssueComment.objects は SoftDeletionManager
+        # なので削除済みの親は自動的に弾かれる。
+        parent_id = request.data.get("parent")
+        if parent_id:
+            try:
+                _uuid.UUID(str(parent_id))
+            except (ValueError, AttributeError, TypeError):
+                return Response(
+                    {"error": "Invalid parent comment"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not IssueComment.objects.filter(
+                pk=parent_id, issue_id=issue_id, project_id=project_id, workspace__slug=slug
+            ).exists():
+                return Response(
+                    {"error": "The comment you are replying to does not exist on this work item"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         serializer = IssueCommentSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save(project_id=project_id, issue_id=issue_id, actor=request.user)
@@ -118,11 +142,17 @@ class IssueCommentViewSet(BaseViewSet):
     @allow_permission(allowed_roles=[ROLE.ADMIN], creator=True, model=IssueComment)
     def partial_update(self, request, slug, project_id, issue_id, pk):
         issue_comment = IssueComment.objects.get(workspace__slug=slug, project_id=project_id, issue_id=issue_id, pk=pk)
-        requested_data = json.dumps(self.request.data, cls=DjangoJSONEncoder)
+        # BARSOUL 2026-09-03 (hechun): 返信先は投稿した瞬間に決まる。編集で付け
+        # 替えさせない —— 編集経路には create のような検問が無く、ここを開けると
+        # 「別 issue のコメントへ付け替える」抜け道が編集側に残る。
+        payload = request.data
+        if "parent" in payload:
+            payload = {k: v for k, v in payload.items() if k != "parent"}
+        requested_data = json.dumps(payload, cls=DjangoJSONEncoder)
         current_instance = json.dumps(IssueCommentSerializer(issue_comment).data, cls=DjangoJSONEncoder)
-        serializer = IssueCommentSerializer(issue_comment, data=request.data, partial=True)
+        serializer = IssueCommentSerializer(issue_comment, data=payload, partial=True)
         if serializer.is_valid():
-            if "comment_html" in request.data and request.data["comment_html"] != issue_comment.comment_html:
+            if "comment_html" in payload and payload["comment_html"] != issue_comment.comment_html:
                 serializer.save(edited_at=timezone.now())
             else:
                 serializer.save()
@@ -141,7 +171,7 @@ class IssueCommentViewSet(BaseViewSet):
             model_activity.delay(
                 model_name="issue_comment",
                 model_id=str(pk),
-                requested_data=request.data,
+                requested_data=payload,
                 current_instance=current_instance,
                 actor_id=request.user.id,
                 slug=slug,

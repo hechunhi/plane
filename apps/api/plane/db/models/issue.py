@@ -486,8 +486,17 @@ class IssueComment(ChangeTrackerMixin, ProjectBaseModel):
     external_source = models.CharField(max_length=255, null=True, blank=True)
     external_id = models.CharField(max_length=255, blank=True, null=True)
     edited_at = models.DateTimeField(null=True, blank=True)
+    # BARSOUL 2026-09-03 (hechun): コメント返信 (A 案 = 引用式)。上流は坑位だけ
+    # 用意して未実装だった (front の enableReplies も死に prop)。
+    # CASCADE → SET_NULL に変更した理由: Plane の削除は soft delete で、
+    # soft_delete_related_objects が CASCADE の逆参照を **再帰的に soft delete
+    # する** (bgtasks/deletion_task.py)。つまり親コメントを 1 本消すと、そこに
+    # ぶら下がった **他人の返信が巻き添えで全部消える**。返信は発言者本人の SoR。
+    # 親が消えても返信は残す (weekly の MeetingChatMessage.reply_to と同じ約定)。
+    # なお soft delete 経路では親 id を残す (deletion_task 側で例外指定) ので、
+    # 画面には「削除されたコメント」として引用行が残る = 文脈が切れない。
     parent = models.ForeignKey(
-        "self", on_delete=models.CASCADE, null=True, blank=True, related_name="parent_issue_comment"
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="parent_issue_comment"
     )
 
     TRACKED_FIELDS = ["comment_stripped", "comment_json", "comment_html"]

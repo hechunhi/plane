@@ -227,10 +227,13 @@ class IssueCommentSerializer(BaseSerializer):
     class Meta:
         model = IssueComment
         fields = "__all__"
+        # BARSOUL 2026-09-03 (hechun): 公開 (space) からは返信先を指定させない。
+        # 匿名投稿に親 id を書かせると検問が無いまま別 issue へ紐づけられる。
         read_only_fields = [
             "workspace",
             "project",
             "issue",
+            "parent",
             "created_by",
             "updated_by",
             "created_at",

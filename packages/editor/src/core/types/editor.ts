@@ -111,7 +111,11 @@ export type CoreEditorRefApi = {
   createSelectionAtCursorPosition: () => void;
   emitRealTimeUpdate: (action: TDocumentEventsServer) => void;
   executeMenuItemCommand: <T extends TEditorCommands>(props: TCommandWithPropsWithItemKey<T>) => void;
-  focus: (args: Parameters<RawCommands["focus"]>[0]) => void;
+  // BARSOUL 2026-09-03 (hechun): tiptap の focus は `(position, options)` の 2 引数。
+  // 第 1 引数だけを通していたため `focus({ scrollIntoView: true })` が
+  // **position にオブジェクトを渡す** ことになり、resolveFocusPosition →
+  // minMax(object) = NaN → "Position NaN out of range" で editor ごと落ちていた。
+  focus: (...args: Parameters<RawCommands["focus"]>) => void;
   getAttributesWithExtendedMark: (
     mark: string | MarkType,
     attribute: string | NodeType | MarkType

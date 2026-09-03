@@ -13,6 +13,7 @@ import type { TCommentsOperations, TIssueComment } from "@plane/types";
 // local components
 import { CommentCard } from "./card/root";
 import { CommentCreate } from "./comment-create";
+import { CommentReplyProvider } from "./reply-context";
 
 type TCommentsWrapper = {
   projectId?: string;
@@ -56,35 +57,37 @@ export const CommentsWrapper = observer(function CommentsWrapper(props: TComment
   );
 
   return (
-    <div className="relative flex h-full flex-col gap-y-2 overflow-hidden">
-      {renderCommentCreate}
-      <div className="flex-grow overflow-y-auto py-4">
-        {comments?.map((data, index) => {
-          let comment;
-          if (typeof data === "string") {
-            comment = getCommentById?.(data);
-          } else {
-            comment = data;
-          }
+    <CommentReplyProvider>
+      <div className="relative flex h-full flex-col gap-y-2 overflow-hidden">
+        {renderCommentCreate}
+        <div className="flex-grow overflow-y-auto py-4">
+          {comments?.map((data, index) => {
+            let comment;
+            if (typeof data === "string") {
+              comment = getCommentById?.(data);
+            } else {
+              comment = data;
+            }
 
-          if (!comment) return null;
-          return (
-            <CommentCard
-              key={comment.id}
-              workspaceSlug={workspaceSlug}
-              entityId={entityId}
-              comment={comment}
-              activityOperations={activityOperations}
-              disabled={!isEditingAllowed}
-              ends={index === 0 ? "top" : index === comments.length - 1 ? "bottom" : undefined}
-              projectId={projectId}
-              showAccessSpecifier={showAccessSpecifier}
-              showCopyLinkOption={showCopyLinkOption}
-              enableReplies={enableReplies}
-            />
-          );
-        })}
+            if (!comment) return null;
+            return (
+              <CommentCard
+                key={comment.id}
+                workspaceSlug={workspaceSlug}
+                entityId={entityId}
+                comment={comment}
+                activityOperations={activityOperations}
+                disabled={!isEditingAllowed}
+                ends={index === 0 ? "top" : index === comments.length - 1 ? "bottom" : undefined}
+                projectId={projectId}
+                showAccessSpecifier={showAccessSpecifier}
+                showCopyLinkOption={showCopyLinkOption}
+                enableReplies={enableReplies}
+              />
+            );
+          })}
+        </div>
       </div>
-    </div>
+    </CommentReplyProvider>
   );
 });

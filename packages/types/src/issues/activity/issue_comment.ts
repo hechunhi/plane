@@ -45,6 +45,11 @@ export type TIssueComment = {
   external_id: string | undefined;
   external_source: string | undefined;
   access: EIssueCommentAccessSpecifier;
+  /**
+   * BARSOUL: 返信先コメント id (引用式スレッド)。上流のモデルには前からある FK
+   * だが型に出ていなかった。null = 通常のコメント。
+   */
+  parent?: string | null;
 };
 
 export type TCommentsOperations = {

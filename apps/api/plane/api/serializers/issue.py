@@ -737,11 +737,15 @@ class IssueCommentSerializer(BaseSerializer):
 
     class Meta:
         model = IssueComment
+        # BARSOUL 2026-09-03 (hechun): 返信先 (parent) はここでは書かせない。返信の
+        # 作成は検問のある app 側経路だけ — 別 issue のコメントを親に指せると、
+        # 引用行が他所の文脈を持ち込む。読み出しには従来どおり出る。
         read_only_fields = [
             "id",
             "workspace",
             "project",
             "issue",
+            "parent",
             "created_by",
             "updated_by",
             "created_at",

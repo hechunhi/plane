@@ -17,6 +17,8 @@ import { useTranslation } from "@plane/i18n";
 import type { TFileSignedURLResponse, TIssueComment } from "@plane/types";
 // components
 import { CommentCreate } from "@/components/comments/comment-create";
+// BARSOUL コメント返信 A 案: 各カードの返信ボタンと入力欄は兄弟なので、両方を覆う
+import { CommentReplyProvider } from "@/components/comments/reply-context";
 import { useRealtimeCommentVersion } from "@/components/core/realtime-bus";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
@@ -131,49 +133,51 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
   if (!project) return <></>;
 
   return (
-    <div className="space-y-4">
-      {/* header */}
-      <div className="flex items-center justify-between">
-        <div className="text-h5-medium text-primary">{t("common.activity")}</div>
-        <div className="flex items-center gap-2">
-          {isWorklogButtonEnabled && (
-            <IssueActivityWorklogCreateButton
-              workspaceSlug={workspaceSlug}
-              projectId={projectId}
-              issueId={issueId}
-              disabled={disabled}
-            />
-          )}
-          <ActivitySortRoot sortOrder={sortOrder || E_SORT_ORDER.ASC} toggleSort={toggleSortOrder} />
-          <ActivityFilterRoot
-            selectedFilters={selectedFilters || defaultActivityFilters}
-            toggleFilter={toggleFilter}
-            isIntakeIssue={isIntakeIssue}
-            projectId={projectId}
-          />
-        </div>
-      </div>
-
-      {/* rendering activity */}
-      <div className="space-y-3">
-        <div className="min-h-[200px]">
-          <div className="space-y-3">
-            {!disabled && sortOrder === E_SORT_ORDER.DESC && renderCommentCreationBox}
-            <IssueActivityCommentRoot
-              projectId={projectId}
-              workspaceSlug={workspaceSlug}
-              isIntakeIssue={isIntakeIssue}
-              issueId={issueId}
+    <CommentReplyProvider>
+      <div className="space-y-4">
+        {/* header */}
+        <div className="flex items-center justify-between">
+          <div className="text-h5-medium text-primary">{t("common.activity")}</div>
+          <div className="flex items-center gap-2">
+            {isWorklogButtonEnabled && (
+              <IssueActivityWorklogCreateButton
+                workspaceSlug={workspaceSlug}
+                projectId={projectId}
+                issueId={issueId}
+                disabled={disabled}
+              />
+            )}
+            <ActivitySortRoot sortOrder={sortOrder || E_SORT_ORDER.ASC} toggleSort={toggleSortOrder} />
+            <ActivityFilterRoot
               selectedFilters={selectedFilters || defaultActivityFilters}
-              activityOperations={activityOperations}
-              showAccessSpecifier={!!project.anchor}
-              disabled={disabled}
-              sortOrder={sortOrder || E_SORT_ORDER.ASC}
+              toggleFilter={toggleFilter}
+              isIntakeIssue={isIntakeIssue}
+              projectId={projectId}
             />
-            {!disabled && sortOrder === E_SORT_ORDER.ASC && renderCommentCreationBox}
+          </div>
+        </div>
+
+        {/* rendering activity */}
+        <div className="space-y-3">
+          <div className="min-h-[200px]">
+            <div className="space-y-3">
+              {!disabled && sortOrder === E_SORT_ORDER.DESC && renderCommentCreationBox}
+              <IssueActivityCommentRoot
+                projectId={projectId}
+                workspaceSlug={workspaceSlug}
+                isIntakeIssue={isIntakeIssue}
+                issueId={issueId}
+                selectedFilters={selectedFilters || defaultActivityFilters}
+                activityOperations={activityOperations}
+                showAccessSpecifier={!!project.anchor}
+                disabled={disabled}
+                sortOrder={sortOrder || E_SORT_ORDER.ASC}
+              />
+              {!disabled && sortOrder === E_SORT_ORDER.ASC && renderCommentCreationBox}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </CommentReplyProvider>
   );
 });
