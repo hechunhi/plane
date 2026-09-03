@@ -33,6 +33,9 @@ import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
+// BARSOUL 2026-09-01: 件名の表示翻訳(display-only, issue.name は不変)
+import { useTranslatedTitle, TitleTooltipContent } from "@/components/issues/translate/card-title-translate";
+import { TranslateGlyph } from "@/components/issues/translate/issue-field-translate";
 // local components
 import type { TRenderQuickActions } from "../list/list-view-types";
 import { isIssueNew } from "../utils";
@@ -210,6 +213,10 @@ const IssueRowDetails = observer(function IssueRowDetails(props: IssueRowDetails
 
   const issueDetail = issue.getIssueById(issueId);
 
+  // BARSOUL 2026-09-01: 件名を読み手の言語で(未取得/不要なら原文, 原文は tooltip 併記)。
+  // hooks 規則のため早期 return より前で呼ぶ。
+  const rowTitle = useTranslatedTitle(issueId, issueDetail?.name);
+
   const subIssueIndentation = `${spacingLeft}px`;
 
   useOutsideClickDetector(menuActionRef, () => setIsMenuActive(false));
@@ -361,12 +368,17 @@ const IssueRowDetails = observer(function IssueRowDetails(props: IssueRowDetails
               <div className="my-auto flex h-full w-full items-center justify-between gap-2 truncate">
                 <div className="line-clamp-1 w-full text-14 text-primary">
                   <div className="w-full overflow-hidden">
-                    <Tooltip tooltipContent={issueDetail.name} isMobile={isMobile}>
+                    <Tooltip tooltipContent={<TitleTooltipContent value={rowTitle} />} isMobile={isMobile}>
                       <div
                         className="h-full w-full cursor-pointer truncate pr-4 text-left text-13 text-primary focus:outline-none"
                         tabIndex={-1}
                       >
-                        {issueDetail.name}
+                        {rowTitle.translated && (
+                          <span className="mr-1 inline-flex translate-y-[1px] text-tertiary">
+                            <TranslateGlyph />
+                          </span>
+                        )}
+                        {rowTitle.title}
                       </div>
                     </Tooltip>
                   </div>

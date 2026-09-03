@@ -291,6 +291,8 @@
 
 ### B3. 自建服务（`~/llm-tools/` `~/.hermes/` `~/Library/LaunchAgents/`）
 
+- **★一覧カード件名の表示翻訳（2026-09-01 hechun）**：看板/一覧/カレンダー/表 の**カード件名**を読み手の言語で表示。後端 `IssueTitleTranslateBatchEndpoint`（`POST /api/workspaces/<slug>/issue-title-translations/`, workspace member, **自分が active な project の issue のみ**）が **既存の派生キャッシュ `IssueTranslation(field="title")` をそのまま共有** — 詳細画面の件名翻訳と訳文の正本は 1 箇所（詳細で訳したものが看板でも即ヒット、逆も同様）。1 リクエストで LLM に殺到させないため **キャッシュ照会 ≤120 件 / 実訳 ≤8 件（ThreadPoolExecutor 4 並列）**、残りは `pending` で返し 前端が 600ms 後に追いかける。`_call_llm` の `_last_model_used` は global で競合するのでスレッドから安全に読めるよう **thread-local `_tls.last_model` を併設**（既存 global は互換のため残置）。前端 `apps/web/core/components/issues/translate/card-title-translate.tsx`（**新規**）= 模块級 batcher（120ms 去抖, DIS `ai-state-line.tsx` と同型）+ `useTranslatedTitle()`。語種判定 `detectSrc` と全局スイッチ `barsoul.autoTranslate` は `issue-field-translate.tsx` から**再利用**（判定の正本を分岐させない）。接線先 = kanban `block.tsx` / list `block.tsx` / calendar `issue-block.tsx` / spreadsheet `issue-row.tsx`。**表示のみ — `issue.name` は不可変**：訳文表示中は件名前に翻訳グリフ、tooltip に**訳文＋原文＋AI 注意書き**を併記。失敗は 2 回で諦めて原文表示（無限リトライ禁止）、`skip`（空/同語/語種不明）は原文で確定キャッシュ。
+
 - **`~/llm-tools/llm-gateway/`（Go, host, 2026-05-19）— LLM 削峰填谷网关（单点·所有 LLM 必经）**
   - 问题：M4 Pro 单 GPU 同驻 3 模型（coder-30b@8000/gemma-26b@8001/qwen-4b@8002），多源同步直怼 → 突发拥塞 60s 超时/ConnectError → 审批丑回退
   - 方案：`com.local.llm.gateway.plist` 127.0.0.1:**8200**。OpenAI 兼容，按请求体 `model` 多上游路由（`ROUTES` env，默认 8000/8001/8002）；**单一全局 GPU 队列**(MAXQ=48) + 集中超时(UP_TIMEOUT_S=180)+重试(RETRY=2) + **队满立即 503 `llm_busy`**（快速降级，非慢挂）；`X-LLM-Priority: interactive(默认)|background`（审批组合=background 让路用户面）

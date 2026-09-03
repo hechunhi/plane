@@ -29,7 +29,9 @@ import re
 import hashlib as _hashlib
 import logging
 import requests as _req
+import threading as _threading
 import uuid as _uuid
+from concurrent.futures import ThreadPoolExecutor
 from .. import BaseAPIView
 
 logger = logging.getLogger(__name__)
@@ -590,6 +592,12 @@ def _augment_post(url, payload, text):
         return ""
 
 
+# BARSOUL 2026-09-01 (hechun): 一覧カード件名のバッチ翻訳はスレッドで _call_llm を
+# 並列に呼ぶ。module global `_last_model_used` は競合するので、同じ値を thread-local
+# にも書いて呼び出し側が安全に読めるようにする(既存の global は互換のため残す)。
+_tls = _threading.local()
+
+
 def _call_llm(text, src, tgt, context=""):
     """Call LLM gateway with translation prompt + no-op detection + fallback chain.
     Returns translated str (translated_by 由 caller 通过 _last_model_used 拿)。
@@ -607,6 +615,7 @@ def _call_llm(text, src, tgt, context=""):
         aug = _augment_translate(text, tgt, context=context)
         if aug:
             globals()["_last_model_used"] = _AUGMENT_MODEL
+            _tls.last_model = _AUGMENT_MODEL
             return aug
         logger.info("_call_llm: mixed-lang augment failed, fallback to hy-mt2 chain")
     src_label = "日本語" if src == "ja" else ("中文" if src == "zh" else src)
@@ -631,9 +640,11 @@ def _call_llm(text, src, tgt, context=""):
         if out and not _looks_like_noop(text, out, tgt):
             # 把实际成功的 model 记到 module attr,view 后续读出来写 translated_by
             globals()["_last_model_used"] = model
+            _tls.last_model = model
             return out
         logger.info(f"_call_llm: model={model} no-op or empty, trying next")
     globals()["_last_model_used"] = ""
+    _tls.last_model = ""
     return ""
 
 
@@ -1390,3 +1401,135 @@ class IssueTranslateOnDemandEndpoint(BaseAPIView):
         except Exception:
             logger.exception("issue translate cache upsert failed (非致命)")
         return Response({"text": out, "source_lang": o_src, "by": by, "cached": False})
+
+
+# ── BARSOUL 2026-09-01 (hechun): 一覧カード件名の 表示翻訳(バッチ)──────────────
+# 看板/一覧/カレンダー/表 の **カード件名** を読み手の言語で出すためのバッチ取得口。
+# 詳細画面の件名/本文翻訳(IssueTranslateOnDemandEndpoint)と **同じ派生キャッシュ
+# (IssueTranslation field="title")・同じ語種判定・同じ LLM 経路** を共有する ——
+# 訳文の正本は 1 箇所, 二重管理しない。**issue.name は不可変(真相)**, 表示のみ。
+# 1 リクエストで LLM に殺到させないため、未訳は少数だけその場で訳し、残りは
+# pending で返す(フロントが少しずつ追いかける)。
+_TITLE_TR_MAX_IDS = 120      # 1 リクエストで見る件数(キャッシュ照会)上限
+_TITLE_TR_MAX_JOBS = 8       # 1 リクエストで実際に LLM を叩く上限
+_TITLE_TR_WORKERS = 4
+
+
+class IssueTitleTranslateBatchEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/issue-title-translations/
+    Body: {target_lang:"zh"|"ja", issue_ids:[uuid, …]}
+    Resp: {items:[{issue_id, text, skip?, cached?}], pending:[issue_id, …]}
+      - skip=true → 訳す必要なし(空件名 / 既に読み手の言語 / 語種不明)。
+                    フロントは「原文のまま」で確定キャッシュしてよい。
+      - text="" (skip なし) → 今回の翻訳が失敗。原文表示のまま、後で再試行可。
+      - pending → 今回は訳していない(次のリクエストで訳す)。
+    認可 = ワークスペース成員 かつ **自分が active な project の issue のみ**
+    (Guest が他 project の件名を覗けない)。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
+    def post(self, request, slug):
+        data = request.data or {}
+        o_tgt = (data.get("target_lang") or "").strip().lower()[:2]
+        if o_tgt not in ("zh", "ja"):
+            return Response({"error": "target_lang must be zh|ja"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        raw_ids = data.get("issue_ids")
+        if not isinstance(raw_ids, list):
+            return Response({"error": "issue_ids must be a list"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ids = []
+        for i in raw_ids[:_TITLE_TR_MAX_IDS]:
+            try:
+                ids.append(_uuid.UUID(str(i)))
+            except (ValueError, TypeError, AttributeError):
+                continue
+        if not ids:
+            return Response({"items": [], "pending": []})
+
+        issues = list(
+            Issue.objects.filter(
+                pk__in=ids,
+                workspace__slug=slug,
+                project__project_projectmember__member=request.user,
+                project__project_projectmember__is_active=True,
+            )
+            .values("id", "name", "project_id", "workspace_id")
+            .distinct()
+        )
+        if not issues:
+            return Response({"items": [], "pending": []})
+
+        rows = {
+            r.issue_id: r
+            for r in IssueTranslation.all_objects.filter(
+                issue_id__in=[i["id"] for i in issues],
+                field="title", target_lang=o_tgt)
+        }
+
+        items = []
+        jobs = []
+        for it in issues:
+            iid = str(it["id"])
+            name = it["name"] or ""
+            if not name.strip():
+                items.append({"issue_id": iid, "text": "", "skip": True})
+                continue
+            o_src = _detect_src(name)
+            if not o_src or o_src == o_tgt:
+                items.append({"issue_id": iid, "text": "", "skip": True})
+                continue
+            src_hash = _hashlib.sha256(name.encode("utf-8")).hexdigest()
+            row = rows.get(it["id"])
+            if row and not row.deleted_at and row.text and row.source_hash == src_hash:
+                items.append({"issue_id": iid, "text": row.text,
+                              "source_lang": row.source_lang, "cached": True})
+                continue
+            jobs.append((it, name, o_src, src_hash, row))
+
+        pending = [str(j[0]["id"]) for j in jobs[_TITLE_TR_MAX_JOBS:]]
+        jobs = jobs[:_TITLE_TR_MAX_JOBS]
+
+        def _translate(job):
+            _it, _name, _src, _hash, _row = job
+            out = ""
+            try:
+                # 件名は「それ自体が文脈」なので ctx なし(詳細画面の title 翻訳と同条件)。
+                out = _call_llm(_name, _src, o_tgt, context="") or ""
+            except Exception:
+                logger.exception("card title translate failed (非致命)")
+            _m = getattr(_tls, "last_model", "") or ""
+            by = f"ondemand:{_m}" if (_m and not _m.startswith("ondemand")) else (_m or "ondemand")
+            return job, out, by
+
+        results = []
+        if jobs:
+            with ThreadPoolExecutor(max_workers=min(_TITLE_TR_WORKERS, len(jobs))) as ex:
+                results = list(ex.map(_translate, jobs))
+
+        for job, out, by in results:
+            _it, _name, _src, _hash, _row = job
+            iid = str(_it["id"])
+            if not out:
+                items.append({"issue_id": iid, "text": ""})  # 失敗 → 原文表示のまま
+                continue
+            items.append({"issue_id": iid, "text": out,
+                          "source_lang": _src, "cached": False})
+            try:
+                if _row:
+                    _row.text = out
+                    _row.source_hash = _hash
+                    _row.source_lang = _src
+                    _row.translated_by = by
+                    _row.deleted_at = None
+                    _row.updated_by_id = request.user.id
+                    _row.save()
+                else:
+                    IssueTranslation.objects.create(
+                        issue_id=_it["id"], field="title", target_lang=o_tgt,
+                        project_id=_it["project_id"], workspace_id=_it["workspace_id"],
+                        text=out, source_lang=_src, source_hash=_hash, translated_by=by,
+                        created_by_id=request.user.id, updated_by_id=request.user.id)
+            except Exception:
+                logger.exception("card title translation cache upsert failed (非致命)")
+
+        return Response({"items": items, "pending": pending})

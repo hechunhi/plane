@@ -25,6 +25,8 @@ import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-red
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
+// BARSOUL 2026-09-01: 件名の表示翻訳(display-only, issue.name は不変)
+import { useTranslatedTitle } from "@/components/issues/translate/card-title-translate";
 // local components
 import { WorkItemPreviewCard } from "../../preview-card";
 import type { TRenderQuickActions } from "../list/list-view-types";
@@ -60,10 +62,10 @@ export const CalendarIssueBlock = observer(
     const stateColor = getProjectStates(issue?.project_id)?.find((state) => state?.id == issue?.state_id)?.color || "";
     // BARSOUL: 「休み」ラベルの付いたカードは赤字にする。日付セル側(day-tile)と
     // 同じ判定規約(./holiday)を使うので、セルが赤いのにカードだけ黒、が起きない。
-    const isHoliday = (issue?.label_ids ?? []).some((labelId) =>
-      isHolidayLabelName(getLabelById(labelId)?.name)
-    );
+    const isHoliday = (issue?.label_ids ?? []).some((labelId) => isHolidayLabelName(getLabelById(labelId)?.name));
     const projectIdentifier = getProjectIdentifierById(issue?.project_id);
+    // BARSOUL 2026-09-01: 件名を読み手の言語で(未取得/不要なら原文, title 属性に原文)
+    const blockTitle = useTranslatedTitle(issue?.id, issue?.name);
 
     // handlers
     const handleIssuePeekOverview = (issue: TIssue) => handleRedirection(workspaceSlug.toString(), issue, isMobile);
@@ -145,8 +147,9 @@ export const CalendarIssueBlock = observer(
                     <div
                       style={{ color: isHoliday ? HOLIDAY_TEXT : undefined }}
                       className="truncate text-13 font-medium md:text-11 md:font-regular"
+                      title={blockTitle.translated ? `${blockTitle.title}\n原文: ${blockTitle.original}` : undefined}
                     >
-                      {issue.name}
+                      {blockTitle.title}
                     </div>
                   </div>
                   <div

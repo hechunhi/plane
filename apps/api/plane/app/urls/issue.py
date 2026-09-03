@@ -13,6 +13,7 @@ from plane.app.views import (
     CommentReactionViewSet,
     CommentTranslateOnDemandEndpoint,
     IssueTranslateOnDemandEndpoint,
+    IssueTitleTranslateBatchEndpoint,
     IssueAIApprovalEndpoint,
     WorkspaceAIApprovalsEndpoint,
     IssueAIStateBatchEndpoint,
@@ -193,6 +194,12 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/translate/",
         IssueTranslateOnDemandEndpoint.as_view(),
         name="project-issue-translate",
+    ),
+    # BARSOUL 2026-09-01: 一覧カード件名の表示翻訳(バッチ, workspace member)
+    path(
+        "workspaces/<str:slug>/issue-title-translations/",
+        IssueTitleTranslateBatchEndpoint.as_view(),
+        name="workspace-issue-title-translations",
     ),
     # BARSOUL 2026-06-06: Plane 原生发起审批(爱酱图标/表单 → 认证代理 → ai-bot → Temporal)
     path(

@@ -33,11 +33,7 @@ import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web components
 import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
 // BARSOUL: 未読関連 helper のみ(IssueUnreadBadge は廃止 — 左バーに一本化)
-import {
-  useIssueUnreadCount,
-  useIssueUnreadKind,
-  isMutedState,
-} from "@/components/notifications/issue-unread-badge";
+import { useIssueUnreadCount, useIssueUnreadKind, isMutedState } from "@/components/notifications/issue-unread-badge";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
 // BARSOUL IUTEYA-9: Pin/収藏 ボタン
@@ -45,6 +41,9 @@ import { PinButton } from "@/components/issues/pin-button";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { ApproverTitle } from "@/components/issues/approver-title";
+// BARSOUL 2026-09-01: 行の件名も読み手の言語で表示(display-only)
+import { useTranslatedTitle, TitleTooltipContent } from "@/components/issues/translate/card-title-translate";
+import { TranslateGlyph } from "@/components/issues/translate/issue-field-translate";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 // types
@@ -146,6 +145,8 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
   const canEditIssueProperties = canEditProperties(issue?.project_id ?? undefined);
   // BARSOUL ADR-029: 凍結カード — 拖拽 + 視覚を役割別に
   const { frozen: isFrozen, myRole: frozenRole } = useIssueApproval(issueId);
+  // BARSOUL 2026-09-01: 件名の表示翻訳(未取得/不要なら原文)。原文は tooltip 併記。
+  const rowTitle = useTranslatedTitle(issueId, issue?.name);
   const isDraggingAllowed = canDrag && canEditIssueProperties && !isFrozen;
 
   const { isMobile } = usePlatformOS();
@@ -236,7 +237,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             // bg 染色は廃止 — 行の密度が高いと薄染色も鬱陶しい。
             "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-danger-primary before:content-['']":
               hasUnread && !isIssueSelected && !isMentionUnread,
-            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-danger-primary before:content-[''] before:animate-pulse":
+            "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:animate-pulse before:bg-danger-primary before:content-['']":
               isMentionUnread && !isIssueSelected,
             "bg-layer-1": isCurrentBlockDragging,
             "md:flex-row md:items-center": isSidebarCollapsed,
@@ -246,7 +247,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             //   initiator: 琥珀左 3px + 5% 底色
             //   queued_approver (SEQ 待ち番): 琥珀左 3px (弱)
             //   bystander: 灰青左 2px のみ (殆ど目立たない)
-            "bg-[#ea580c]/[0.08] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:bg-[#ea580c] before:content-[''] before:animate-pulse":
+            "bg-[#ea580c]/[0.08] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:animate-pulse before:bg-[#ea580c] before:content-['']":
               isFrozen && frozenRole === "pending_approver" && !isIssueSelected,
             "bg-[#d97706]/[0.05] before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-[#d97706] before:content-['']":
               isFrozen && frozenRole === "initiator" && !isIssueSelected,
@@ -267,10 +268,10 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                   frozenRole === "pending_approver"
                     ? "あなたの審査待ちです。決定/撤回してから移動できます。"
                     : frozenRole === "initiator"
-                    ? "あなたが発起した審査が進行中。撤回するまで移動不可。"
-                    : frozenRole === "queued_approver"
-                    ? "順次審査中(あなたの番が来ます)。撤回まで移動不可。"
-                    : "他人が審査中です。承認/却下が確定するまで移動不可。",
+                      ? "あなたが発起した審査が進行中。撤回するまで移動不可。"
+                      : frozenRole === "queued_approver"
+                        ? "順次審査中(あなたの番が来ます)。撤回まで移動不可。"
+                        : "他人が審査中です。承認/却下が確定するまで移動不可。",
               });
             } else {
               setToast({
@@ -316,7 +317,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                 </Tooltip>
               )}
               {displayProperties && (displayProperties.key || displayProperties.issue_type) && (
-                <div className="flex-shrink-0 flex items-center" style={{ minWidth: `${keyMinWidth}px` }}>
+                <div className="flex flex-shrink-0 items-center" style={{ minWidth: `${keyMinWidth}px` }}>
                   {issue.project_id && (
                     <IssueIdentifier
                       issueId={issueId}
@@ -331,7 +332,6 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
               )}
               {/* BARSOUL IUTEYA-9: ★ pin button (list 行 inline) */}
               <PinButton issueId={issueId} projectId={issue.project_id} variant="row" />
-
 
               {/* sub-issues chevron */}
               <div className="grid size-4 flex-shrink-0 place-items-center">
@@ -357,7 +357,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             </div>
 
             <Tooltip
-              tooltipContent={issue.name}
+              tooltipContent={<TitleTooltipContent value={rowTitle} />}
               isMobile={isMobile}
               position="top-start"
               disabled={isCurrentBlockDragging}
@@ -369,10 +369,12 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                   "!font-bold": hasUnread,
                 })}
               >
-                <ApproverTitle
-                  title={issue.name ?? ""}
-                  active={isFrozen && frozenRole === "pending_approver"}
-                />
+                {rowTitle.translated && (
+                  <span className="mr-1 inline-flex translate-y-[1px] text-tertiary">
+                    <TranslateGlyph />
+                  </span>
+                )}
+                <ApproverTitle title={rowTitle.title} active={isFrozen && frozenRole === "pending_approver"} />
               </p>
             </Tooltip>
             {/* BARSOUL B-2m: 子卡の帰属面包屑(行内尾注) */}

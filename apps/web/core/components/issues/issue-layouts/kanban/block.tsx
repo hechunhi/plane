@@ -47,6 +47,9 @@ import { usePinnedIssues } from "@/hooks/store/use-pinned-issues";
 // BARSOUL ADR-029: 凍結カード(審査中) UX
 import { useIssueApproval } from "@/hooks/use-issue-approval";
 import { ApproverTitle } from "@/components/issues/approver-title";
+// BARSOUL 2026-09-01: カード件名の表示翻訳(display-only, issue.name は不変)
+import { useTranslatedTitle, TitleTooltipContent } from "@/components/issues/translate/card-title-translate";
+import { TranslateGlyph } from "@/components/issues/translate/issue-field-translate";
 import { ParentBreadcrumb } from "@/components/issues/parent-breadcrumb";
 // BARSOUL IUTEYA-9: Pin/収藏 ボタン
 import { PinButton } from "@/components/issues/pin-button";
@@ -132,6 +135,9 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
   // BARSOUL ADR-029 続: pending_approver はタイトル交互フェードで強提示.
   const { frozen: _kbDetailFrozen, myRole: _kbDetailRole } = useIssueApproval(issue?.id);
   const isPendingApprover = _kbDetailFrozen && _kbDetailRole === "pending_approver";
+  // BARSOUL 2026-09-01: 件名を読み手の言語で表示(訳文はバッチ取得 + 後端キャッシュ,
+  // 未取得/不要なら原文をそのまま返す)。原文は tooltip で常に読める。
+  const cardTitle = useTranslatedTitle(issue?.id, issue?.name);
 
   const customActionButton = (
     <button
@@ -184,7 +190,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
 
       {/* BARSOUL B-2m: 子卡の帰属面包屑(↳ 親卡名) — 平铺でも迷子にならない */}
       <ParentBreadcrumb parentId={issue.parent_id} />
-      <Tooltip tooltipContent={issue.name} isMobile={isMobile} renderByDefault={false}>
+      <Tooltip tooltipContent={<TitleTooltipContent value={cardTitle} />} isMobile={isMobile} renderByDefault={false}>
         {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
             タイポ言語)。赤縁取り(親 card border) と合わせて 3 信号同時提示. */}
         <div
@@ -194,7 +200,12 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
             "!font-bold": hasUnread,
           })}
         >
-          <ApproverTitle title={issue.name ?? ""} active={isPendingApprover} />
+          {cardTitle.translated && (
+            <span className="mr-1 inline-flex translate-y-[1px] text-tertiary">
+              <TranslateGlyph />
+            </span>
+          )}
+          <ApproverTitle title={cardTitle.title} active={isPendingApprover} />
         </div>
       </Tooltip>
 
