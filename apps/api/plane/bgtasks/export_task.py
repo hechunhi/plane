@@ -44,6 +44,10 @@ def upload_to_s3(zip_file: io.BytesIO, workspace_id: UUID, token_id: str, slug: 
     Upload a ZIP file to S3 and generate a presigned URL.
     """
     file_name = f"{workspace_id}/export-{slug}-{token_id[:6]}-{str(timezone.now().date())}.zip"
+    # BARSOUL: shared bucket → prefix. Stored in ExporterHistory.key as-is, so the
+    # expiry task deletes the right object without knowing about the prefix.
+    if settings.AWS_S3_KEY_PREFIX:
+        file_name = f"{settings.AWS_S3_KEY_PREFIX}/{file_name}"
     expires_in = 7 * 24 * 60 * 60
 
     if settings.USE_MINIO:

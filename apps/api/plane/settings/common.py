@@ -245,6 +245,9 @@ STORAGES["default"] = {"BACKEND": "plane.settings.storage.S3Storage"}
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "access-key")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "secret-key")
 AWS_STORAGE_BUCKET_NAME = os.environ.get("AWS_S3_BUCKET_NAME", "uploads")
+# BARSOUL: shared-bucket key prefix ("plane" → keys live under plane/). Applied by
+# plane.settings.storage.S3Storage at the S3 boundary and by export_task for export zips.
+AWS_S3_KEY_PREFIX = os.environ.get("AWS_S3_KEY_PREFIX", "").strip("/")
 AWS_REGION = os.environ.get("AWS_REGION", "")
 AWS_DEFAULT_ACL = "public-read"
 AWS_QUERYSTRING_AUTH = False

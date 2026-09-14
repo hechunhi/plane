@@ -35,6 +35,10 @@ class S3Storage(S3Boto3Storage):
         self.aws_s3_endpoint_url = os.environ.get("AWS_S3_ENDPOINT_URL") or os.environ.get("MINIO_ENDPOINT_URL")
         # Use the SIGNED_URL_EXPIRATION environment variable for the expiration time (default: 3600 seconds)
         self.signed_url_expiration = int(os.environ.get("SIGNED_URL_EXPIRATION", "3600"))
+        # BARSOUL: optional key prefix so several apps can share one bucket
+        # (R2 bucket barsoul-media: media/ = shop, plane/ = this app, keiri/ = keiri).
+        # DB asset keys stay unprefixed; the prefix is applied only at the S3 boundary.
+        self.key_prefix = os.environ.get("AWS_S3_KEY_PREFIX", "").strip("/")
 
         if os.environ.get("USE_MINIO") == "1":
             # Determine protocol based on environment variable
@@ -62,6 +66,13 @@ class S3Storage(S3Boto3Storage):
                 config=boto3.session.Config(signature_version="s3v4"),
             )
 
+    def _key(self, object_name):
+        """Object key as stored in the bucket (key_prefix + DB key)."""
+        object_name = str(object_name)
+        if not self.key_prefix:
+            return object_name
+        return f"{self.key_prefix}/{object_name.lstrip('/')}"
+
     def generate_presigned_post(self, object_name, file_type, file_size, expiration=None):
         """Generate a presigned URL to upload an S3 object.
 
@@ -76,6 +87,7 @@ class S3Storage(S3Boto3Storage):
             expiration = self.signed_url_expiration
         if os.environ.get("S3_UPLOAD_METHOD", "POST").upper() == "PUT":
             return self.generate_presigned_put(object_name, file_type, expiration)
+        object_name = self._key(object_name)
         fields = {"Content-Type": file_type}
 
         conditions = [
@@ -121,6 +133,7 @@ class S3Storage(S3Boto3Storage):
         # Signature-based detection on the client can yield "" for unknown files;
         # an empty ContentType cannot be signed/matched, so pin a concrete value.
         file_type = file_type or "application/octet-stream"
+        object_name = self._key(object_name)
         try:
             url = self.s3_client.generate_presigned_url(
                 "put_object",
@@ -169,7 +182,7 @@ class S3Storage(S3Boto3Storage):
                 "get_object",
                 Params={
                     "Bucket": self.aws_storage_bucket_name,
-                    "Key": str(object_name),
+                    "Key": self._key(object_name),
                     "ResponseContentDisposition": content_disposition,
                 },
                 ExpiresIn=expiration,
@@ -185,7 +198,7 @@ class S3Storage(S3Boto3Storage):
     def get_object_metadata(self, object_name):
         """Get the metadata for an S3 object"""
         try:
-            response = self.s3_client.head_object(Bucket=self.aws_storage_bucket_name, Key=object_name)
+            response = self.s3_client.head_object(Bucket=self.aws_storage_bucket_name, Key=self._key(object_name))
         except ClientError as e:
             log_exception(e)
             return None
@@ -203,8 +216,8 @@ class S3Storage(S3Boto3Storage):
         try:
             response = self.s3_client.copy_object(
                 Bucket=self.aws_storage_bucket_name,
-                CopySource={"Bucket": self.aws_storage_bucket_name, "Key": object_name},
-                Key=new_object_name,
+                CopySource={"Bucket": self.aws_storage_bucket_name, "Key": self._key(object_name)},
+                Key=self._key(new_object_name),
             )
         except ClientError as e:
             log_exception(e)
@@ -227,7 +240,7 @@ class S3Storage(S3Boto3Storage):
             self.s3_client.upload_fileobj(
                 file_obj,
                 self.aws_storage_bucket_name,
-                object_name,
+                self._key(object_name),
                 ExtraArgs=extra_args,
             )
             return True
@@ -240,7 +253,7 @@ class S3Storage(S3Boto3Storage):
         try:
             self.s3_client.delete_objects(
                 Bucket=self.aws_storage_bucket_name,
-                Delete={"Objects": [{"Key": object_name} for object_name in object_names]},
+                Delete={"Objects": [{"Key": self._key(object_name)} for object_name in object_names]},
             )
             return True
         except ClientError as e:

@@ -35,7 +35,9 @@
 
 **附件/图片存储 → Cloudflare R2（2026-09-14，hechun「VPS/本机空间极其有限，能用对象存储就别落本地」）**
 
-- 现状：MinIO(`plane-minio`, 卷 `plane_uploads`, xl 格式) 退役 → R2 私有桶 `barsoul-plane`（apac；keiri 用 `barsoul-keiri`）。上传=浏览器直传预签名 URL，下载=预签名 GET，本机/VPS 不落盘。对象 key 不变 → DB 零改动。
+- 现状（2026-09-14 割接完成）：MinIO(`plane-minio`, 卷 `plane_uploads`, xl 格式) 退役 → **共享桶 `barsoul-media`**（bar-soul.com 商店同一个桶、同一把令牌；hechun「不要开一堆存储桶，用前缀」），Plane 走前缀 `plane/`、keiri 走 `keiri/`、商店是 `media/`。上传=浏览器直传预签名 URL，下载=预签名 GET，本机/VPS 不落盘。
+- **前缀由 `AWS_S3_KEY_PREFIX` 控制**（`storage.py` `_key()` 在 presign/head/copy/upload/delete 时拼上，`common.py` 暴露给 `export_task.py` 写进 `ExporterHistory.key`）；**DB 里的 key 不带前缀** → 迁移零改动、切回 MinIO 只需清空该变量。
+- ⚠ `barsoul-media` 经 `media.bar-soul.com` 公网可读：`plane/…`、`keiri/…` 对象只要知道完整 key 就能匿名取（Plane key=`<workspace_id>/<uuid4hex>-name`，不可猜）。要彻底关死需在 Cloudflare 仪表盘给 zone bar-soul.com 加 WAF 规则：`http.host eq "media.bar-soul.com" and (starts_with(http.request.uri.path,"/plane/") or starts_with(http.request.uri.path,"/keiri/"))` → Block。
 - **R2 没有 PostObject** → 上游「预签名 POST + multipart」在 R2 上 400。fork 加了 **预签名 PUT 通道**，由 `S3_UPLOAD_METHOD=PUT` 切换（默认 POST，MinIO/AWS 行为不变）：
   - `apps/api/plane/settings/storage.py` — `generate_presigned_post()` 分流 → 新 `generate_presigned_put()` 返回 `{url, fields:{Content-Type,key}, method:"PUT"}`
   - `packages/types/src/file.ts` — `upload_data.method?: "POST"|"PUT"`，x-amz/policy 字段改可选；`TFileUploadPayload = FormData | File`
@@ -43,8 +45,8 @@
   - `packages/services/src/file/file-upload.service.ts`、`apps/web/core/services/file-upload.service.ts` — `uploadFile()` 按 payload 类型走 POST(multipart) / PUT(raw body, `Content-Type` 单头)
   - `apps/api/plane/bgtasks/exporter_expired_task.py` — 非 MinIO 分支补 `endpoint_url`（否则过期导出删到 aws.amazon.com）
 - boto3≥1.36 默认给 PUT 加 CRC32 校验头，R2 不认 → `AWS_REQUEST_CHECKSUM_CALCULATION/RESPONSE_CHECKSUM_VALIDATION=when_required`（`~/stack/plane/compose.local.yml` 透传到 api/worker/beat-worker/migrator）。
-- 桶 CORS（wrangler `r2 bucket cors set`，规则格式必须是 `{"rules":[{"allowed":{origins,methods,headers},exposeHeaders,maxAgeSeconds}]}`）：origins `https://tasks.barsoul.jp`+`https://keiri.barsoul.jp`，methods GET/PUT/HEAD，expose ETag。
-- 割接/回滚脚本 `~/stack/plane/r2-cutover.sh`（rclone MinIO→R2 + env 改写 + 自检；凭据只在脚本内存、终端只回显 4 位）；MinIO 由 `PLANE_MINIO_REPLICAS=0` 缩容，卷 `plane_uploads` 暂留作回滚快照。
+- 桶 CORS（`barsoul-media`；wrangler `r2 bucket cors set`，规则格式必须是 `{"rules":[{"allowed":{origins,methods,headers},exposeHeaders,maxAgeSeconds}]}`）：origins `https://tasks.barsoul.jp`+`https://keiri.barsoul.jp`，methods GET/PUT/HEAD，expose ETag。
+- 割接/回滚脚本 `~/stack/plane/r2-cutover.sh`（无参数；凭据经 ssh 从 barsoul-prod `settings.env` 取、只在脚本内存、终端只回显 4 位；rclone MinIO→`barsoul-media/plane|keiri` + env 改写 + 自检）；MinIO 由 `PLANE_MINIO_REPLICAS=0` 缩容，卷 `plane_uploads` 暂留作回滚快照。
 - 升级风险：上游若重构 `FileUploadService`/`generateFileUploadPayload` 或 `storage.py`，需重新套 PUT 通道；`FILE_SIZE_LIMIT` 提到 100MB（浏览器直传 R2，不过 proxy/Caddy 体积限制）。
 
 ### A2. 未提交工作树改动（本会话/早期，**升级前先 commit 或记录**）
