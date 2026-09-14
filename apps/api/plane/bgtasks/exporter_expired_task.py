@@ -34,9 +34,12 @@ def delete_old_s3_link():
             config=Config(signature_version="s3v4"),
         )
     else:
+        # BARSOUL: honour AWS_S3_ENDPOINT_URL for S3-compatible stores (Cloudflare R2),
+        # same as export_task.upload_to_s3 — otherwise deletes go to aws.amazon.com.
         s3 = boto3.client(
             "s3",
             region_name=settings.AWS_REGION,
+            endpoint_url=settings.AWS_S3_ENDPOINT_URL or None,
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
             config=Config(signature_version="s3v4"),

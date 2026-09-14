@@ -63,9 +63,19 @@ class S3Storage(S3Boto3Storage):
             )
 
     def generate_presigned_post(self, object_name, file_type, file_size, expiration=None):
-        """Generate a presigned URL to upload an S3 object"""
+        """Generate a presigned URL to upload an S3 object.
+
+        Returns ``{"url", "fields"}`` (browser POSTs multipart) — or, when the
+        backend does not support presigned POST (Cloudflare R2 has no PostObject),
+        ``{"url", "fields", "method": "PUT"}`` where ``url`` is a presigned PUT and
+        the browser sends the raw file body with ``fields["Content-Type"]`` as the
+        only header. Selected by ``S3_UPLOAD_METHOD=PUT`` (default: POST, so MinIO /
+        AWS keep the upstream behaviour).
+        """
         if expiration is None:
             expiration = self.signed_url_expiration
+        if os.environ.get("S3_UPLOAD_METHOD", "POST").upper() == "PUT":
+            return self.generate_presigned_put(object_name, file_type, expiration)
         fields = {"Content-Type": file_type}
 
         conditions = [
@@ -97,6 +107,39 @@ class S3Storage(S3Boto3Storage):
             return None
 
         return response
+
+    def generate_presigned_put(self, object_name, file_type, expiration=None):
+        """Presigned PUT for backends without PostObject (Cloudflare R2).
+
+        ``ContentType`` is part of the signature, so the browser must send exactly
+        ``fields["Content-Type"]``. Size cannot be policy-enforced on PUT; the view
+        already clamps ``size`` to ``FILE_SIZE_LIMIT`` and the frontend refuses
+        larger files before asking for a URL.
+        """
+        if expiration is None:
+            expiration = self.signed_url_expiration
+        # Signature-based detection on the client can yield "" for unknown files;
+        # an empty ContentType cannot be signed/matched, so pin a concrete value.
+        file_type = file_type or "application/octet-stream"
+        try:
+            url = self.s3_client.generate_presigned_url(
+                "put_object",
+                Params={
+                    "Bucket": self.aws_storage_bucket_name,
+                    "Key": object_name,
+                    "ContentType": file_type,
+                },
+                ExpiresIn=expiration,
+                HttpMethod="PUT",
+            )
+        except ClientError as e:
+            log_exception(e)
+            return None
+        return {
+            "url": url,
+            "fields": {"Content-Type": file_type, "key": object_name},
+            "method": "PUT",
+        }
 
     def _get_content_disposition(self, disposition, filename=None):
         """Helper method to generate Content-Disposition header value"""

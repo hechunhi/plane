@@ -7,7 +7,7 @@
 // external imports
 import { fileTypeFromBuffer } from "file-type";
 // plane imports
-import type { TFileMetaDataLite, TFileSignedURLResponse } from "@plane/types";
+import type { TFileMetaDataLite, TFileSignedURLResponse, TFileUploadPayload } from "@plane/types";
 import { DANGEROUS_EXTENSIONS } from "@plane/constants";
 
 /**
@@ -53,9 +53,18 @@ const validateFilename = (filename: string): string | null => {
  * @description from the provided signed URL response, generate a payload to be used to upload the file
  * @param {TFileSignedURLResponse} signedURLResponse
  * @param {File} file
- * @returns {FormData} file upload request payload
+ * @returns {TFileUploadPayload} multipart FormData for presigned POST, or the bare File for presigned PUT (R2)
  */
-export const generateFileUploadPayload = (signedURLResponse: TFileSignedURLResponse, file: File): FormData => {
+export const generateFileUploadPayload = (
+  signedURLResponse: TFileSignedURLResponse,
+  file: File
+): TFileUploadPayload => {
+  if (signedURLResponse.upload_data.method === "PUT") {
+    // The PUT signature covers Content-Type: re-wrap the file with exactly the type
+    // the API signed (signature-detected type can differ from the browser's file.type).
+    const signedType = signedURLResponse.upload_data.fields["Content-Type"] || "application/octet-stream";
+    return file.type === signedType ? file : new File([file], file.name, { type: signedType });
+  }
   const formData = new FormData();
   Object.entries(signedURLResponse.upload_data.fields).forEach(([key, value]) => formData.append(key, value));
   formData.append("file", file);

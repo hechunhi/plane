@@ -25,17 +25,24 @@ export type TFileSignedURLResponse = {
   asset_url: string;
   upload_data: {
     url: string;
+    // POST (default, MinIO/AWS): multipart form with every field + the file.
+    // PUT (Cloudflare R2 — no PostObject): raw file body, only `fields["Content-Type"]`
+    // is sent as a header; the other policy fields are absent.
+    method?: "POST" | "PUT";
     fields: {
       "Content-Type": string;
       key: string;
-      "x-amz-algorithm": string;
-      "x-amz-credential": string;
-      "x-amz-date": string;
-      policy: string;
-      "x-amz-signature": string;
+      "x-amz-algorithm"?: string;
+      "x-amz-credential"?: string;
+      "x-amz-date"?: string;
+      policy?: string;
+      "x-amz-signature"?: string;
     };
   };
 };
+
+/** Body handed to FileUploadService.uploadFile — FormData for presigned POST, the bare File for presigned PUT. */
+export type TFileUploadPayload = FormData | File;
 
 export type TDuplicateAssetData = {
   entity_id: string;

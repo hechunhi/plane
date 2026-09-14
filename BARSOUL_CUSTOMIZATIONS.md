@@ -33,6 +33,20 @@
 | `f94fa3fa` | 修 pnpm 11 PATH bug（4 个 frontend Dockerfile）                                                                               |
 | `9a81d242` | `build.sh` — barsoul 本地镜像构建脚本                                                                                         |
 
+**附件/图片存储 → Cloudflare R2（2026-09-14，hechun「VPS/本机空间极其有限，能用对象存储就别落本地」）**
+
+- 现状：MinIO(`plane-minio`, 卷 `plane_uploads`, xl 格式) 退役 → R2 私有桶 `barsoul-plane`（apac；keiri 用 `barsoul-keiri`）。上传=浏览器直传预签名 URL，下载=预签名 GET，本机/VPS 不落盘。对象 key 不变 → DB 零改动。
+- **R2 没有 PostObject** → 上游「预签名 POST + multipart」在 R2 上 400。fork 加了 **预签名 PUT 通道**，由 `S3_UPLOAD_METHOD=PUT` 切换（默认 POST，MinIO/AWS 行为不变）：
+  - `apps/api/plane/settings/storage.py` — `generate_presigned_post()` 分流 → 新 `generate_presigned_put()` 返回 `{url, fields:{Content-Type,key}, method:"PUT"}`
+  - `packages/types/src/file.ts` — `upload_data.method?: "POST"|"PUT"`，x-amz/policy 字段改可选；`TFileUploadPayload = FormData | File`
+  - `packages/services/src/file/helper.ts` — `generateFileUploadPayload()` PUT 时直接返回 File（MIME 与签名不符则重包一层）
+  - `packages/services/src/file/file-upload.service.ts`、`apps/web/core/services/file-upload.service.ts` — `uploadFile()` 按 payload 类型走 POST(multipart) / PUT(raw body, `Content-Type` 单头)
+  - `apps/api/plane/bgtasks/exporter_expired_task.py` — 非 MinIO 分支补 `endpoint_url`（否则过期导出删到 aws.amazon.com）
+- boto3≥1.36 默认给 PUT 加 CRC32 校验头，R2 不认 → `AWS_REQUEST_CHECKSUM_CALCULATION/RESPONSE_CHECKSUM_VALIDATION=when_required`（`~/stack/plane/compose.local.yml` 透传到 api/worker/beat-worker/migrator）。
+- 桶 CORS（wrangler `r2 bucket cors set`，规则格式必须是 `{"rules":[{"allowed":{origins,methods,headers},exposeHeaders,maxAgeSeconds}]}`）：origins `https://tasks.barsoul.jp`+`https://keiri.barsoul.jp`，methods GET/PUT/HEAD，expose ETag。
+- 割接/回滚脚本 `~/stack/plane/r2-cutover.sh`（rclone MinIO→R2 + env 改写 + 自检；凭据只在脚本内存、终端只回显 4 位）；MinIO 由 `PLANE_MINIO_REPLICAS=0` 缩容，卷 `plane_uploads` 暂留作回滚快照。
+- 升级风险：上游若重构 `FileUploadService`/`generateFileUploadPayload` 或 `storage.py`，需重新套 PUT 通道；`FILE_SIZE_LIMIT` 提到 100MB（浏览器直传 R2，不过 proxy/Caddy 体积限制）。
+
 ### A2. 未提交工作树改动（本会话/早期，**升级前先 commit 或记录**）
 
 **SSO / 前端登录**

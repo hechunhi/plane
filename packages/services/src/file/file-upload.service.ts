@@ -5,6 +5,8 @@
  */
 
 import axios from "axios";
+// plane imports
+import type { TFileUploadPayload } from "@plane/types";
 // api service
 import { APIService } from "../api.service";
 
@@ -23,19 +25,28 @@ export class FileUploadService extends APIService {
   /**
    * Uploads a file to the specified signed URL
    * @param {string} url - The URL to upload the file to
-   * @param {FormData} data - The form data to upload
+   * @param {TFileUploadPayload} data - FormData (presigned POST) or the bare File (presigned PUT)
    * @returns {Promise<void>} Promise resolving to void
    * @throws {Error} If the request fails
    */
-  async uploadFile(url: string, data: FormData): Promise<void> {
+  async uploadFile(url: string, data: TFileUploadPayload): Promise<void> {
     this.cancelSource = axios.CancelToken.source();
-    return this.post(url, data, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-      cancelToken: this.cancelSource.token,
-      withCredentials: false,
-    })
+    // FormData => presigned POST (MinIO/AWS); bare File => presigned PUT (Cloudflare
+    // R2 has no PostObject). The PUT signature covers Content-Type, so send exactly
+    // the type the API signed.
+    const request =
+      data instanceof FormData
+        ? this.post(url, data, {
+            headers: { "Content-Type": "multipart/form-data" },
+            cancelToken: this.cancelSource.token,
+            withCredentials: false,
+          })
+        : this.put(url, data, {
+            headers: { "Content-Type": data.type || "application/octet-stream" },
+            cancelToken: this.cancelSource.token,
+            withCredentials: false,
+          });
+    return request
       .then((response) => response?.data)
       .catch((error) => {
         if (axios.isCancel(error)) {
