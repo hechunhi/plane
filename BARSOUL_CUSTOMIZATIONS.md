@@ -47,6 +47,7 @@
 - boto3≥1.36 默认给 PUT 加 CRC32 校验头，R2 不认 → `AWS_REQUEST_CHECKSUM_CALCULATION/RESPONSE_CHECKSUM_VALIDATION=when_required`（`~/stack/plane/compose.local.yml` 透传到 api/worker/beat-worker/migrator）。
 - 桶 CORS（`barsoul-media`；wrangler `r2 bucket cors set`，规则格式必须是 `{"rules":[{"allowed":{origins,methods,headers},exposeHeaders,maxAgeSeconds}]}`）：origins `https://tasks.barsoul.jp`+`https://keiri.barsoul.jp`，methods GET/PUT/HEAD，expose ETag。
 - 割接/回滚脚本 `~/stack/plane/r2-cutover.sh`（无参数；凭据经 ssh 从 barsoul-prod `settings.env` 取、只在脚本内存、终端只回显 4 位；rclone MinIO→`barsoul-media/plane|keiri` + env 改写 + 自检）；MinIO 由 `PLANE_MINIO_REPLICAS=0` 缩容，卷 `plane_uploads` 暂留作回滚快照。
+- **桶里对象的清除策略在 Plane 之外**：Plane 自己几乎不物理删对象（软删行、60d 硬删只删行）。`~/stack/r2-gc/`（README 是设计文档）每天 03:30 只读扫 plane 库（角色 `r2gc_ro`，内容列正则扫 UUID + 指向 file_assets 的 FK + 活的 ISSUE_ATTACHMENT 行），未被引用的对象过宽限期（未绑定 7d / 软删 60d / 无行 7d）搬进 `_trash/`（30d 后过期）。**改附件模型 / 新增存图的内容列或 FK 时：列名含 html/description、FK 真指向 file_assets 就会被自动发现，否则去 r2-gc 加**。
 - 升级风险：上游若重构 `FileUploadService`/`generateFileUploadPayload` 或 `storage.py`，需重新套 PUT 通道；`FILE_SIZE_LIMIT` 提到 100MB（浏览器直传 R2，不过 proxy/Caddy 体积限制）。
 
 ### A2. 未提交工作树改动（本会话/早期，**升级前先 commit 或记录**）
