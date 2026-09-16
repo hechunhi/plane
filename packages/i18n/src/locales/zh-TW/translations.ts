@@ -2561,6 +2561,7 @@ export default {
       pasted: "已新增 {count} 條",
       paste_limited: "剩下 {count} 行太多，沒有新增",
       nesting_limited: "已經有子任務的項目，不能再變成子任務。",
+      pick_project: "請先選擇專案",
       load_more: "載入更多 ↓",
       keymap: {
         new_row: "新增一行",

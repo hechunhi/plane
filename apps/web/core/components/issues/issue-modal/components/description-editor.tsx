@@ -93,7 +93,9 @@ export const IssueDescriptionEditor = observer(function IssueDescriptionEditor(p
   }, [descriptionHtmlData]);
 
   const handleKeyDown = (event: KeyboardEvent) => {
-    if (editorRef.current?.isEditorReadyToDiscard()) {
+    // BARSOUL 2026-09: 編集器がまだ mount していない(本文を取りに行っている最中)なら
+    // 失うものは無いので閉じてよい。null を「処理中」と読むと Esc が永遠に効かない。
+    if (editorRef.current?.isEditorReadyToDiscard() ?? true) {
       onClose();
     } else {
       setToast({
@@ -155,7 +157,10 @@ export const IssueDescriptionEditor = observer(function IssueDescriptionEditor(p
 
   return (
     <div className="relative rounded-lg border-[0.5px] border-subtle-1 bg-layer-2">
-      {descriptionHtmlData === undefined || !projectId ? (
+      {/* BARSOUL 2026-09: プロジェクト未定でも編集器を出す。個人 ToDo(workspace 下書き)は
+          プロジェクト無しが普通で、ここを projectId で止めると「編集」がずっと骨組みのまま。
+          添付は projectId 無しなら workspace 側の upload に落ちる(asset.store)。 */}
+      {descriptionHtmlData === undefined ? (
         <Loader className="max-h-64 min-h-[120px] space-y-2 overflow-hidden rounded-md border border-subtle p-3 py-2 pt-3">
           <Loader.Item width="100%" height="26px" />
           <div className="flex items-center gap-2">
@@ -188,7 +193,7 @@ export const IssueDescriptionEditor = observer(function IssueDescriptionEditor(p
                 value={descriptionHtmlData}
                 workspaceSlug={workspaceSlug?.toString()}
                 workspaceId={workspaceId}
-                projectId={projectId}
+                projectId={projectId ?? undefined}
                 onChange={(_description: object, description_html: string) => {
                   onChange(description_html);
                   handleFormChange();
@@ -215,7 +220,7 @@ export const IssueDescriptionEditor = observer(function IssueDescriptionEditor(p
                           : EFileAssetType.ISSUE_DESCRIPTION,
                       },
                       file,
-                      projectId,
+                      projectId: projectId ?? undefined,
                       workspaceSlug,
                     });
                     onAssetUpload(asset_id);
@@ -231,7 +236,7 @@ export const IssueDescriptionEditor = observer(function IssueDescriptionEditor(p
                       assetId,
                       entityId: issueId,
                       entityType: isDraft ? EFileAssetType.DRAFT_ISSUE_DESCRIPTION : EFileAssetType.ISSUE_DESCRIPTION,
-                      projectId,
+                      projectId: projectId ?? undefined,
                       workspaceSlug,
                     });
                     onAssetUpload(asset_id);

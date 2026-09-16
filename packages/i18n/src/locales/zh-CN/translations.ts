@@ -2543,6 +2543,7 @@ export default {
       pasted: "已添加 {count} 条",
       paste_limited: "剩下 {count} 行太多，没有添加",
       nesting_limited: "已经有子任务的条目，不能再变成子任务。",
+      pick_project: "请先选择项目",
       load_more: "加载更多 ↓",
       keymap: {
         new_row: "新增一行",

@@ -22,11 +22,13 @@ import { usePlatformOS } from "@/hooks/use-platform-os";
 type TIssueProjectSelectProps = {
   control: Control<TIssue>;
   disabled?: boolean;
+  /** BARSOUL: 下書き(個人 ToDo)はプロジェクト無しで保存できる */
+  required?: boolean;
   handleFormChange: () => void;
 };
 
 export const IssueProjectSelect = observer(function IssueProjectSelect(props: TIssueProjectSelectProps) {
-  const { control, disabled = false, handleFormChange } = props;
+  const { control, disabled = false, required = true, handleFormChange } = props;
   // store hooks
   const { isMobile } = usePlatformOS();
   // context hooks
@@ -39,7 +41,7 @@ export const IssueProjectSelect = observer(function IssueProjectSelect(props: TI
       control={control}
       name="project_id"
       rules={{
-        required: true,
+        required,
       }}
       render={({ field: { value, onChange } }) => (
         <div className="h-7">

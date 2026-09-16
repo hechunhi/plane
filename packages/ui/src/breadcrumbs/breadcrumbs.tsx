@@ -87,7 +87,13 @@ function Breadcrumbs({ className, children, onBack, isLoading = false }: Breadcr
           </div>
         </>
       )}
-      {isSmallScreen && childrenArray.length === 1 && childrenArray}
+      {/* BARSOUL 2026-09: 1 段だけの時も isLast を渡す。渡さないとスマホでは
+          唯一の項目の後ろに区切りの「›」が残る(下書き / 私の仕事 / プロジェクト …)。 */}
+      {isSmallScreen &&
+        childrenArray.length === 1 &&
+        (React.isValidElement<BreadcrumbItemProps>(childrenArray[0])
+          ? React.cloneElement(childrenArray[0], { isLast: true })
+          : childrenArray[0])}
     </div>
   );
 }

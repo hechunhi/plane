@@ -31,6 +31,9 @@ export function EmptyStateDetailed({
       <div
         className={cn(
           "flex size-full max-w-[25rem] flex-col justify-center gap-6 text-left",
+          // BARSOUL 2026-09: スマホでは 25rem の柱が画面幅そのものになり、左寄せの
+          // 挿絵と全幅ボタンが「未完成」に見える。幅が無い時は中央に寄せる。
+          "max-md:items-center max-md:px-6 max-md:py-8 max-md:text-center",
           {
             "items-center text-center": align === "center",
           },
@@ -40,7 +43,7 @@ export function EmptyStateDetailed({
         {resolvedAsset && <div className="flex max-w-40 items-center">{resolvedAsset}</div>}
 
         <div
-          className={cn("flex flex-col gap-4", {
+          className={cn("flex flex-col gap-4 max-md:items-center", {
             "items-center": align === "center",
           })}
         >
@@ -55,7 +58,7 @@ export function EmptyStateDetailed({
             ? customButton
             : actions &&
               actions.length > 0 && (
-                <div className="flex flex-col gap-4 sm:flex-row">
+                <div className="flex flex-col gap-4 max-md:items-center sm:flex-row">
                   {actions.map((action, index) => {
                     const { label, variant, ...rest } = action;
                     return (

@@ -166,7 +166,9 @@ export const CreateUpdateIssueModalBase = observer(function CreateUpdateIssueMod
     payload: Partial<TIssue>,
     is_draft_issue: boolean = false
   ): Promise<TIssue | undefined> => {
-    if (!workspaceSlug || !payload.project_id) return;
+    // BARSOUL 2026-09: 下書き(個人 ToDo)はプロジェクト無しで作れる(複製もここを通る)。
+    if (!workspaceSlug) return;
+    if (!payload.project_id && !is_draft_issue) return;
 
     try {
       let response: TIssue | undefined;
@@ -180,17 +182,18 @@ export const CreateUpdateIssueModalBase = observer(function CreateUpdateIssueMod
       // or if the moduleIds in Payload does not match the moduleId in url
       // use the project issue store to create issues
       else if (
-        (payload.cycle_id !== cycleId && storeType === EIssuesStoreType.CYCLE) ||
-        (!payload.module_ids?.includes(moduleId?.toString()) && storeType === EIssuesStoreType.MODULE)
+        payload.project_id &&
+        ((payload.cycle_id !== cycleId && storeType === EIssuesStoreType.CYCLE) ||
+          (!payload.module_ids?.includes(moduleId?.toString()) && storeType === EIssuesStoreType.MODULE))
       ) {
         response = await projectIssues.createIssue(workspaceSlug.toString(), payload.project_id, payload);
       } // else just use the existing store type's create method
-      else if (createIssue) {
+      else if (createIssue && payload.project_id) {
         response = await createIssue(payload.project_id, payload);
       }
 
       // update uploaded assets' status
-      if (uploadedAssetIds.length > 0) {
+      if (uploadedAssetIds.length > 0 && response?.project_id) {
         await fileService.updateBulkProjectAssetsUploadStatus(
           workspaceSlug?.toString() ?? "",
           response?.project_id ?? "",
@@ -329,23 +332,26 @@ export const CreateUpdateIssueModalBase = observer(function CreateUpdateIssueMod
   };
 
   const handleUpdateIssue = async (payload: Partial<TIssue>): Promise<TIssue | undefined> => {
-    if (!workspaceSlug || !payload.project_id || !data?.id) return;
+    // BARSOUL 2026-09: 下書き(個人 ToDo)はプロジェクト未定のまま更新できる。
+    if (!workspaceSlug || !data?.id) return;
+    if (!payload.project_id && !isDraft) return;
 
     try {
       if (isDraft) await draftIssues.updateIssue(workspaceSlug.toString(), data.id, payload);
-      else if (updateIssue) await updateIssue(payload.project_id, data.id, payload);
+      else if (updateIssue && payload.project_id) await updateIssue(payload.project_id, data.id, payload);
 
       // Run cycle, module, and property changes sequentially to avoid
       // optimistic store writes from racing against each other.
       await handleCycleChange(data, payload);
       await handleModuleChange(data, payload);
-      await handleCreateUpdatePropertyValues({
-        issueId: data.id,
-        issueTypeId: payload.type_id,
-        projectId: payload.project_id,
-        workspaceSlug: workspaceSlug?.toString(),
-        isDraft: isDraft,
-      });
+      if (payload.project_id)
+        await handleCreateUpdatePropertyValues({
+          issueId: data.id,
+          issueTypeId: payload.type_id,
+          projectId: payload.project_id,
+          workspaceSlug: workspaceSlug?.toString(),
+          isDraft: isDraft,
+        });
 
       setToast({
         type: TOAST_TYPE.SUCCESS,
@@ -372,7 +378,8 @@ export const CreateUpdateIssueModalBase = observer(function CreateUpdateIssueMod
   };
 
   const handleFormSubmit = async (payload: Partial<TIssue>, is_draft_issue: boolean = false) => {
-    if (!workspaceSlug || !payload.project_id || !storeType) return;
+    if (!workspaceSlug || !storeType) return;
+    if (!payload.project_id && !is_draft_issue) return;
     // remove sourceIssueId from payload since it is not needed
     if (data?.sourceIssueId) delete data.sourceIssueId;
 

@@ -108,6 +108,9 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
 
   // refs
   const editorRef = useRef<EditorRefApi>(null);
+  // BARSOUL 2026-09: 編集器が無い(まだ本文待ち)なら「処理中」ではなく「失うものが無い」。
+  // null を処理中と読むと、下書きの「更新 / 放棄」が両方とも永遠に弾かれる。
+  const isEditorReadyToDiscard = () => editorRef.current?.isEditorReadyToDiscard() ?? true;
   const submitBtnRef = useRef<HTMLButtonElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const modalContainerRef = useRef<HTMLDivElement | null>(null);
@@ -130,7 +133,7 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
     handleTemplateChange,
   } = useIssueModal();
   const { isMobile } = usePlatformOS();
-  const { moveIssue } = useWorkspaceDraftIssues();
+  const { moveIssue, updateIssue: updateDraftIssue } = useWorkspaceDraftIssues();
 
   const {
     issue: { getIssueById },
@@ -219,7 +222,7 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
 
   const handleFormSubmit = async (formData: Partial<TIssue>, is_draft_issue = false) => {
     // Check if the editor is ready to discard
-    if (!editorRef.current?.isEditorReadyToDiscard()) {
+    if (!isEditorReadyToDiscard()) {
       setToast({
         type: TOAST_TYPE.ERROR,
         title: t("error"),
@@ -277,13 +280,23 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
   };
 
   const handleMoveToProjects = async () => {
-    if (!data?.id || !data?.project_id || !data) return;
+    // BARSOUL 2026-09: 行き先は form で選んだプロジェクト。個人 ToDo はプロジェクト無しで
+    // 生まれるので data.project_id を見ると永遠に動かない。サーバの move は DB 上の
+    // project_id を読むため、無かった分は先に下書き自体へ書いてから move する。
+    const targetProjectId = getValues<"project_id">("project_id");
+    if (!data?.id || !targetProjectId) {
+      setToast({ type: TOAST_TYPE.ERROR, title: t("error"), message: t("workspace_draft_issues.todo.pick_project") });
+      return;
+    }
     setIsMoving(true);
     try {
+      if (data.project_id !== targetProjectId) {
+        await updateDraftIssue(workspaceSlug.toString(), data.id, { project_id: targetProjectId });
+      }
       await handleCreateUpdatePropertyValues({
         issueId: data.id,
         issueTypeId: data.type_id,
-        projectId: data.project_id,
+        projectId: targetProjectId,
         workspaceSlug: workspaceSlug?.toString(),
         isDraft: true,
       });
@@ -389,9 +402,14 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
               <h3 className="pb-2 text-h4-medium text-secondary">{modalTitle}</h3>
               <div className="flex items-center justify-between pt-2 pb-4">
                 <div className="flex items-center gap-x-1">
+                  {/* BARSOUL 2026-09: 既存でもプロジェクト未定(個人 ToDo)なら選べる。ここを
+                      id だけで固定すると、未定の行は「編集」でも「プロジェクトへ」でも詰む。 */}
                   <IssueProjectSelect
                     control={control}
-                    disabled={!!data?.id || !!data?.sourceIssueId || isProjectSelectionDisabled}
+                    disabled={
+                      ((!!data?.id || !!data?.sourceIssueId) && !!data?.project_id) || isProjectSelectionDisabled
+                    }
+                    required={!isDraft}
                     handleFormChange={handleFormChange}
                   />
                   {projectId && (
@@ -533,7 +551,7 @@ export const IssueFormRoot = observer(function IssueFormRoot(props: IssueFormPro
                         variant="secondary"
                         size="lg"
                         onClick={() => {
-                          if (editorRef.current?.isEditorReadyToDiscard()) {
+                          if (isEditorReadyToDiscard()) {
                             onClose();
                           } else {
                             setToast({

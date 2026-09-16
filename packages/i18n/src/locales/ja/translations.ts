@@ -2602,6 +2602,7 @@ export default {
       pasted: "{count} 件を追加しました",
       paste_limited: "残り {count} 行は多すぎたので入れていません",
       nesting_limited: "子タスクを持つ行は、子タスクにできません。",
+      pick_project: "先にプロジェクトを選んでください",
       load_more: "もっと読む ↓",
       keymap: {
         new_row: "行を追加",

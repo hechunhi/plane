@@ -226,7 +226,8 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
       {/* レンズ。狭い画面では横に流す — 畳んで隠すと「何が見られるか」が判らなくなる。
           流と一緒に上へ張り付く: どの視点を見ているかは、スクロール中こそ見失う。 */}
       <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-subtle bg-surface-1 px-4 py-2">
-        <div className="horizontal-scrollbar flex scrollbar-sm min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        {/* BARSOUL 2026-09: スマホではスクロールバーの帯がタブの下に一本残って見える → 隠す(指で流せる) */}
+        <div className="horizontal-scrollbar flex scrollbar-sm min-w-0 flex-1 items-center gap-1 overflow-x-auto max-md:scrollbar-hide">
           {LENSES.map((l) => {
             const n = countOf(l.key);
             const on = lens === l.key;

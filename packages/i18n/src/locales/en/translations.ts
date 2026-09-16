@@ -2338,6 +2338,7 @@ export default {
       pasted: "Added {count} items",
       paste_limited: "{count} more lines were left out",
       nesting_limited: "A row that already has subtasks can't become one.",
+      pick_project: "Pick a project first",
       load_more: "Load more ↓",
       keymap: {
         new_row: "New row",

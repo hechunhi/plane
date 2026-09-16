@@ -35,7 +35,10 @@ export const WorkspaceDraftEmptyState = observer(function WorkspaceDraftEmptySta
         onClose={() => setIsDraftIssueModalOpen(false)}
         isDraft
       />
-      <div className="relative h-full w-full overflow-y-auto">
+      {/* BARSOUL 2026-09: 親は min-h-full の縦フレックス。h-full は解決しないので
+          flex-1 で残りを取り、空状態を「一行追加」と「済んだ」の間の真ん中に置く。
+          以前は上に張り付き、下に空の枠だけが残っていた。 */}
+      <div className="relative flex w-full flex-1 flex-col justify-center">
         <EmptyStateDetailed
           title={t("workspace_empty_state.drafts.title")}
           description={t("workspace_empty_state.drafts.description")}
