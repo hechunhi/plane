@@ -30,8 +30,15 @@ type TCommentCard = {
 };
 
 export const CommentQuickActions = observer(function CommentQuickActions(props: TCommentCard) {
-  const { activityOperations, comment, setEditMode, showAccessSpecifier, showCopyLinkOption, workspaceSlug, projectId } =
-    props;
+  const {
+    activityOperations,
+    comment,
+    setEditMode,
+    showAccessSpecifier,
+    showCopyLinkOption,
+    workspaceSlug,
+    projectId,
+  } = props;
   // store hooks
   const { data: currentUser } = useUser();
   const { allowPermissions } = useUserPermissions();
@@ -96,7 +103,12 @@ export const CommentQuickActions = observer(function CommentQuickActions(props: 
   );
 
   return (
-    <CustomMenu customButton={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" />} closeOnSelect>
+    <CustomMenu
+      customButton={<IconButton icon={MoreHorizontal} variant="ghost" size="sm" className="max-md:size-7" />}
+      // BARSOUL: inline wrapper が 16×18 に膨らみ隣の IconButton と縦位置がずれる → flex で子と同寸に
+      customButtonClassName="flex"
+      closeOnSelect
+    >
       {MENU_ITEMS.map((item) => {
         if (item.shouldRender === false) return null;
 

@@ -4,7 +4,7 @@
  * See the LICENSE file for details.
  */
 
-import { RefreshCw } from "lucide-react";
+import { Globe, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
@@ -79,22 +79,8 @@ function detectSrc(text: string): "ja" | "zh" | null {
   return null;
 }
 // 翻訳元アイコン(X の "⌀" 相当のミニ globe)。
-const TranslateGlyph = () => (
-  <svg
-    width="11"
-    height="11"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    className="shrink-0 opacity-70"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
-  </svg>
-);
+// BARSOUL: UI アイコンは lucide 統一(手書き SVG 撤去)。
+const TranslateGlyph = () => <Globe className="size-[11px] shrink-0 opacity-70" strokeWidth={2} aria-hidden />;
 
 // 言語コード短名(表示用)。
 const LANG_NAME: Record<string, { zh: string; ja: string }> = {
@@ -162,7 +148,7 @@ function InlineAutoToggle(props: { enabled: boolean; onChange: (v: boolean) => v
       <button
         type="button"
         onClick={() => onChange(!enabled)}
-        className="inline-flex items-center gap-1 transition-colors outline-none hover:text-secondary"
+        className="-my-1.5 inline-flex items-center gap-1 py-1.5 transition-colors outline-none hover:text-secondary"
         aria-pressed={enabled}
       >
         <span>{T.label}</span>
@@ -286,7 +272,8 @@ function CommentTranslatable(props: {
           <button
             type="button"
             onClick={() => setOverride(showingTranslation)}
-            className="text-accent-primary hover:underline"
+            // BARSOUL: 負マージン+padding = 見た目そのまま、タップ領域だけ拡張
+            className="-my-1.5 py-1.5 text-accent-primary hover:underline"
           >
             {showingTranslation ? L.showOrig : L.showTr}
           </button>
@@ -312,7 +299,7 @@ function CommentTranslatable(props: {
               onClick={() => void doFetch(true)}
               title={L.retrTip}
               aria-label={L.retr}
-              className="grid size-4 place-items-center rounded text-tertiary transition-colors hover:bg-layer-1 hover:text-secondary"
+              className="grid size-4 place-items-center rounded text-tertiary transition-colors hover:bg-layer-1 hover:text-secondary max-md:-my-1 max-md:size-6"
             >
               <RefreshCw className="size-3" strokeWidth={1.75} />
             </button>
@@ -386,6 +373,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
     renderQuickActions,
     renderReplyQuote,
   } = props;
+  const { t } = useTranslation();
   // states
   const [highlightClassName, setHighlightClassName] = useState("");
   // state
@@ -452,14 +440,15 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
         <div className="flex flex-1 flex-wrap items-center gap-1">
           <div className="text-caption-sm-medium">{displayName}</div>
           <div className="text-caption-sm-regular text-tertiary">
-            commented{" "}
+            {/* BARSOUL: 「commented」「(edited)」「at」が英語固定だった → i18n */}
+            {t("issue_activity.commented")}
             <Tooltip
-              tooltipContent={`${renderFormattedDate(comment.created_at)} at ${renderFormattedTime(comment.created_at)}`}
+              tooltipContent={`${renderFormattedDate(comment.created_at)} ${renderFormattedTime(comment.created_at)}`}
               position="bottom"
             >
               <span className="text-tertiary">
                 {calculateTimeAgo(comment.created_at)}
-                {comment.edited_at && " (edited)"}
+                {comment.edited_at && ` (${t("edited")})`}
               </span>
             </Tooltip>
           </div>
@@ -471,7 +460,9 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
               handleToggle={setIsPickerOpen}
               onChange={handleEmojiSelect}
               disabled={disabled}
-              label={<EmojiReactionButton onAddReaction={() => setIsPickerOpen(true)} />}
+              // BARSOUL: Popover.Button(inline) が 16×18 に膨らむ → flex で IconButton と同寸に
+              buttonClassName="flex"
+              label={<EmojiReactionButton className="max-md:size-7" onAddReaction={() => setIsPickerOpen(true)} />}
               placement="bottom-start"
             />
             {renderQuickActions ? renderQuickActions() : null}

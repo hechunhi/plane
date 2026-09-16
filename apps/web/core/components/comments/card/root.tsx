@@ -6,11 +6,12 @@
 
 import { useRef, useState } from "react";
 import { observer } from "mobx-react";
-import { Reply } from "lucide-react";
 // plane imports
 import type { EditorRefApi } from "@plane/editor";
 import { useTranslation } from "@plane/i18n";
 import { IconButton } from "@plane/propel/icon-button";
+import { ReplyIcon } from "@plane/propel/icons";
+import { cn } from "@plane/utils";
 import type { TIssueComment, TCommentsOperations } from "@plane/types";
 // plane web imports
 import { CommentBlock, CommentCardDisplay } from "@/plane-web/components/comments";
@@ -82,12 +83,13 @@ export const CommentCard = observer(function CommentCard(props: TCommentCard) {
                 もう一度押すと解除 = 押し間違えても行き止まりにならない。 */}
             {enableReplies && !disabled && (
               <IconButton
-                icon={Reply}
+                icon={ReplyIcon}
                 variant="ghost"
                 size="sm"
                 aria-label={t("issue.comments.reply.action")}
                 aria-pressed={replyToId === comment.id}
-                className={replyToId === comment.id ? "text-accent-primary" : undefined}
+                // BARSOUL: モバイルは 20px だとタップ不能 → 28px(隣の絵文字/⋯ も同寸)
+                className={cn("max-md:size-7", replyToId === comment.id && "text-accent-primary")}
                 onClick={() => setReplyToId(replyToId === comment.id ? undefined : comment.id)}
               />
             )}

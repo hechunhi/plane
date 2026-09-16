@@ -55,7 +55,8 @@ export function IssueActivityBlockComponent(props: TIssueActivityBlockComponent)
       <div className="z-[4] flex h-7 w-7 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-subtle bg-layer-2 text-secondary shadow-raised-100">
         {icon ? icon : <Network className="h-3.5 w-3.5" />}
       </div>
-      <div className="w-full truncate text-secondary">
+      {/* BARSOUL: モバイルでは 1 行省略だと時刻まで切れる → 狭幅は折返し、md 以上は従来どおり省略 */}
+      <div className="w-full min-w-0 break-words text-secondary md:truncate">
         {!activity?.field && activity?.verb === "created" ? (
           <IssueCreatorDisplay activityId={activityId} customUserName={customUserName} />
         ) : (

@@ -290,7 +290,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
               type="button"
               onClick={() => setReplyToId(undefined)}
               aria-label={t("issue.comments.reply.cancel")}
-              className="shrink-0 rounded p-0.5 text-placeholder hover:bg-layer-3 hover:text-secondary"
+              className="shrink-0 rounded p-0.5 text-placeholder hover:bg-layer-3 hover:text-secondary max-md:-my-1 max-md:p-1.5"
             >
               <X className="size-3" strokeWidth={2} />
             </button>
