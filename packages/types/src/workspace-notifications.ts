@@ -38,6 +38,9 @@ export type TNotificationData = {
     issue_comment: string | undefined;
     new_identifier?: string | null;
     old_identifier?: string | null;
+    // BARSOUL 2026-09-16: 返信コメントの親の発言者 id(notification_task が付ける)。
+    // 受信者本人なら「回复了你」。無い/旧通知は undefined。
+    reply_to_actor?: string | null;
     verb: "created" | "updated" | "deleted";
     new_value: string | undefined;
     old_value: string | undefined;

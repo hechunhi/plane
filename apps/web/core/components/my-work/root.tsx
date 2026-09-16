@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlarmClock, AtSign, CircleHelp, Inbox, Reply, ShieldCheck, UserCheck } from "lucide-react";
+import { AlarmClock, AtSign, CircleHelp, Inbox, MessageSquareText, Reply, ShieldCheck, UserCheck } from "lucide-react";
 import { observer } from "mobx-react";
 import useSWR from "swr";
 import { ENotificationLoader, ENotificationQueryParamType, ENotificationTab } from "@plane/constants";
@@ -27,14 +27,17 @@ import { useWorkspace } from "@/hooks/store/use-workspace";
 import { NotificationListRoot } from "@/plane-web/components/workspace-notifications/list-root";
 import { ApprovalInboxRow } from "@/components/approvals/inbox-row";
 import { dueInfo, isMyBall, pick, useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
+import { MyCommentsTimeline } from "./my-comments";
 import { WorkCard } from "./work-card";
 
-type Lens = "feed" | "mention" | "need" | "gap" | "approval" | "overdue" | "assigned";
+type Lens = "feed" | "mention" | "comments" | "need" | "gap" | "approval" | "overdue" | "assigned";
 
 /** urgent = 「私が動かないと止まる」列。数が 0 でない時だけ琥珀で灯す(琥珀は行動信号専用)。 */
 const LENSES: { key: Lens; label: { zh: string; ja: string }; icon: typeof Inbox; urgent?: boolean }[] = [
   { key: "feed", label: { zh: "动态", ja: "動き" }, icon: Inbox },
   { key: "mention", label: { zh: "@我", ja: "@自分" }, icon: AtSign, urgent: true },
+  // 2026-09-16: 「私が最後に口を出したカード」を追う timeline。数は出さない(急かす列ではない)。
+  { key: "comments", label: { zh: "我的评论", ja: "自分のコメント" }, icon: MessageSquareText },
   { key: "need", label: { zh: "待我回球", ja: "自分の番" }, icon: Reply, urgent: true },
   { key: "gap", label: { zh: "需补充", ja: "情報不足" }, icon: CircleHelp, urgent: true },
   { key: "approval", label: { zh: "待审批", ja: "承認待ち" }, icon: ShieldCheck, urgent: true },
@@ -116,6 +119,8 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
         return unreadNotificationsCount?.total_unread_notifications_count || 0;
       case "mention":
         return unreadNotificationsCount?.mention_unread_notifications_count || 0;
+      case "comments":
+        return 0;
       case "need":
         return need.length;
       case "gap":
@@ -185,8 +190,10 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
       if (loader === ENotificationLoader.INIT_LOADER) return <NotificationsLoader />;
       if (!workspaceId || !notificationIdsByWorkspaceId(workspaceId)?.length)
         return emptyLine(zh ? "没有新的动态" : "新しい動きはありません");
-      return <NotificationListRoot workspaceSlug={workspaceSlug} workspaceId={workspaceId} />;
+      return <NotificationListRoot workspaceSlug={workspaceSlug} workspaceId={workspaceId} grouped />;
     }
+
+    if (lens === "comments") return <MyCommentsTimeline workspaceSlug={workspaceSlug} />;
 
     if (lens === "approval" && approvals.isLoading && !approvalItems.length) return <NotificationsLoader />;
     if (lens !== "approval" && isLoading && !digest.length && !assigned.length) return <NotificationsLoader />;

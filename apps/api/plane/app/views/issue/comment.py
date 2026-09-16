@@ -1533,3 +1533,141 @@ class IssueTitleTranslateBatchEndpoint(BaseAPIView):
                 logger.exception("card title translation cache upsert failed (非致命)")
 
         return Response({"items": items, "pending": pending})
+
+
+# ── BARSOUL 2026-09-16 (hechun): 動態(/my-work)コメント抜粋の 表示翻訳(バッチ)──
+# 動態フィードの各行に出るコメント本文を読み手の言語で出すためのバッチ取得口。
+# 詳細画面のコメント翻訳(CommentTranslateOnDemandEndpoint 主路)と **同じ派生
+# キャッシュ(CommentTranslation)・同じ hash(sha256(comment_html))・同じ構造保持
+# 翻訳(ai-bot /translate {html})** を共有する —— ここで訳せばカードを開いた時も
+# 命中し、逆も然り。訳文の正本は 1 箇所。**comment_html は不可変(真相)**, 表示のみ。
+# 件名バッチ(IssueTitleTranslateBatchEndpoint)と同じく、未訳は少数だけその場で
+# 訳し残りは pending で返す(フロントが少しずつ追いかける)。
+_COMMENT_TR_MAX_IDS = 120
+_COMMENT_TR_MAX_JOBS = 6      # 構造保持翻訳は件名より重いので件名(8)より絞る
+_COMMENT_TR_WORKERS = 3
+_COMMENT_TR_TIMEOUT = 40
+
+
+class CommentTranslateBatchEndpoint(BaseAPIView):
+    """POST /api/workspaces/{slug}/comment-translations/
+    Body: {target_lang:"zh"|"ja", comment_ids:[uuid, …]}
+    Resp: {items:[{comment_id, text, skip?, cached?, source_lang?}], pending:[comment_id, …]}
+      - text は **訳文 HTML**(詳細画面と同じ cache 行)。抜粋表示側で plain に落とす。
+      - skip=true → 訳す必要なし(空 / 既に読み手の言語 / 語種不明)。原文で確定。
+      - text="" (skip なし) → 今回失敗。原文表示のまま、後で再試行可。
+      - pending → 今回は訳していない(次のリクエストで訳す)。
+    認可 = ワークスペース成員 かつ 自分が active な project のコメントのみ。"""
+
+    @allow_permission([ROLE.ADMIN, ROLE.MEMBER, ROLE.GUEST], level="WORKSPACE")
+    def post(self, request, slug):
+        data = request.data or {}
+        o_tgt = (data.get("target_lang") or "").strip().lower()[:2]
+        if o_tgt not in ("zh", "ja"):
+            return Response({"error": "target_lang must be zh|ja"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        raw_ids = data.get("comment_ids")
+        if not isinstance(raw_ids, list):
+            return Response({"error": "comment_ids must be a list"},
+                            status=status.HTTP_400_BAD_REQUEST)
+        ids = []
+        for i in raw_ids[:_COMMENT_TR_MAX_IDS]:
+            try:
+                ids.append(_uuid.UUID(str(i)))
+            except (ValueError, TypeError, AttributeError):
+                continue
+        if not ids:
+            return Response({"items": [], "pending": []})
+
+        comments = list(
+            IssueComment.objects.filter(
+                pk__in=ids,
+                workspace__slug=slug,
+                project__project_projectmember__member=request.user,
+                project__project_projectmember__is_active=True,
+            )
+            .values("id", "comment_html", "project_id", "workspace_id", "issue_id", "issue__name")
+            .distinct()
+        )
+        if not comments:
+            return Response({"items": [], "pending": []})
+
+        rows = {
+            r.comment_id: r
+            for r in CommentTranslation.all_objects.filter(
+                comment_id__in=[c["id"] for c in comments], target_lang=o_tgt)
+        }
+
+        items = []
+        jobs = []
+        for c in comments:
+            cid = str(c["id"])
+            chtml = c["comment_html"] or ""
+            if not chtml.strip():
+                items.append({"comment_id": cid, "text": "", "skip": True})
+                continue
+            o_src = _detect_src(_strip(chtml))
+            if not o_src or o_src == o_tgt:
+                items.append({"comment_id": cid, "text": "", "skip": True})
+                continue
+            src_hash = _hashlib.sha256(chtml.encode("utf-8")).hexdigest()
+            row = rows.get(c["id"])
+            if row and not row.deleted_at and row.text and row.source_hash == src_hash:
+                items.append({"comment_id": cid, "text": row.text,
+                              "source_lang": row.source_lang, "cached": True})
+                continue
+            jobs.append((c, chtml, o_src, src_hash, row))
+
+        pending = [str(j[0]["id"]) for j in jobs[_COMMENT_TR_MAX_JOBS:]]
+        jobs = jobs[:_COMMENT_TR_MAX_JOBS]
+
+        def _translate(job):
+            _c, _html, _src, _hash, _row = job
+            out = ""
+            try:
+                # 詳細画面の主路と同じ: 構造保持翻訳、issue 件名を文脈として渡す。
+                _rr = _req.post(
+                    _AIBOT_BASE + "/translate",
+                    json={"html": _html, "source": _src, "target": o_tgt,
+                          "ctx": _c.get("issue__name") or ""},
+                    timeout=_COMMENT_TR_TIMEOUT)
+                if _rr.ok:
+                    _jj = _rr.json()
+                    if _jj.get("ok"):
+                        out = _jj.get("html") or ""
+            except Exception:
+                logger.exception("feed comment translate failed (非致命)")
+            return job, out, "ondemand:structure"
+
+        results = []
+        if jobs:
+            with ThreadPoolExecutor(max_workers=min(_COMMENT_TR_WORKERS, len(jobs))) as ex:
+                results = list(ex.map(_translate, jobs))
+
+        for job, out, by in results:
+            _c, _html, _src, _hash, _row = job
+            cid = str(_c["id"])
+            if not out:
+                items.append({"comment_id": cid, "text": ""})  # 失敗 → 原文表示のまま
+                continue
+            items.append({"comment_id": cid, "text": out,
+                          "source_lang": _src, "cached": False})
+            try:
+                if _row:
+                    _row.text = out
+                    _row.source_hash = _hash
+                    _row.source_lang = _src
+                    _row.translated_by = by
+                    _row.deleted_at = None
+                    _row.updated_by_id = request.user.id
+                    _row.save()
+                else:
+                    CommentTranslation.objects.create(
+                        comment_id=_c["id"], target_lang=o_tgt,
+                        project_id=_c["project_id"], workspace_id=_c["workspace_id"],
+                        text=out, source_lang=_src, source_hash=_hash, translated_by=by,
+                        created_by_id=request.user.id, updated_by_id=request.user.id)
+            except Exception:
+                logger.exception("feed comment translation cache upsert failed (非致命)")
+
+        return Response({"items": items, "pending": pending})

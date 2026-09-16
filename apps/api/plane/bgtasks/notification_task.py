@@ -361,6 +361,16 @@ def notifications(
                         if issue_activity.get("issue_comment")
                         else None
                     )
+                    # BARSOUL 2026-09-16: 返信先コメントの発言者。受信者本人なら
+                    # フロントが「回复了你」を付ける(動態の流れの中で自分宛てを拾う為)。
+                    # 親が soft delete 済でも actor は残るので all_objects で引く。
+                    reply_to_actor = (
+                        IssueComment.all_objects.filter(pk=issue_comment.parent_id)
+                        .values_list("actor_id", flat=True)
+                        .first()
+                        if issue_comment is not None and issue_comment.parent_id
+                        else None
+                    )
 
                     # Create in app notification
                     bulk_notifications.append(
@@ -402,6 +412,7 @@ def notifications(
                                         if issue_activity.get("new_identifier")
                                         else None
                                     ),
+                                    "reply_to_actor": str(reply_to_actor) if reply_to_actor else None,
                                 },
                             },
                         )

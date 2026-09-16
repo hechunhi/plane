@@ -139,8 +139,9 @@ from .issue.attachment import (
     IssueAttachmentV2Endpoint,
 )
 
-from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueTranslateOnDemandEndpoint, IssueAIApprovalEndpoint, WorkspaceAIApprovalsEndpoint, IssueTitleTranslateBatchEndpoint
+from .issue.comment import IssueCommentViewSet, CommentReactionViewSet, CommentTranslateOnDemandEndpoint, IssueTranslateOnDemandEndpoint, IssueAIApprovalEndpoint, WorkspaceAIApprovalsEndpoint, IssueTitleTranslateBatchEndpoint, CommentTranslateBatchEndpoint
 
+from .issue.my_comments import WorkspaceMyCommentsEndpoint
 from .issue.ai_state import (
     IssueAIStateBatchEndpoint,
     IssueAIStateWorkspaceEndpoint,

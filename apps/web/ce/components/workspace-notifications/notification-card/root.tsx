@@ -9,6 +9,7 @@ import { observer } from "mobx-react";
 import { ENotificationLoader, ENotificationQueryParamType } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 // components
+import { NotificationGroupedList } from "@/components/workspace-notifications/sidebar/notification-card/grouped-list";
 import { NotificationItem } from "@/components/workspace-notifications/sidebar/notification-card/item";
 // hooks
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
@@ -16,10 +17,12 @@ import { useWorkspaceNotifications } from "@/hooks/store/notifications";
 type TNotificationCardListRoot = {
   workspaceSlug: string;
   workspaceId: string;
+  /** BARSOUL 2026-09-16: true でカード単位に畳んだ流れ(/my-work 動態)。 */
+  grouped?: boolean;
 };
 
 export const NotificationCardListRoot = observer(function NotificationCardListRoot(props: TNotificationCardListRoot) {
-  const { workspaceSlug, workspaceId } = props;
+  const { workspaceSlug, workspaceId, grouped } = props;
   // hooks
   const { loader, paginationInfo, getNotifications, notificationIdsByWorkspaceId } = useWorkspaceNotifications();
   const notificationIds = notificationIdsByWorkspaceId(workspaceId);
@@ -34,6 +37,7 @@ export const NotificationCardListRoot = observer(function NotificationCardListRo
   };
 
   if (!workspaceSlug || !workspaceId || !notificationIds) return <></>;
+  if (grouped) return <NotificationGroupedList workspaceSlug={workspaceSlug} workspaceId={workspaceId} />;
   return (
     <div>
       {notificationIds.map((notificationId: string) => (

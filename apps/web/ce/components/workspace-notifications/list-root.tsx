@@ -9,6 +9,8 @@ import { NotificationCardListRoot } from "./notification-card/root";
 export type TNotificationListRoot = {
   workspaceSlug: string;
   workspaceId: string;
+  /** BARSOUL 2026-09-16: /my-work の動態だけカード単位に畳む。/notifications は従来のまま。 */
+  grouped?: boolean;
 };
 
 export function NotificationListRoot(props: TNotificationListRoot) {

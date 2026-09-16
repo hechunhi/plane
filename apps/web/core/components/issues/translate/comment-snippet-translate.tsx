@@ -1,14 +1,12 @@
 /**
- * BARSOUL 2026-09-01 (hechun): 一覧カード件名の 表示翻訳。
+ * BARSOUL 2026-09-16 (hechun): 動態(/my-work)コメント抜粋の 表示翻訳。
  *
- * 詳細画面の件名/本文翻訳(issue-field-translate.tsx)と **同じ語種判定
- * (detectSrc)・同じ全局スイッチ `barsoul.autoTranslate`・同じ派生キャッシュ
- * (後端 IssueTranslation field="title")** を共有する —— 訳文の正本は 1 箇所。
- * **表示のみ — issue.name は一切変更しない**(原文は tooltip でいつでも読める)。
- *
- * 取数 = 模块級 batcher 120ms 去抖(DIS の ai-state-line.tsx と同型)。後端は
- * 1 リクエストにつき少数だけ実訳して残りを pending で返す → こちらは 600ms 後に
- * 追いかける。一度訳せば後端キャッシュ命中なので、二度目からは即時。
+ * 一覧カード件名(card-title-translate.tsx)と同じ形の **模块級 batcher**:
+ * 120ms 去抖でまとめて `POST /workspaces/{slug}/comment-translations/` に投げ、
+ * 後端は少数だけ実訳して残りを pending で返す → 600ms 後に追いかける。
+ * 後端キャッシュ = 詳細画面のコメント翻訳と同じ CommentTranslation 行なので、
+ * ここで訳せばカードを開いた時も命中する(正本 1 箇所)。
+ * **表示のみ — comment_html は一切変更しない**。
  */
 import { useEffect, useMemo, useReducer } from "react";
 import { useParams } from "next/navigation";
@@ -17,10 +15,10 @@ import { detectSrc, useAutoTranslatePref } from "./issue-field-translate";
 
 type Lang = "zh" | "ja";
 
-/** key = `${issueId}|${target}|${件名ハッシュ}` — 件名編集で key が変わり自然に再翻訳。 */
+/** key = `${commentId}|${target}|${本文ハッシュ}` — 本文編集で key が変わり自然に再翻訳。 */
 const _cache = new Map<string, string>(); // "" = 訳不要 or 恒久失敗 → 原文表示で確定
 const _subs = new Map<string, Set<() => void>>();
-const _meta = new Map<string, { issueId: string; target: Lang }>();
+const _meta = new Map<string, { commentId: string; target: Lang }>();
 const _fails = new Map<string, number>();
 const _queue = new Set<string>();
 let _timer: ReturnType<typeof setTimeout> | null = null;
@@ -28,7 +26,7 @@ let _inflight = false;
 let _slug = "";
 
 const MAX_FAILS = 2;
-const CHUNK = 100;
+const CHUNK = 60;
 
 function _hash(s: string): string {
   let h = 5381;
@@ -54,8 +52,8 @@ function _schedule(slug: string, delay = 120) {
   }, delay);
 }
 
-type TTitleTrResponse = {
-  items?: Array<{ issue_id: string; text?: string; skip?: boolean }>;
+type TCommentTrResponse = {
+  items?: Array<{ comment_id: string; text?: string; skip?: boolean }>;
   pending?: string[];
 };
 
@@ -65,9 +63,8 @@ async function _flush() {
   _queue.clear();
   if (!keys.length || !_slug) return;
   _inflight = true;
-  // 読み手言語ごとに束ねる(通常は 1 種類)。
   const byTarget = new Map<Lang, string[]>();
-  // `${issueId}|${target}` → keys。**同じ id が複数 key で並ぶ事がある**(動態のグループ頭は
+  // `${commentId}|${target}` → keys。**同じ id が複数 key で並ぶ事がある**(動態のグループ頭は
   // 通知時点の件名を持つので、改名を挟むと同 issue が別ハッシュで複数回並ぶ)。1 対 1 で
   // 持つと最後の key しか確定せず、残りは永遠に原文のまま(2026-09-16 実バグ)。
   const keyOf = new Map<string, string[]>();
@@ -75,10 +72,10 @@ async function _flush() {
   for (const k of keys) {
     const m = _meta.get(k);
     if (!m) continue;
-    const kk = `${m.issueId}|${m.target}`;
+    const kk = `${m.commentId}|${m.target}`;
     keyOf.set(kk, [...(keyOf.get(kk) ?? []), k]);
     const arr = byTarget.get(m.target) ?? [];
-    arr.push(m.issueId);
+    arr.push(m.commentId);
     byTarget.set(m.target, arr);
   }
   let hasPending = false;
@@ -88,14 +85,13 @@ async function _flush() {
       for (let i = 0; i < ids.length; i += CHUNK) {
         const chunk = ids.slice(i, i + CHUNK);
         try {
-          // 逐次が仕様。チャンクを並列に投げると後端で LLM に殺到する
-          // (実訳は 1 リクエスト ≤8 件に絞ってある)。
+          // 逐次が仕様(件名 batcher と同じ) — 並列に投げると後端で LLM に殺到する。
           // eslint-disable-next-line no-await-in-loop
-          const r = await fetch(`/api/workspaces/${_slug}/issue-title-translations/`, {
+          const r = await fetch(`/api/workspaces/${_slug}/comment-translations/`, {
             method: "POST",
             credentials: "include",
             headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
-            body: JSON.stringify({ target_lang: target, issue_ids: chunk }),
+            body: JSON.stringify({ target_lang: target, comment_ids: chunk }),
           });
           if (!r.ok) {
             chunk.forEach((id) => keysFor(id, target).forEach(_requeueOrGiveUp));
@@ -103,16 +99,15 @@ async function _flush() {
             continue;
           }
           // eslint-disable-next-line no-await-in-loop -- 上と同じ逐次ループ内。
-          const j: TTitleTrResponse = await r.json();
+          const j: TCommentTrResponse = await r.json();
           const seen = new Set<string>();
           (j.items ?? []).forEach((it) => {
-            const ks = keysFor(it.issue_id, target);
+            const ks = keysFor(it.comment_id, target);
             if (!ks.length) return;
-            seen.add(it.issue_id);
-            // skip=訳不要(空/同語/語種不明) → 原文で確定。text ありも確定。
+            seen.add(it.comment_id);
             ks.forEach((k) => {
               if (it.skip || it.text) _store(k, it.text || "");
-              else _requeueOrGiveUp(k); // 今回失敗 → 数回だけ追い直す
+              else _requeueOrGiveUp(k);
             });
           });
           const pend = new Set(j.pending ?? []);
@@ -120,7 +115,6 @@ async function _flush() {
             if (seen.has(id)) return;
             const ks = keysFor(id, target);
             if (!ks.length) return;
-            // pending = 後端が「次回訳す」と言っている(失敗ではない)ので回数は数えない。
             ks.forEach((k) => {
               if (pend.has(id)) _queue.add(k);
               else _store(k, ""); // 権限外/存在しない → 原文で確定
@@ -136,7 +130,6 @@ async function _flush() {
   } finally {
     _inflight = false;
   }
-  // 残り(pending / 一時失敗)は少し間を置いて追いかける — LLM を殺到させない。
   if (_queue.size > 0) _schedule(_slug, hasPending ? 600 : 120);
 }
 
@@ -144,40 +137,45 @@ function _requeueOrGiveUp(key: string | undefined) {
   if (!key) return;
   const n = (_fails.get(key) ?? 0) + 1;
   _fails.set(key, n);
-  if (n >= MAX_FAILS)
-    _store(key, ""); // 諦めて原文表示(無限リトライ禁止)
+  if (n >= MAX_FAILS) _store(key, "");
   else _queue.add(key);
 }
 
-export type TTranslatedTitle = {
-  /** 表示用件名(訳せていれば訳文, それ以外は原文)。 */
-  title: string;
-  /** 訳文を出しているか(tooltip / 翻訳マークの出し分け用)。 */
+export type TTranslatedSnippet = {
+  /** 表示用 plain text(訳せていれば訳文, それ以外は原文)。 */
+  text: string;
   translated: boolean;
-  /** 原文(issue.name)。 */
   original: string;
 };
 
 /**
- * カード件名の表示翻訳。訳せない/不要/未取得の間は原文をそのまま返すので、
- * 呼び出し側は戻り値の `title` をそのまま描画すればよい(ちらつき無し)。
+ * コメント抜粋の表示翻訳。
+ * @param commentId  通知 payload の new_identifier
+ * @param html       通知 payload の new_value(コメント HTML)
+ * @param toPlain    HTML → plain(呼び出し側の sanitize と同じ関数を渡す)
+ * 訳せない/不要/未取得の間は原文 plain をそのまま返す(ちらつき無し)。
  */
-export function useTranslatedTitle(issueId: string | undefined, name: string | null | undefined): TTranslatedTitle {
+export function useTranslatedCommentSnippet(
+  commentId: string | null | undefined,
+  html: string | null | undefined,
+  toPlain: (h: string | undefined) => string | undefined
+): TTranslatedSnippet {
   const { currentLocale } = useTranslation();
   const viewer: Lang = currentLocale === "ja" ? "ja" : "zh";
   const [autoPref] = useAutoTranslatePref();
   const { workspaceSlug } = useParams();
   const slug = typeof workspaceSlug === "string" ? workspaceSlug : undefined;
 
-  const original = name ?? "";
+  const raw = html ?? "";
+  const original = useMemo(() => toPlain(raw) || "", [raw, toPlain]);
   const src = useMemo(() => detectSrc(original), [original]);
-  const needed = !!issueId && !!slug && autoPref && !!original.trim() && !!src && src !== viewer;
-  const key = needed ? `${issueId}|${viewer}|${_hash(original)}` : "";
+  const needed = !!commentId && !!slug && autoPref && !!original.trim() && !!src && src !== viewer;
+  const key = needed ? `${commentId}|${viewer}|${_hash(raw)}` : "";
 
   const [, force] = useReducer((x: number) => x + 1, 0);
 
   useEffect(() => {
-    if (!key || !slug || !issueId) return;
+    if (!key || !slug || !commentId) return;
     let set = _subs.get(key);
     if (!set) {
       set = new Set();
@@ -185,7 +183,7 @@ export function useTranslatedTitle(issueId: string | undefined, name: string | n
     }
     set.add(force);
     if (!_cache.has(key)) {
-      _meta.set(key, { issueId, target: viewer });
+      _meta.set(key, { commentId, target: viewer });
       _queue.add(key);
       _schedule(slug);
     }
@@ -193,27 +191,9 @@ export function useTranslatedTitle(issueId: string | undefined, name: string | n
       set?.delete(force);
       if (set && set.size === 0) _subs.delete(key);
     };
-  }, [key, slug, issueId, viewer, force]);
+  }, [key, slug, commentId, viewer, force]);
 
   const tr = key ? _cache.get(key) : undefined;
-  return { title: tr || original, translated: !!tr, original };
-}
-
-/**
- * カード件名 tooltip の中身 — 訳文を出している時は **原文も必ず併記**
- * (機械翻訳なので原文が最終的な拠り所。ホバーで確認できる)。
- */
-export function TitleTooltipContent({ value }: { value: TTranslatedTitle }) {
-  const { currentLocale } = useTranslation();
-  const ja = currentLocale === "ja";
-  if (!value.translated) return <>{value.original}</>;
-  return (
-    <span className="block">
-      <span className="block">{value.title}</span>
-      <span className="mt-1 block opacity-70">原文: {value.original}</span>
-      <span className="mt-0.5 block text-[10px] opacity-60">
-        {ja ? "AI 翻訳のため誤りの可能性あり、原文を優先" : "爱酱 AI 翻译，可能有误，请以原文为准"}
-      </span>
-    </span>
-  );
+  const trPlain = useMemo(() => (tr ? toPlain(tr) : ""), [tr, toPlain]);
+  return { text: trPlain || original, translated: !!trPlain, original };
 }

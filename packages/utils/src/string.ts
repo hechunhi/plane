@@ -127,8 +127,35 @@ console.log(text); // Some text
  */
 export const sanitizeHTML = (htmlString: string) => {
   const sanitizedText = sanitizeHtml(htmlString, { allowedTags: [] }); // sanitize the string to remove all HTML tags
-  return sanitizedText.trim(); // trim the string to remove leading and trailing whitespaces
+  // BARSOUL 2026-09-16: sanitize-html は残ったテキストを HTML エスケープして返す
+  // (`<(_ _*)>` → `&lt;(_ _*)&gt;`)。呼び出し側は全て「プレーンテキストとして
+  // 描画」なので、ここで実体参照を戻さないと顔文字や `&` が文字化けする。
+  return decodeHTMLEntities(sanitizedText).trim(); // trim the string to remove leading and trailing whitespaces
 };
+
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00a0",
+};
+
+/**
+ * @description decode the handful of HTML entities that appear in stripped text
+ * (numeric `&#39;` / `&#x27;` and the named basics). `&amp;` is resolved last so
+ * a double-escaped `&amp;lt;` stays `&lt;` instead of becoming `<`.
+ */
+export const decodeHTMLEntities = (text: string): string =>
+  text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, body: string) => {
+    if (body[0] === "#") {
+      const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : match;
+    }
+    const named = NAMED_ENTITIES[body.toLowerCase()];
+    return named ?? match;
+  });
 
 /**
  * @description: This function will remove all the HTML tags from the string and truncate the string to the specified length

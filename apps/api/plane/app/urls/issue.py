@@ -14,10 +14,12 @@ from plane.app.views import (
     CommentTranslateOnDemandEndpoint,
     IssueTranslateOnDemandEndpoint,
     IssueTitleTranslateBatchEndpoint,
+    CommentTranslateBatchEndpoint,
     IssueAIApprovalEndpoint,
     WorkspaceAIApprovalsEndpoint,
     IssueAIStateBatchEndpoint,
     IssueAIStateWorkspaceEndpoint,
+    WorkspaceMyCommentsEndpoint,
     IssueAIStateAckInfoEndpoint,
     IssueAIStateCorrectEndpoint,
     IssueAIStateTranslateEndpoint,
@@ -201,6 +203,12 @@ urlpatterns = [
         IssueTitleTranslateBatchEndpoint.as_view(),
         name="workspace-issue-title-translations",
     ),
+    # BARSOUL 2026-09-16: 動態コメント抜粋の表示翻訳(バッチ, workspace member)
+    path(
+        "workspaces/<str:slug>/comment-translations/",
+        CommentTranslateBatchEndpoint.as_view(),
+        name="workspace-comment-translations",
+    ),
     # BARSOUL 2026-06-06: Plane 原生发起审批(爱酱图标/表单 → 认证代理 → ai-bot → Temporal)
     path(
         "workspaces/<str:slug>/projects/<uuid:project_id>/issues/<uuid:issue_id>/ai-approval/",
@@ -226,6 +234,12 @@ urlpatterns = [
         "workspaces/<str:slug>/my-work/ai-states/",
         IssueAIStateWorkspaceEndpoint.as_view(),
         name="workspace-my-work-ai-states",
+    ),
+    # BARSOUL 2026-09-16: 「我的工作」自分のコメント timeline(返信の有無つき)
+    path(
+        "workspaces/<str:slug>/my-comments/",
+        WorkspaceMyCommentsEndpoint.as_view(),
+        name="workspace-my-comments",
     ),
     # BARSOUL DIS: 「補足は不要」= 要補足の打ち切り(出口の無い指摘を作らない)
     path(
