@@ -167,7 +167,8 @@ const MyCommentGroup = observer(function MyCommentGroup(props: {
 
   const open = (commentId?: string) => {
     setPeekIssue({ workspaceSlug, projectId: group.projectId, issueId: group.issueId });
-    if (commentId) setScrollToActivityCommentId(`ac-${commentId}`);
+    // 受け側(activity-comment-root)が `ac-` を付けて getElementById する → ここは素の id を渡す。
+    if (commentId) setScrollToActivityCommentId(commentId);
   };
 
   return (

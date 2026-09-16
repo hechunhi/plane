@@ -66,17 +66,48 @@ export const IssueActivityCommentRoot = observer(function IssueActivityCommentRo
       if (cancelled) return;
       const el = document.getElementById(`ac-${target}`);
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        // BARSOUL: accent 主題色のソフトハイライト（カード/ドットと統一）。
-        // ゆっくり浮かび上がり(0.7s)→ 少し留め → ゆっくり消える(1.4s)。
+        // BARSOUL 2026-09-16: smooth scroll は途中で止まる —— 本文の画像やリンクカードが
+        // 遅れて読み込まれ、レイアウトが動いた瞬間にブラウザがアニメーションを捨てる
+        // (実測: 53 件の feed で本文の途中に取り残された)。だから 1 回撃って終わりに
+        // せず、着くまで ~3.5 秒は見張り、ずれていれば即時スクロールで引き戻す。
+        // ハイライトは **着いてから** 点ける(道中で消えてしまわないように)。
         const HL = "color-mix(in oklab, var(--bg-accent-primary) 14%, transparent)";
-        el.style.borderRadius = "6px";
-        el.style.transition = "background-color .7s ease";
-        el.style.backgroundColor = HL;
-        window.setTimeout(() => {
-          el.style.transition = "background-color 1.4s ease";
-          el.style.backgroundColor = "";
-        }, 2200);
+        const offCenter = () => {
+          const b = el.getBoundingClientRect();
+          return b.top + b.height / 2 - window.innerHeight / 2;
+        };
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        let settleTries = 0;
+        let lastOff = offCenter();
+        let lit = false;
+        const light = () => {
+          if (lit) return;
+          lit = true;
+          el.style.borderRadius = "6px";
+          el.style.transition = "background-color .7s ease";
+          el.style.backgroundColor = HL;
+          window.setTimeout(() => {
+            el.style.transition = "background-color 1.4s ease";
+            el.style.backgroundColor = "";
+          }, 2200);
+        };
+        // ★ この見張りは effect の cleanup に繋がない —— 直後の setScrollToActivityCommentId(undefined)
+        //   で依存が変わり cleanup(cancelled=true)が走るため。要素が DOM から外れたら自然に止まる。
+        const settle = () => {
+          if (!el.isConnected) return;
+          const off = offCenter();
+          const arrived = Math.abs(off) < 80 || (el.getBoundingClientRect().top >= 0 && el.getBoundingClientRect().bottom <= window.innerHeight);
+          if (arrived) {
+            light();
+            return;
+          }
+          // 動いていない = smooth が捨てられた → 即時で引き戻す
+          if (Math.abs(off - lastOff) < 4) el.scrollIntoView({ behavior: "auto", block: "center" });
+          lastOff = off;
+          if (settleTries++ < 10) window.setTimeout(settle, 350);
+          else light();
+        };
+        window.setTimeout(settle, 350);
         setScrollToActivityCommentId(undefined);
         return;
       }
