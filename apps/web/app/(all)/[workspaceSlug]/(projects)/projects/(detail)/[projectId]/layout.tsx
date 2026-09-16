@@ -11,6 +11,7 @@ import { Header, Row } from "@plane/ui";
 import { cn } from "@plane/utils";
 // components
 import { TabNavigationRoot } from "@/components/navigation/tab-navigation-root";
+import { MOBILE_CHROME_CLASS, useMobileChromeRef } from "@/components/navigation/mobile-chrome";
 import { AppSidebarToggleButton } from "@/components/sidebar/sidebar-toggle-button";
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
@@ -27,11 +28,13 @@ function ProjectLayout({ params }: Route.ComponentProps) {
   const { sidebarCollapsed } = useAppTheme();
   // preferences
   const { preferences: projectPreferences } = useProjectNavigationPreferences();
+  // BARSOUL 2026-09: スマホでは下スクロールで畳まれる(mobile-chrome.tsx)
+  const chromeRef = useMobileChromeRef<HTMLDivElement>();
 
   return (
     <>
       {projectPreferences.navigationMode === "TABBED" && (
-        <div className="z-20">
+        <div ref={chromeRef} data-edge="top" className={cn(MOBILE_CHROME_CLASS, "z-20")}>
           <Row className="flex h-header w-full items-center gap-2 border-b border-subtle bg-surface-1">
             <div className="flex h-full w-full items-center gap-2 divide-x divide-subtle">
               <div className="flex size-full flex-1 items-center gap-2">

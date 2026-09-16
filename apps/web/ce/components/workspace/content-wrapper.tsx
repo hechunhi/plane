@@ -10,6 +10,7 @@ import { observer } from "mobx-react";
 import { cn } from "@plane/utils";
 import { AppRailRoot } from "@/components/navigation";
 import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
+import { MobileChrome, useMobileChromeAutoHide } from "@/components/navigation/mobile-chrome";
 import { WebPushBridge } from "@/components/web-push";
 import { useAppRailVisibility } from "@/lib/app-rail";
 // local imports
@@ -23,10 +24,15 @@ export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper
 }) {
   // Use the context to determine if app rail should render
   const { shouldRenderAppRail } = useAppRailVisibility();
+  // BARSOUL 2026-09: スマホで本文を下へ読むと上下のクロームを畳む(X アプリ式)。
+  // 状態は <html data-mobile-chrome> 1 本、詳細は mobile-chrome.tsx。
+  useMobileChromeAutoHide();
 
   return (
     <div className="relative flex size-full flex-col overflow-hidden bg-canvas transition-all duration-300 ease-in-out">
-      <TopNavigationRoot />
+      <MobileChrome edge="top" className="z-[27]">
+        <TopNavigationRoot />
+      </MobileChrome>
       <PendingApprovalsTabBadge />
       {/* BARSOUL 2026-08: Service Worker 登録 / 通知タップの遷移 / OS バッジ。描画なし */}
       <WebPushBridge />
@@ -49,7 +55,9 @@ export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper
       </div>
       {/* BARSOUL 2026-08: スマホのみ下部タブバー(+ 作成 FAB)。フレックス列の最後の
           子として置くので position:fixed を使わず、本文を隠さない。 */}
-      <MobileBottomNav />
+      <MobileChrome edge="bottom" className="z-[20]">
+        <MobileBottomNav />
+      </MobileChrome>
     </div>
   );
 });

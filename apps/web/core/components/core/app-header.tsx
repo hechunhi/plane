@@ -10,6 +10,7 @@ import { observer } from "mobx-react";
 import { Row } from "@plane/ui";
 // components
 import { cn } from "@plane/utils";
+import { MOBILE_CHROME_CLASS, useMobileChromeRef } from "@/components/navigation/mobile-chrome";
 import { ExtendedAppHeader } from "@/plane-web/components/common/extended-app-header";
 
 export interface AppHeaderProps {
@@ -21,9 +22,11 @@ export interface AppHeaderProps {
 
 export const AppHeader = observer(function AppHeader(props: AppHeaderProps) {
   const { header, mobileHeader, className, rowClassName } = props;
+  // BARSOUL 2026-09: スマホでは下スクロールで畳まれる(mobile-chrome.tsx)
+  const chromeRef = useMobileChromeRef<HTMLDivElement>();
 
   return (
-    <div className={cn("z-[18]", className)}>
+    <div ref={chromeRef} data-edge="top" className={cn(MOBILE_CHROME_CLASS, "z-[18]", className)}>
       <Row className={cn("flex h-11 w-full items-center gap-2 border-b border-subtle bg-surface-1", rowClassName)}>
         <ExtendedAppHeader header={header} />
         {/* BARSOUL 2026-08: モバイル専用の操作列は、以前はこの行の**下に**もう 1 本の

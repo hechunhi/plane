@@ -404,3 +404,25 @@ em-emoji-picker {
 .smart-glide-panning {
   user-select: none;
 }
+
+/* BARSOUL 2026-09: スマホ「X アプリ式」クローム自動格納。
+   状態源は <html data-mobile-chrome>(components/navigation/mobile-chrome.tsx)。
+   各クローム要素は自分の高さを --mc-h に持ち、hidden のとき負マージンで
+   親の overflow-hidden の外へ滑り出る。position は動かさないので本文の
+   レイアウト計算・ポータル済みメニューには影響しない。 */
+@media (max-width: 767px) {
+  .mobile-chrome {
+    transition: margin 240ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  html[data-mobile-chrome="hidden"] .mobile-chrome[data-edge="top"] {
+    margin-top: calc(-1 * var(--mc-h, 0px));
+  }
+  html[data-mobile-chrome="hidden"] .mobile-chrome[data-edge="bottom"] {
+    margin-bottom: calc(-1 * var(--mc-h, 0px));
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-chrome {
+      transition: none;
+    }
+  }
+}
