@@ -1188,6 +1188,15 @@ export default {
     },
     comments: {
       placeholder: "コメントを追加",
+      // B-20(2026-09-18): 送信は Mod+Enter、Enter は改行(IME 誤送信対策); スマホは簡易バー
+      send: "送信",
+      send_hint: "{mod}+Enter で送信 · Enter は改行",
+      fullscreen: "全画面で書く",
+      exit_fullscreen: "全画面を終了（Esc）",
+      toolbar: {
+        format: "書式",
+        attach: "画像を添付",
+      },
       reply: {
         action: "このコメントに返信",
         cancel: "返信をやめる",

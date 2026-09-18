@@ -5,13 +5,15 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Maximize2, Minimize2, Type } from "lucide-react";
 // plane constants
 import type { EIssueCommentAccessSpecifier } from "@plane/constants";
 // plane imports
 import { LiteTextEditorWithRef } from "@plane/editor";
 import type { EditorRefApi, ILiteTextEditorProps, TFileHandler } from "@plane/editor";
 import { useTranslation } from "@plane/i18n";
+import { Button } from "@plane/propel/button";
+import { Tooltip } from "@plane/propel/tooltip";
 import type { MakeOptional } from "@plane/types";
 import { cn, isCommentEmpty } from "@plane/utils";
 // components
@@ -20,7 +22,9 @@ import { IssueCommentToolbar } from "@/components/editor/lite-text/toolbar";
 // hooks
 import { useEditorConfig, useEditorMention } from "@/hooks/editor";
 import { useMember } from "@/hooks/store/use-member";
+import { useCompactViewport } from "@/hooks/use-compact-viewport";
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
+import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web hooks
 import { useEditorFlagging } from "@/plane-web/hooks/use-editor-flagging";
 // plane web service
@@ -61,7 +65,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   props: LiteTextEditorWrapperProps,
   ref: React.ForwardedRef<EditorRefApi>
 ) {
-  const { t, currentLocale } = useTranslation();
+  const { t } = useTranslation();
   const {
     containerClassName,
     editable,
@@ -100,17 +104,21 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [isFullScreen]);
-  // B-8: 全屏内 Enter=换行(多行撰写), Cmd/Ctrl+Enter=发送; 平时 Enter 仍发送。
-  // 经 enter-key 扩展(回调返 false=不提交); ref 让稳定回调始终读最新值(不重建编辑器)。
+  // B-8 → B-20(2026-09-18 用户点名「输入一半被误发」): 发送键统一为 Cmd/Ctrl+Enter,
+  // Enter 一律换行(全屏与否都一样)。enter-key 扩展现在只绑 Mod-Enter, 这里的回调
+  // 只在 Mod-Enter 时被调用; ref 让稳定回调始终读最新值(不重建编辑器)。
   const onEnterRef = useRef<((e?: unknown) => void) | undefined>(undefined);
   onEnterRef.current = (rest as { onEnterKeyPress?: (e?: unknown) => void }).onEnterKeyPress;
-  const isFullScreenRef = useRef(isFullScreen);
-  isFullScreenRef.current = isFullScreen;
   const handleEnter = useCallback(() => {
-    if (isFullScreenRef.current) return false; // 全屏: 让 Enter 走默认换行
     onEnterRef.current?.();
-    return true; // 平时: 拦截并提交
+    return true;
   }, []);
+  // B-20 移动端: 767px 以下换「紧凑撰写条」(格式开关 / 全屏 / 发送), 完整工具栏按需展开。
+  const isCompact = useCompactViewport();
+  const { platform } = usePlatformOS();
+  const modKey = platform === "MacOS" ? "Cmd" : "Ctrl"; // 文字而非 ⌘ 符号:Windows 出身的人看不懂 ⌘
+  const sendHint = t("issue.comments.send_hint", { mod: modKey });
+  const [showFormatBar, setShowFormatBar] = useState(false);
   // editor flaggings
   const { liteText: liteTextEditorExtensions } = useEditorFlagging({
     workspaceSlug,
@@ -140,8 +148,14 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   // derived values
   const isEmpty = isCommentEmpty(props.initialValue);
 
-  const fsLabel = currentLocale === "ja" ? "全画面で書く" : "全屏编辑";
-  const fsExitLabel = currentLocale === "ja" ? "全画面を終了（Esc）" : "退出全屏（Esc）";
+  const fsLabel = t("issue.comments.fullscreen");
+  const fsExitLabel = t("issue.comments.exit_fullscreen");
+  const toggleFullScreen = () => {
+    setIsFullScreen((f) => !f);
+    setIsFocused(true);
+  };
+  // 桌面完整版: 全屏按钮悬浮在右上角(绝对定位); 移动端: 进紧凑条, 不再压住第一行文字。
+  const showFloatingFullScreenButton = editable && !(isFullVariant && isCompact);
 
   return (
     <div
@@ -154,29 +168,18 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
         // B-7/B-9: 全屏 = 同实例容器升格为 fixed 覆盖层(编辑器实例不变 → 所有能力跟随)。
         // top-12 让出顶栏(z-[27] header)高度避免遮挡第一行; z-[200] 压过面板内元素。
         isFullScreen &&
-          "fixed bottom-0 left-0 right-0 top-12 z-[200] m-0 flex flex-col items-center border-0 bg-surface-1 px-4 py-5 shadow-overlay-300 sm:px-6"
+          "fixed bottom-0 left-0 right-0 top-12 z-[200] m-0 flex flex-col items-center border-0 bg-surface-1 px-4 pt-5 pb-[max(env(safe-area-inset-bottom),1.25rem)] shadow-overlay-300 sm:px-6"
       )}
+      // B-20: 全屏时打标, 让外层(comment-create 根 sticky z-[20])用 has-[] 抬高 z —
+      // 否则移动端底部导航(flex item z-[20], DOM 在后)会盖住撰写条。
+      data-composer-fullscreen={isFullScreen ? "" : undefined}
       onFocus={() => isFullVariant && !showToolbarInitially && setIsFocused(true)}
       onBlur={() => isFullVariant && !showToolbarInitially && setIsFocused(false)}
-      onKeyDown={(e) => {
-        if (!isFullScreen) return;
-        // B-9: 全屏内 Cmd/Ctrl+Enter = 发送; 纯 Enter 阻止冒泡到 comment-create 最外层的
-        // Enter 提交(那条路径绕过了 editor 的 handleEnter)→ 让 editor 正常换行。
-        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-          e.preventDefault();
-          onEnterRef.current?.();
-        } else if (e.key === "Enter") {
-          e.stopPropagation();
-        }
-      }}
     >
-      {editable && (
+      {showFloatingFullScreenButton && (
         <button
           type="button"
-          onClick={() => {
-            setIsFullScreen((f) => !f);
-            setIsFocused(true);
-          }}
+          onClick={toggleFullScreen}
           title={isFullScreen ? fsExitLabel : fsLabel}
           aria-label={isFullScreen ? fsExitLabel : fsLabel}
           className="absolute right-1 top-1 z-[3] grid size-6 place-items-center rounded border-[0.5px] border-subtle bg-surface-1/90 text-tertiary shadow-sm backdrop-blur-sm transition-colors hover:bg-layer-1 hover:text-primary"
@@ -231,7 +234,11 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
               { "p-2": !editable },
               // B-7 自适应高度: 随内容长高, 超 60vh 内部滚动; 全屏时撑满。
               // (评论框已无 bubble menu → overflow 不再裁浮层, 恢复限高滚动)
-              editable && (isFullScreen ? "h-full overflow-y-auto" : "max-h-[60vh] overflow-y-auto")
+              editable && (isFullScreen ? "h-full overflow-y-auto" : "max-h-[60vh] overflow-y-auto"),
+              // B-20: 让出右上角悬浮全屏按钮的位置, 第一行长文不再钻到按钮底下
+              showFloatingFullScreenButton && !isFullScreen && "pr-7",
+              // 移动端软键盘会吃掉一半视口, 限高再收一档
+              editable && isCompact && !isFullScreen && "max-h-[40dvh]"
             )}
             extendedEditorProps={{}}
             editorClassName={editorClassName}
@@ -254,12 +261,15 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
             onSubmit={(e) => rest.onEnterKeyPress?.(e)}
             isSubmitting={isSubmitting}
             isEmpty={isEmpty}
+            sendLabel={t("issue.comments.send")}
+            sendHint={sendHint}
+            attachLabel={t("issue.comments.toolbar.attach")}
           />
         )}
       </div>
 
-      {/* Full Toolbar - conditionally rendered */}
-      {isFullVariant && editable && (
+      {/* Full Toolbar — 桌面: focus 展开的完整工具栏(含发送 + 快捷键提示) */}
+      {isFullVariant && editable && !isCompact && (
         <div
           className={cn(
             "origin-top transition-all duration-300 ease-out",
@@ -291,7 +301,74 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
             editorRef={editorRef}
             showSubmitButton={showSubmitButton}
             submitButtonText={submitButtonText}
+            submitHint={sendHint}
           />
+        </div>
+      )}
+
+      {/* B-20 移动端紧凑撰写条: [格式 | 全屏] ……… [发送]; 完整工具栏只在点了「格式」后展开。
+          之前 15 个图标两排常驻, 手机上占掉输入区一半; 现在默认一行 32px。 */}
+      {isFullVariant && editable && isCompact && (
+        <div className={cn("mt-2 flex flex-col gap-2", isFullScreen && "w-full max-w-3xl shrink-0")}>
+          {showFormatBar && (
+            <IssueCommentToolbar
+              accessSpecifier={accessSpecifier}
+              executeCommand={(item) => {
+                // @ts-expect-error type mismatch here
+                editorRef?.executeMenuItemCommand({
+                  itemKey: item.itemKey,
+                  ...item.extraProps,
+                });
+              }}
+              handleAccessChange={handleAccessChange}
+              handleSubmit={(e) => rest.onEnterKeyPress?.(e)}
+              isCommentEmpty={isEmpty}
+              isSubmitting={isSubmitting}
+              showAccessSpecifier={showAccessSpecifier}
+              editorRef={editorRef}
+              showSubmitButton={false}
+              submitButtonText={submitButtonText}
+            />
+          )}
+          <div className="flex items-center gap-1">
+            <Tooltip tooltipContent={t("issue.comments.toolbar.format")}>
+              <button
+                type="button"
+                aria-label={t("issue.comments.toolbar.format")}
+                aria-pressed={showFormatBar}
+                onClick={() => setShowFormatBar((v) => !v)}
+                className={cn(
+                  "grid size-8 place-items-center rounded-sm border-[0.5px] border-subtle text-tertiary transition-colors hover:bg-layer-1 hover:text-primary",
+                  showFormatBar && "bg-layer-1 text-accent-primary"
+                )}
+              >
+                <Type className="size-4" strokeWidth={2} />
+              </button>
+            </Tooltip>
+            <Tooltip tooltipContent={isFullScreen ? fsExitLabel : fsLabel}>
+              <button
+                type="button"
+                aria-label={isFullScreen ? fsExitLabel : fsLabel}
+                onClick={toggleFullScreen}
+                className="grid size-8 place-items-center rounded-sm border-[0.5px] border-subtle text-tertiary transition-colors hover:bg-layer-1 hover:text-primary"
+              >
+                {isFullScreen ? <Minimize2 className="size-4" strokeWidth={2} /> : <Maximize2 className="size-4" strokeWidth={2} />}
+              </button>
+            </Tooltip>
+            <div className="flex-1" />
+            {showSubmitButton && (
+              <Button
+                type="button"
+                variant="primary"
+                className="h-8 px-3 text-11"
+                onClick={(e) => rest.onEnterKeyPress?.(e)}
+                disabled={isEmpty || !editorRef?.isEditorReadyToDiscard()}
+                loading={isSubmitting}
+              >
+                {t(submitButtonText)}
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>

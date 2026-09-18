@@ -18,6 +18,7 @@ import type { TCommentsOperations, TIssueComment } from "@plane/types";
 import { calculateTimeAgo, cn, getFileURL, renderFormattedDate, renderFormattedTime } from "@plane/utils";
 // components
 import { LiteTextEditor } from "@/components/editor/lite-text";
+import { detectSrc } from "@/components/issues/translate/issue-field-translate";
 // local imports
 import { CommentReactions } from "../comment-reaction";
 import { CommentCardEditForm } from "./edit-form";
@@ -34,50 +35,8 @@ import { useMember } from "@/hooks/store/use-member";
 //    旧は AI 自身を除外していたが、爱酱の回答(中/日)は実コンテンツで、読者言語が
 //    違えば訳が要る。表示翻訳は派生キャッシュ書込のみ(新規コメント生成なし)→ ループ無し。
 
-// 文字種探知 → 起点言語推定(2026-05-27 比率ベース修正)
-// 旧: 任意 1 文字でも假名なら ja 判定 → 中文 95% + 日文名 5% でも ja 誤判
-// → ja→zh 翻訳要求 → LLM 中文 rephrasing でゴミ翻訳出力. (実例 BS-127
-// 「李美京小姐的合同...そうさん的公司」)
-// 新: 假名 / 漢字 比率で判定. 假名 ≥ 20% → 純粋日文. 純粋中文には假名はゼロ
-// な前提を活用、混在テキストも多数派側に倒す.
-const HK_RE_G = /[぀-ゟ゠-ヿ]/g;
-const HAN_RE_G = /[一-鿿]/g;
-// BARSOUL 2026-06-05 (hechun, BS-226): 混合言語判定。中文母语者が中文コメントに
-// 日本サイト(MonotaRO 等)の日文素材を貼ると、素材ブロックの假名密度で全体比率が
-// 0.2 を超え(実測 0.207)、地の文は中文なのに ja 誤判 → 「翻訳元 日語」表示 +
-// 訳方向が狂う。比率では混合を取れない。中日"専属"記号の共存で混合を検出し、
-// 地の文(主体)の言語を src とする。バックエンド _is_mixed_cn_ja と対称。
-const KANA_STRICT_G = /[ぁ-ゟァ-ヺ]/g; // 中日共用の ・(30FB) ー(30FC) を除外
-// BS-226 第3波 (2026-06-05 hechun, 回帰修正): 第2波の字集合に「在/会/当/和/示」等
-// 中日共通漢字が混入 → 純日文メール(在庫/会社/担当/和風/教示)が混合誤判。
-// → 日文が繁体/異体で書く【简体字専属】字だけに厳選(在会当和示是有為要能 は除外)。
-// バックエンド _is_mixed_cn_ja と同字種・同閾値。
-const CN_CHARS_G = /[们给让报对问关优现务应单这东车书长门说请帮过还没钱样亿仅从仓职业图]/g;
-// BARSOUL 2026-07-09 (hechun, BS-369): 助詞(が/は/を/に/で/と/の/も/か)。漢字語
-// だらけの短い日文コメント(業務連絡等)は kana 比率が 0.2 を割り込み zh 誤判 →
-// 訳方向が狂う。バックエンド _detect_src / issue-field-translate.tsx と対称に、
-// 助詞 2 個以上で比率を待たず ja 確定する。
-const JA_PARTICLE_G = /[がはをにでとのもか]/g;
-function isMixedCnJa(text: string): boolean {
-  const kana = (text.match(KANA_STRICT_G) || []).length;
-  if (kana < 6) return false; // 日文素材が薄い → 従来判定でよい
-  const cnChars = (text.match(CN_CHARS_G) || []).length;
-  return cnChars >= 2; // 中文の地の文(简体专属字>=2) + 実質日文 = 混合
-}
-function detectSrc(text: string): "ja" | "zh" | null {
-  // 混合(中文地の文 + 日文素材)は地の文=中文 → src=zh(「翻訳元」も訳方向も
-  // 中文起点に。読み手が日本人なら zh→ja で日本語化される)。
-  if (isMixedCnJa(text)) return "zh";
-  if ((text.match(JA_PARTICLE_G) || []).length >= 2) return "ja";
-  const kana = (text.match(HK_RE_G) || []).length;
-  const han = (text.match(HAN_RE_G) || []).length;
-  const total = kana + han;
-  if (total === 0) return null;
-  // 假名比率 ≥ 20% → 日文(純粋日文は 30-50%、中文は 0%、閾値 20% で安全分離)
-  if (kana / total >= 0.2) return "ja";
-  if (han > 0) return "zh";
-  return null;
-}
+// 文字種探知 → 起点言語推定: issues/translate/issue-field-translate.tsx の detectSrc を
+// import(2026-09-18 まで此処に複製があり、字形シグナル追加時に分岐する危険があった)。
 // 翻訳元アイコン(X の "⌀" 相当のミニ globe)。
 // BARSOUL: UI アイコンは lucide 統一(手書き SVG 撤去)。
 const TranslateGlyph = () => <Globe className="size-[11px] shrink-0 opacity-70" strokeWidth={2} aria-hidden />;
@@ -320,7 +279,7 @@ function CommentTranslatable(props: {
           workspaceSlug={workspaceSlug}
           containerClassName="!py-1"
           projectId={projectId?.toString()}
-          displayConfig={{ fontSize: "small-font" }}
+          displayConfig={{ fontSize: "small-font", lineSpacing: "small" }}
           parentClassName="border-none"
         />
       )}
@@ -505,6 +464,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
               projectId={projectId?.toString()}
               displayConfig={{
                 fontSize: "small-font",
+                lineSpacing: "small",
               }}
               parentClassName="border-none"
             />

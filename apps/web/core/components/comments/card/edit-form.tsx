@@ -75,11 +75,8 @@ export const CommentCardEditForm = observer(function CommentCardEditForm(props: 
 
   return (
     <form className="flex flex-col gap-2">
-      <div
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !isEmpty) handleSubmit(onEnter)(e);
-        }}
-      >
+      {/* B-20: 去掉 React 层 Enter→保存旁路(IME 误发真凶), 保存走编辑器内 Mod-Enter 或 ✓ 按钮 */}
+      <div>
         <LiteTextEditor
           editable
           workspaceId={workspaceId}
@@ -107,6 +104,7 @@ export const CommentCardEditForm = observer(function CommentCardEditForm(props: 
           parentClassName="p-2 bg-surface-1"
           displayConfig={{
             fontSize: "small-font",
+            lineSpacing: "small",
           }}
         />
       </div>

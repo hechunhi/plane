@@ -219,21 +219,14 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   return (
     <div
       ref={rootRef}
-      className={cn("sticky bottom-0 z-[20] bg-surface-1 sm:relative")}
+      // B-20: 全屏撰写时 z 抬到 30, 压过移动端底部导航(z-[20]); 平时保持 20(见下方说明)
+      className={cn("sticky bottom-0 z-[20] bg-surface-1 has-[[data-composer-fullscreen]]:z-[30] sm:relative")}
       role="presentation"
-      onKeyDown={(e) => {
-        if (
-          e.key === "Enter" &&
-          !e.shiftKey &&
-          !e.ctrlKey &&
-          !e.metaKey &&
-          !isEmpty &&
-          !isSubmitting &&
-          editorRef.current?.isEditorReadyToDiscard()
-        )
-          handleSubmit(onSubmit)(e);
-      }}
     >
+      {/* B-20(2026-09-18): 这里原有一条 React onKeyDown Enter→提交的旁路, 它不认 IME
+          组合状态(Safari 在 compositionend 后还会补一发 keyCode 229 的 Enter), 是
+          「中/日文输入法选字回车把半截评论发出去」的真凶。发送统一走编辑器内的
+          Mod-Enter(enter-key 扩展, ProseMirror 天然跳过组合中的按键), 此处不再监听。 */}
       {/* BARSOUL B-2p v2: 発起審査ボタンは快捷动作行(IssueDetailWidgetActionButtons)へ移設 — 動作入口の統一(用户点名) */}
 
       {/* BARSOUL 私聊: コメント欄と **入れ替える**。入力欄が同時に二つ出ないので
@@ -346,6 +339,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                   parentClassName="p-2"
                   displayConfig={{
                     fontSize: "small-font",
+                    lineSpacing: "small",
                   }}
                 />
               )}

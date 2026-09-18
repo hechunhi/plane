@@ -35,6 +35,8 @@ type Props = {
   showSubmitButton: boolean;
   editorRef: EditorRefApi | null;
   submitButtonText?: string;
+  /** B-20: 发送键提示(「⌘+Enter 发送 · Enter 换行」), 显示在发送按钮左侧 */
+  submitHint?: string;
 };
 
 type TCommentAccessType = {
@@ -278,6 +280,7 @@ export function IssueCommentToolbar(props: Props) {
     showSubmitButton,
     editorRef,
     submitButtonText = "common.comment",
+  submitHint,
   } = props;
   // State to manage active states of toolbar items
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
@@ -389,7 +392,10 @@ export function IssueCommentToolbar(props: Props) {
           </div>
         </div>
         {showSubmitButton && (
-          <div className="sticky right-1">
+          <div className="sticky right-1 flex shrink-0 items-center gap-2">
+            {submitHint && (
+              <kbd className="whitespace-nowrap font-sans text-11 text-placeholder max-lg:hidden">{submitHint}</kbd>
+            )}
             <Button
               type="submit"
               variant="primary"

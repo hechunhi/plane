@@ -219,7 +219,8 @@ export function AichanChatPanel(props: Props) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            // B-20: Safari 在 compositionend 之后还会补一发 keyCode 229 的 Enter(isComposing 已 false), 一并挡掉
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) {
               e.preventDefault();
               submit();
             }

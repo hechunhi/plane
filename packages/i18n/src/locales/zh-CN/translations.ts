@@ -1174,6 +1174,15 @@ export default {
     },
     comments: {
       placeholder: "添加评论",
+      // B-20(2026-09-18): 发送=Mod+Enter, Enter=换行(防输入法误发); 手机端紧凑撰写条
+      send: "发送",
+      send_hint: "{mod}+Enter 发送 · Enter 换行",
+      fullscreen: "全屏编辑",
+      exit_fullscreen: "退出全屏（Esc）",
+      toolbar: {
+        format: "格式",
+        attach: "附加图片",
+      },
       reply: {
         action: "回复这条评论",
         cancel: "取消回复",

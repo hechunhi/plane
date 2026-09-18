@@ -1173,6 +1173,15 @@ export default {
     },
     comments: {
       placeholder: "新增留言",
+      // B-20(2026-09-18): 送出=Mod+Enter, Enter=換行(防輸入法誤送); 手機端精簡撰寫列
+      send: "送出",
+      send_hint: "{mod}+Enter 送出 · Enter 換行",
+      fullscreen: "全螢幕編輯",
+      exit_fullscreen: "退出全螢幕（Esc）",
+      toolbar: {
+        format: "格式",
+        attach: "附加圖片",
+      },
       reply: {
         action: "回覆這則留言",
         cancel: "取消回覆",

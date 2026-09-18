@@ -894,6 +894,15 @@ export default {
     },
     comments: {
       placeholder: "Add comment",
+      // B-20(2026-09-18): send key = Mod+Enter, Enter = newline (IME-safe); compact composer bar on phones
+      send: "Send",
+      send_hint: "{mod}+Enter to send · Enter for a new line",
+      fullscreen: "Write full screen",
+      exit_fullscreen: "Exit full screen (Esc)",
+      toolbar: {
+        format: "Formatting",
+        attach: "Attach image",
+      },
       reply: {
         action: "Reply to this comment",
         cancel: "Cancel reply",

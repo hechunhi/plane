@@ -15,14 +15,28 @@ type LiteToolbarProps = {
   isSubmitting: boolean;
   isEmpty: boolean;
   executeCommand: (item: ToolbarMenuItem) => void;
+  sendLabel?: string;
+  sendHint?: string;
+  attachLabel?: string;
 };
 
-export function LiteToolbar({ onSubmit, isSubmitting, isEmpty, executeCommand }: LiteToolbarProps) {
+export function LiteToolbar({
+  onSubmit,
+  isSubmitting,
+  isEmpty,
+  executeCommand,
+  sendLabel,
+  sendHint,
+  attachLabel,
+}: LiteToolbarProps) {
+  const sendTitle = [sendLabel, sendHint].filter(Boolean).join(" · ");
   return (
     <div className="flex items-center gap-2 pb-1">
       <button
         onClick={() => executeCommand(IMAGE_ITEM)}
         type="button"
+        title={attachLabel}
+        aria-label={attachLabel}
         className="p-1 text-tertiary transition-colors hover:text-secondary"
       >
         <Paperclip className="size-3" />
@@ -31,6 +45,8 @@ export function LiteToolbar({ onSubmit, isSubmitting, isEmpty, executeCommand }:
         type="button"
         onClick={(e) => onSubmit(e)}
         disabled={isEmpty || isSubmitting}
+        title={sendTitle || undefined}
+        aria-label={sendLabel}
         className="rounded-sm bg-accent-primary p-1 text-primary transition-colors hover:bg-accent-primary/80 disabled:bg-layer-1 disabled:text-secondary"
       >
         <ArrowUp className="size-3" />
