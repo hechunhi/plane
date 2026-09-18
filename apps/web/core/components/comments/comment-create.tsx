@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { observer } from "mobx-react";
 import { useForm, Controller } from "react-hook-form";
-import { CornerUpLeft, X } from "lucide-react";
+import { CornerUpLeft, MessageSquare, X } from "lucide-react";
 // plane imports
 import { EIssueCommentAccessSpecifier } from "@plane/constants";
 import { COMMENT_INTENT_EVENT, buildCommentSlashOptions } from "@plane/editor";
@@ -38,7 +38,33 @@ type TCommentCreate = {
   onSubmitCallback?: (elementId: string) => void;
   /** BARSOUL: 私聊パネルの「読んでいる文脈」表示用(任意)。 */
   entityTitle?: string;
+  /**
+   * B-21: 入力欄が一覧のどちら側にあるか。"bottom"(既定, 古い順)なら展開時に一覧を
+   * 末尾までスクロールして直近のコメントを入力欄の真上に出す; "top"(新しい順)なら
+   * 最新は既に入力欄の隣にあるのでスクロールしない。
+   */
+  placement?: "top" | "bottom";
 };
+
+/**
+ * B-21(2026-09-18 hechun「評論框使用其实非常高频」): 入力欄は三段階で大きくなる。
+ *   ① 収納 = 一行の細い帯(常に画面下端に張り付く。長い活動一覧の底まで探しに行かない)
+ *   ② 半画面 = 帯を押すと開く。エディタ min-h 40vh + ツールバー ≒ 画面の半分
+ *   ③ 全画面 = 半画面の右上ボタン(既存 B-7)
+ * 自動で ① に戻るのは **中身が空のとき** だけ(Esc / 一覧側をクリック / 送信直後)。
+ * 下書きがある限り勝手に畳まない —— 書きかけを隠すのは記事帳に逃げられる原因になる。
+ */
+const getScrollParent = (el: HTMLElement | null): HTMLElement | null => {
+  let node = el?.parentElement ?? null;
+  while (node) {
+    const { overflowY } = getComputedStyle(node);
+    if (/(auto|scroll)/.test(overflowY) && node.scrollHeight > node.clientHeight) return node;
+    node = node.parentElement;
+  }
+  return null;
+};
+// ポータルに出る浮層(ツールバーの T ドロップダウン / メンション / ダイアログ)は「外側クリック」扱いにしない
+const POPOVER_SELECTOR = '[role="menu"],[role="listbox"],[role="dialog"],[data-radix-popper-content-wrapper],.tippy-box';
 
 /**
  * BARSOUL(2026-07-25 hechun「審査を一等市民に」): コメント欄スラッシュ命令の受け皿。
@@ -66,6 +92,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     projectId,
     onSubmitCallback,
     entityTitle,
+    placement = "bottom",
   } = props;
   const { t } = useTranslation();
   // BARSOUL: 今どのコメントに返そうとしているか(カードの返信ボタンから来る)。
@@ -93,6 +120,15 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       return "<p></p>";
     }
   });
+  // B-21 三段階: 下書きが残っていれば最初から半画面(書きかけを隠さない)
+  const [expanded, setExpanded] = useState(initialDraft !== "<p></p>");
+  // 展開が「人の操作」で起きたときだけフォーカス+スクロールする(下書き復元での自動展開では
+  // 課題を開いた瞬間に入力欄へ飛ばされてしまう)。
+  const pendingFocus = useRef(false);
+  const expand = useCallback(() => {
+    pendingFocus.current = true;
+    setExpanded(true);
+  }, []);
   // form info
   const {
     handleSubmit,
@@ -139,6 +175,8 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
         comment_html: "<p></p>",
       });
       editorRef.current?.clearEditor();
+      // B-21: 送信したら帯に戻す(直近のコメント = 自分の投稿が入力欄の真上に見える)
+      setExpanded(false);
     }
   };
 
@@ -167,10 +205,46 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
 
   // BARSOUL: 返信ボタンを押したら入力欄まで連れて行って、そのまま打てる状態にする
   //   (返信先を選んだのに画面のどこかで入力欄を探す、が起きない)。
+  //   B-21: 帯の状態なら先に半画面へ。引用しているコメントを見ながら書けるよう、一覧は
+  //   スクロールしない(expand 経由ではなく直接 setExpanded)。
   useEffect(() => {
     if (!replyToId) return;
-    editorRef.current?.focus("end", { scrollIntoView: true });
+    setExpanded(true);
+    const raf = requestAnimationFrame(() => editorRef.current?.focus("end", { scrollIntoView: false }));
+    return () => cancelAnimationFrame(raf);
   }, [replyToId]);
+
+  // B-21: 帯 → 半画面(人の操作)。フォーカスを入れ、"bottom" 配置なら一覧を末尾まで送る。
+  useEffect(() => {
+    if (!expanded || !pendingFocus.current) return;
+    pendingFocus.current = false;
+    const raf = requestAnimationFrame(() => {
+      editorRef.current?.focus("end", { scrollIntoView: false });
+      if (placement !== "bottom") return;
+      const sp = getScrollParent(rootRef.current);
+      sp?.scrollTo({ top: sp.scrollHeight, behavior: "smooth" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [expanded, placement]);
+
+  // B-21: 空のまま一覧側(同じスクロール容器の中で入力欄の外)を押したら帯に戻す。
+  //   ポータル浮層(T ドロップダウン / メンション候補 / ダイアログ)と容器の外(サイド
+  //   バー等)は対象外 —— 「一覧を読みに行った」クリックだけを畳む合図にする。
+  const collapseArmed = expanded && isEmpty && !replyToId && !isSubmitting;
+  useEffect(() => {
+    if (!collapseArmed) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const root = rootRef.current;
+      const target = e.target as HTMLElement | null;
+      if (!root || !target || root.contains(target)) return;
+      if (target.closest(POPOVER_SELECTOR)) return;
+      const sp = getScrollParent(root);
+      if (sp && !sp.contains(target)) return;
+      setExpanded(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [collapseArmed]);
 
   // 意図イベントはエディタ DOM から冒泡してくる。この受け皿が張られている
   // コンテナ = そのコメント欄の課題 —— DOM の入れ子がそのままスコープになるので
@@ -220,8 +294,16 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     <div
       ref={rootRef}
       // B-20: 全屏撰写时 z 抬到 30, 压过移动端底部导航(z-[20]); 平时保持 20(见下方说明)
-      className={cn("sticky bottom-0 z-[20] bg-surface-1 has-[[data-composer-fullscreen]]:z-[30] sm:relative")}
+      // B-21: 桌面も sticky(旧 sm:relative は「常時大きな入力欄が内容を隠す」対策だったが、
+      //   帯に畳めるようになったので不要)。z の理屈は上の 2026-06-15 注記のまま。
+      className={cn("sticky bottom-0 z-[20] bg-surface-1 has-[[data-composer-fullscreen]]:z-[30]")}
       role="presentation"
+      onKeyDown={(e) => {
+        // Esc: 空なら帯へ(全画面中はエディタ側が全画面解除を担当するので二段跳びしない)
+        if (e.key !== "Escape" || e.nativeEvent.isComposing) return;
+        if (rootRef.current?.querySelector("[data-composer-fullscreen]")) return;
+        if (collapseArmed) setExpanded(false);
+      }}
     >
       {/* B-20(2026-09-18): 这里原有一条 React onKeyDown Enter→提交的旁路, 它不认 IME
           组合状态(Safari 在 compositionend 后还会补一发 keyCode 229 的 Enter), 是
@@ -263,7 +345,20 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
         />
       )}
 
-      <div className={cn(isChatOpen && "hidden")}>
+      {/* B-21 ① 収納帯。押すと半画面。エディタは下で hidden のまま生かしておく
+          (アップロード途中 / undo 履歴 / 実例を捨てない)。 */}
+      {!isChatOpen && !expanded && (
+        <button
+          type="button"
+          onClick={expand}
+          className="flex w-full items-center gap-2 rounded-sm border border-subtle bg-surface-1 px-3 py-2 text-left text-13 text-placeholder transition-colors hover:border-strong hover:text-tertiary"
+        >
+          <MessageSquare className="size-4 shrink-0" strokeWidth={2} />
+          <span className="min-w-0 flex-1 truncate">{t("issue.comments.placeholder")}</span>
+        </button>
+      )}
+
+      <div className={cn((isChatOpen || !expanded) && "hidden")}>
         {/* BARSOUL: 「今これに返している」帯。カード上端の引用行と同じ字面
             (useCommentQuotePreview 共用) なので、投稿前と投稿後で見え方が変わらない。 */}
         {replyToId && (
@@ -310,7 +405,10 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                   }}
                   ref={editorRef}
                   initialValue={value ?? "<p></p>"}
-                  containerClassName="min-h-min"
+                  // B-21 ② 半画面: エディタ本体 40vh + ツールバー ≒ 画面の半分。
+                  //   スマホは 40dvh 上限(editor.tsx)と併せて固定高になる。
+                  containerClassName="min-h-[40vh]"
+                  isCollapsed={!expanded}
                   commentCommands={commentCommands}
                   onChange={(comment_json, comment_html) => {
                     onChange(comment_html);

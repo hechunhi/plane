@@ -50,6 +50,9 @@ type LiteTextEditorWrapperProps = MakeOptional<
   parentClassName?: string;
   editorClassName?: string;
   submitButtonText?: string;
+  // B-21: 親が入力欄を畳んだ(帯に戻した)合図。全画面のまま送信 → 帯 → 次に開いたら
+  //   いきなり全画面、を防ぐため、畳まれたら全画面状態を捨てる。
+  isCollapsed?: boolean;
 } & (
     | {
         editable: false;
@@ -86,6 +89,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
     editorClassName = "",
     showPlaceholderOnEmpty = true,
     submitButtonText = "common.comment",
+    isCollapsed = false,
     ...rest
   } = props;
   // states
@@ -96,6 +100,9 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
   // BARSOUL B-7(评论框易用性): 全屏撰写 — 同实例 CSS 全屏(容器升格为 fixed 覆盖层,
   // 编辑器实例不变 → editorRef / bubble menu / @提及 / 图片 / 草稿全部零成本跟随)。
   const [isFullScreen, setIsFullScreen] = useState(false);
+  useEffect(() => {
+    if (isCollapsed) setIsFullScreen(false);
+  }, [isCollapsed]);
   useEffect(() => {
     if (!isFullScreen) return;
     const onKey = (e: KeyboardEvent) => {

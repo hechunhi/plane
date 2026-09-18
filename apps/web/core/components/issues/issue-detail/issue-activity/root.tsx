@@ -126,9 +126,11 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
         projectId={projectId}
         // BARSOUL: 愛ちゃん私聊パネルが「何を読んだ上で答えているか」を明示するためだけに渡す。
         entityTitle={issue?.name}
+        // B-21: 新しい順のときは入力欄が一覧の上にあるので、展開時に末尾へ送らない
+        placement={sortOrder === E_SORT_ORDER.DESC ? "top" : "bottom"}
       />
     ),
-    [workspaceSlug, issueId, activityOperations, projectId, issue?.name]
+    [workspaceSlug, issueId, activityOperations, projectId, issue?.name, sortOrder]
   );
   if (!project) return <></>;
 
