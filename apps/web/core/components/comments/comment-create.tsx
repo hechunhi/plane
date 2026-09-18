@@ -339,7 +339,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                   parentClassName="p-2"
                   displayConfig={{
                     fontSize: "small-font",
-                    lineSpacing: "small",
+                    lineSpacing: "compact",
                   }}
                 />
               )}

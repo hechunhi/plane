@@ -279,7 +279,7 @@ function CommentTranslatable(props: {
           workspaceSlug={workspaceSlug}
           containerClassName="!py-1"
           projectId={projectId?.toString()}
-          displayConfig={{ fontSize: "small-font", lineSpacing: "small" }}
+          displayConfig={{ fontSize: "small-font", lineSpacing: "compact" }}
           parentClassName="border-none"
         />
       )}
@@ -464,7 +464,7 @@ export const CommentCardDisplay = observer(function CommentCardDisplay(props: TC
               projectId={projectId?.toString()}
               displayConfig={{
                 fontSize: "small-font",
-                lineSpacing: "small",
+                lineSpacing: "compact",
               }}
               parentClassName="border-none"
             />

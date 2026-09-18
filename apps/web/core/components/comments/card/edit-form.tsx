@@ -104,7 +104,7 @@ export const CommentCardEditForm = observer(function CommentCardEditForm(props: 
           parentClassName="p-2 bg-surface-1"
           displayConfig={{
             fontSize: "small-font",
-            lineSpacing: "small",
+            lineSpacing: "compact",
           }}
         />
       </div>

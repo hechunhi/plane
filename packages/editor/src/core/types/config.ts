@@ -30,7 +30,7 @@ export type TEditorFontStyle = "sans-serif" | "serif" | "monospace";
 
 export type TEditorFontSize = "small-font" | "large-font" | "mobile-font";
 
-export type TEditorLineSpacing = "regular" | "small" | "mobile-regular";
+export type TEditorLineSpacing = "regular" | "small" | "compact" | "mobile-regular";
 
 export type TDisplayConfig = {
   fontStyle?: TEditorFontStyle;
