@@ -426,3 +426,33 @@ em-emoji-picker {
     }
   }
 }
+
+/* BARSOUL 2026-09-18: スマホを「アプリ」として成立させる 3 点。
+   ① iOS Safari は 16px 未満の入力欄にフォーカスすると自動ズームし、戻らない
+      (=「横スクロールが出た」の正体)。viewport の maximum-scale で潰すと
+      ピンチ拡大まで死ぬので、入力欄の方を 16px 以上にする。エディタ本体は
+      packages/editor variables.css の同趣旨ブロック。
+   ② overscroll-behavior: none — 端で引っ張った時のゴム/引っ張って更新を止める。
+   ③ touch-action: manipulation — ダブルタップ拡大を止め、タップ判定の 300ms 待ちも消す。
+      ピンチ拡大はそのまま生きる(manipulation = pan + pinch-zoom)。 */
+@media (max-width: 767px) {
+  html {
+    overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    touch-action: manipulation;
+  }
+  /* 入力欄は 16px 未満にしない。ただし text-20 のタイトル欄など大きい指定は触らない。
+     Tailwind utilities レイヤーよりこの無レイヤー宣言が勝つので、大きい utility を除外列挙する。
+     :where() で詳細度を (0,0,1) に抑え、後段の小 utility 明示ルールが勝てるようにする。 */
+  :is(input, select, textarea):where(
+    :not([type="checkbox"], [type="radio"], [type="range"], [type="file"],
+         .text-16, .text-18, .text-20, .text-24, .text-base, .text-lg, .text-xl, .text-2xl, [class*="text-["])
+  ) {
+    font-size: max(16px, 1em);
+  }
+  :is(input, select, textarea):where(.text-10, .text-11, .text-12, .text-13, .text-14, .text-15, .text-xs, .text-sm) {
+    font-size: 16px;
+  }
+}

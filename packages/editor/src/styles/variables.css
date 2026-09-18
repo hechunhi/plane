@@ -87,6 +87,22 @@
     --line-height-regular: 1.2rem;
     --line-height-code: 1.2rem;
     --line-height-list: var(--line-height-regular);
+
+    /* BARSOUL 2026-09-18: iOS Safari は font-size < 16px の編集領域にフォーカスすると
+       ページ全体を自動ズームする(戻らない・横にパンできる = 「横スクロールが出た」)。
+       スマホ幅の「編集できる」小字エディタだけ本文を 16px に上げる。表示専用
+       (contenteditable=false)のコメント本文は据え置き。 */
+    @media (max-width: 767px) {
+      &:has(.ProseMirror[contenteditable="true"]) {
+        --font-size-h4: 1.1rem;
+        --font-size-h5: 1.05rem;
+        --font-size-h6: 1rem;
+        --font-size-regular: 1rem;
+        --font-size-code: 0.9rem;
+        --line-height-regular: 1.4rem;
+        --line-height-code: 1.4rem;
+      }
+    }
   }
 
   &.mobile-font {
