@@ -203,15 +203,23 @@ export function IssueFieldTranslate(props: Props) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fetchedRef = useRef(false);
+  // BARSOUL 2026-09-28: 「本文を書いている途中で突然まっさらな編集器に戻る」バグ対策。
+  // ① ここで書き換わった原文(=本人が今書いている)には訳文を自動で被せない。
+  //    外国語で書き始めた人の編集器が、自動保存の 1.5s 後に只読訳文へすり替わっていた。
+  //    判定=原文が変わった瞬間にフォーカスがこの原文側にある。他人の realtime 編集は該当しない。
+  const originalRef = useRef<HTMLDivElement>(null);
+  const [editedHere, setEditedHere] = useState(false);
+  useEffect(() => setEditedHere(false), [issueId]);
 
   // 原文編集(内容指纹変化)→ 訳キャッシュ無効化 + 再取得許可。
   useEffect(() => {
     fetchedRef.current = false;
     setTrContent(null);
     setErrorMsg(null);
+    if (typeof document !== "undefined" && originalRef.current?.contains(document.activeElement)) setEditedHere(true);
   }, [raw]);
 
-  const showOriginalEff = override !== null ? override : isSelf ? true : !autoPref;
+  const showOriginalEff = override !== null ? override : isSelf || editedHere ? true : !autoPref;
   const wantTranslation = canTranslate && !showOriginalEff;
 
   const doFetch = useCallback(
@@ -246,10 +254,15 @@ export function IssueFieldTranslate(props: Props) {
     if (wantTranslation && !trContent && !fetchedRef.current) doFetch();
   }, [wantTranslation, trContent, doFetch]);
 
-  if (!canTranslate) return <>{children}</>;
-
-  const tgtName = LANG_NAME[target][viewer];
-  const srcName = LANG_NAME[src!][viewer];
+  // ② 【DOM 構造は常に同一】。以前は翻訳不可(空/語種未判定)のとき `<>{children}</>`、
+  //    可能になると `<div>…<div>{children}</div></div>` を返していた。新規カードで本文を
+  //    書く → 自動保存で source が空→日/中に変わる → 親の要素型が変わり React が children
+  //    (tiptap 編集器)を unmount→mount。再 mount 時の initialValue はまだ古い "<p></p>"
+  //    なので画面は空白に戻り、続けて打つとその空白起点の内容で保存を上書きしていた。
+  //    翻訳可否で変えてよいのは操作行の「中身」だけ。操作行は高さも予約し、途中で
+  //    出現して編集器が 20px 跳ねることもないようにする。
+  const tgtName = canTranslate ? LANG_NAME[target][viewer] : "";
+  const srcName = canTranslate ? LANG_NAME[src!][viewer] : "";
   const L =
     viewer === "zh"
       ? {
@@ -273,7 +286,10 @@ export function IssueFieldTranslate(props: Props) {
 
   return (
     <div>
-      <div className={`mb-1 flex items-center gap-1.5 text-[11px] text-tertiary ${barClassName ?? ""}`}>
+      <div
+        aria-hidden={!canTranslate || undefined}
+        className={`mb-1 flex h-4 items-center gap-1.5 text-[11px] text-tertiary ${canTranslate ? "" : "invisible"} ${barClassName ?? ""}`}
+      >
         <TranslateGlyph />
         {loading ? (
           <span className="inline-flex items-center gap-1">
@@ -314,7 +330,9 @@ export function IssueFieldTranslate(props: Props) {
       </div>
 
       {showingTranslation && trContent != null && renderTranslated(trContent)}
-      <div className={showingTranslation ? "hidden" : "block"}>{children}</div>
+      <div ref={originalRef} className={showingTranslation ? "hidden" : "block"}>
+        {children}
+      </div>
 
       {errorMsg && !loading && (
         <div className="mt-1 flex items-center gap-2 text-[11px] text-tertiary">
