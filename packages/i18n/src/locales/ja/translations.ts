@@ -1193,6 +1193,9 @@ export default {
       send_hint: "{mod}+Enter で送信 · Enter は改行",
       fullscreen: "全画面で書く",
       exit_fullscreen: "全画面を終了（Esc）",
+      collapse: "畳む",
+      draft: "下書き",
+      resize: "ドラッグで高さを調整（ダブルクリックで既定に戻す）",
       toolbar: {
         format: "書式",
         attach: "画像を添付",

@@ -1178,6 +1178,9 @@ export default {
       send_hint: "{mod}+Enter 送出 · Enter 換行",
       fullscreen: "全螢幕編輯",
       exit_fullscreen: "退出全螢幕（Esc）",
+      collapse: "收合",
+      draft: "草稿",
+      resize: "拖曳調整高度（雙擊恢復預設）",
       toolbar: {
         format: "格式",
         attach: "附加圖片",

@@ -899,6 +899,9 @@ export default {
       send_hint: "{mod}+Enter to send · Enter for a new line",
       fullscreen: "Write full screen",
       exit_fullscreen: "Exit full screen (Esc)",
+      collapse: "Collapse",
+      draft: "Draft",
+      resize: "Drag to resize (double-click to reset)",
       toolbar: {
         format: "Formatting",
         attach: "Attach image",

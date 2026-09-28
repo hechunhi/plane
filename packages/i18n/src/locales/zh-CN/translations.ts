@@ -1179,6 +1179,9 @@ export default {
       send_hint: "{mod}+Enter 发送 · Enter 换行",
       fullscreen: "全屏编辑",
       exit_fullscreen: "退出全屏（Esc）",
+      collapse: "收起",
+      draft: "草稿",
+      resize: "拖动调整高度（双击恢复默认）",
       toolbar: {
         format: "格式",
         attach: "附加图片",

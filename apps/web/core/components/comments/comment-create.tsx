@@ -5,9 +5,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { observer } from "mobx-react";
 import { useForm, Controller } from "react-hook-form";
-import { CornerUpLeft, MessageSquare, X } from "lucide-react";
+import { CornerUpLeft, GripHorizontal, MessageSquare, X } from "lucide-react";
 // plane imports
 import { EIssueCommentAccessSpecifier } from "@plane/constants";
 import { COMMENT_INTENT_EVENT, buildCommentSlashOptions } from "@plane/editor";
@@ -62,6 +63,19 @@ const getScrollParent = (el: HTMLElement | null): HTMLElement | null => {
     node = node.parentElement;
   }
   return null;
+};
+// B-23(2026-09-18 hechun「低解像度の Windows ノートで使いづらくなる」): 半画面の高さは
+//   固定 40vh をやめ、既定 10rem からドラッグで変え、この端末に覚える(localStorage)。
+//   値は editor 本体の min-height(px)。ダブルクリックで既定に戻す。
+const COMPOSER_HEIGHT_KEY = "barsoul-comment-composer-min-h";
+const COMPOSER_HEIGHT_MIN = 64;
+const readComposerHeight = (): number | null => {
+  try {
+    const v = Number(localStorage.getItem(COMPOSER_HEIGHT_KEY));
+    return Number.isFinite(v) && v >= COMPOSER_HEIGHT_MIN ? v : null;
+  } catch {
+    return null;
+  }
 };
 // ポータルに出る浮層(ツールバーの T ドロップダウン / メンション / ダイアログ)は「外側クリック」扱いにしない
 const POPOVER_SELECTOR = '[role="menu"],[role="listbox"],[role="dialog"],[data-radix-popper-content-wrapper],.tippy-box';
@@ -129,6 +143,50 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
     pendingFocus.current = true;
     setExpanded(true);
   }, []);
+  // B-23: ドラッグで決めた半画面の高さ(null = 既定)。
+  const [composerMinH, setComposerMinH] = useState<number | null>(readComposerHeight);
+  const onResizeStart = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.button !== 0) return;
+      const editorEl = rootRef.current?.querySelector<HTMLElement>(".editor-container");
+      if (!editorEl) return;
+      e.preventDefault();
+      const handle = e.currentTarget;
+      handle.setPointerCapture(e.pointerId);
+      const startY = e.clientY;
+      const startH = editorEl.getBoundingClientRect().height;
+      // 入力欄が一覧の下(bottom)なら把手は上端 → 上へ引くほど大きく; 上(top)なら逆。
+      const sign = placement === "bottom" ? -1 : 1;
+      const maxH = Math.round(window.innerHeight * 0.8);
+      let last = startH;
+      const onMove = (ev: PointerEvent) => {
+        last = Math.min(maxH, Math.max(COMPOSER_HEIGHT_MIN, Math.round(startH + sign * (ev.clientY - startY))));
+        setComposerMinH(last);
+      };
+      const onUp = () => {
+        handle.removeEventListener("pointermove", onMove);
+        handle.removeEventListener("pointerup", onUp);
+        handle.removeEventListener("pointercancel", onUp);
+        try {
+          localStorage.setItem(COMPOSER_HEIGHT_KEY, String(last));
+        } catch {
+          /* localStorage 不可用时忽略 */
+        }
+      };
+      handle.addEventListener("pointermove", onMove);
+      handle.addEventListener("pointerup", onUp);
+      handle.addEventListener("pointercancel", onUp);
+    },
+    [placement]
+  );
+  const onResizeReset = useCallback(() => {
+    setComposerMinH(null);
+    try {
+      localStorage.removeItem(COMPOSER_HEIGHT_KEY);
+    } catch {
+      /* localStorage 不可用时忽略 */
+    }
+  }, []);
   // form info
   const {
     handleSubmit,
@@ -182,6 +240,16 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
 
   const commentHTML = watch("comment_html");
   const isEmpty = isCommentEmpty(commentHTML ?? undefined);
+  // B-22: 畳んだ帯に出す下書きの一行プレビュー(タグを剥いだ素の文字)
+  const draftPreview = useMemo(
+    () =>
+      (commentHTML ?? "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    [commentHTML]
+  );
 
   // ── BARSOUL: スラッシュ命令 ─────────────────────────────────────────────
   // 項目は i18n 済みでアプリ側が組む(`@plane/editor` は文言も業務も知らない)。
@@ -290,6 +358,20 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   // BARSOUL(2026-06-15): 评论框 z-[20] 浮于上方评论头像(z-[4])之上, 否则工具栏 T 下拉
   // (向上弹)被头像盖住。★关键真凶: 桌面必须 sm:relative 而非 sm:static —— z-index 对
   // position:static 无效, sm:static 会让 z-[20] 在桌面(sm+)完全失效, 头像 z-4 反盖下拉。
+  const resizeHandle = (
+    <div
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label={t("issue.comments.resize")}
+      title={t("issue.comments.resize")}
+      onPointerDown={onResizeStart}
+      onDoubleClick={onResizeReset}
+      className="hidden h-3 cursor-row-resize touch-none select-none items-center justify-center text-placeholder hover:text-tertiary md:flex"
+    >
+      <GripHorizontal className="size-4" strokeWidth={2} />
+    </div>
+  );
+
   return (
     <div
       ref={rootRef}
@@ -297,6 +379,8 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       // B-21: 桌面も sticky(旧 sm:relative は「常時大きな入力欄が内容を隠す」対策だったが、
       //   帯に畳めるようになったので不要)。z の理屈は上の 2026-06-15 注記のまま。
       className={cn("sticky bottom-0 z-[20] bg-surface-1 has-[[data-composer-fullscreen]]:z-[30]")}
+      // B-23: ドラッグで決めた高さは CSS 変数で editor 本体(min-h / max-h)へ渡す
+      style={composerMinH ? ({ "--composer-min-h": `${composerMinH}px` } as CSSProperties) : undefined}
       role="presentation"
       onKeyDown={(e) => {
         // Esc: 空なら帯へ(全画面中はエディタ側が全画面解除を担当するので二段跳びしない)
@@ -351,14 +435,27 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
         <button
           type="button"
           onClick={expand}
-          className="flex w-full items-center gap-2 rounded-sm border border-subtle bg-surface-1 px-3 py-2 text-left text-13 text-placeholder transition-colors hover:border-strong hover:text-tertiary"
+          className={cn(
+            "flex w-full items-center gap-2 rounded-sm border border-subtle bg-surface-1 px-3 py-2 text-left text-13 text-placeholder transition-colors hover:border-strong hover:text-tertiary",
+            // B-22: 下書きを抱えたまま畳んだ帯は「書きかけがある」と分かる字面にする
+            !isEmpty && "text-secondary"
+          )}
         >
           <MessageSquare className="size-4 shrink-0" strokeWidth={2} />
-          <span className="min-w-0 flex-1 truncate">{t("issue.comments.placeholder")}</span>
+          {isEmpty ? (
+            <span className="min-w-0 flex-1 truncate">{t("issue.comments.placeholder")}</span>
+          ) : (
+            <>
+              <span className="shrink-0 rounded-sm bg-layer-2 px-1 text-[11px] text-tertiary">{t("issue.comments.draft")}</span>
+              <span className="min-w-0 flex-1 truncate">{draftPreview || t("issue.comments.draft")}</span>
+            </>
+          )}
         </button>
       )}
 
       <div className={cn((isChatOpen || !expanded) && "hidden")}>
+        {/* B-23 高さの把手(PC のみ)。bottom 配置は上端、top 配置は下端に出す。 */}
+        {placement === "bottom" && resizeHandle}
         {/* BARSOUL: 「今これに返している」帯。カード上端の引用行と同じ字面
             (useCommentQuotePreview 共用) なので、投稿前と投稿後で見え方が変わらない。 */}
         {replyToId && (
@@ -405,10 +502,13 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
                   }}
                   ref={editorRef}
                   initialValue={value ?? "<p></p>"}
-                  // B-21 ② 半画面: エディタ本体 40vh + ツールバー ≒ 画面の半分。
-                  //   スマホは 40dvh 上限(editor.tsx)と併せて固定高になる。
-                  containerClassName="min-h-[40vh]"
+                  // B-21 ② 半画面 → B-22/B-23: 固定 40vh はやめた。
+                  //   スマホ: 3 行ぶんから中身に合わせて伸びる(上限は editor.tsx の 40dvh)。
+                  //   PC: 既定 10rem、ドラッグで決めた高さ(--composer-min-h)があればそれ。
+                  //   どちらも一覧を隠す面積は最小限から。
+                  containerClassName="min-h-[5.5rem] md:min-h-[var(--composer-min-h,10rem)]"
                   isCollapsed={!expanded}
+                  onCollapse={() => setExpanded(false)}
                   commentCommands={commentCommands}
                   onChange={(comment_json, comment_html) => {
                     onChange(comment_html);
@@ -444,6 +544,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
             />
           )}
         />
+        {placement === "top" && resizeHandle}
       </div>
     </div>
   );

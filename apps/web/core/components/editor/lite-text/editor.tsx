@@ -5,7 +5,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2, Type } from "lucide-react";
+import { ChevronDown, Maximize2, Minimize2, Type } from "lucide-react";
 // plane constants
 import type { EIssueCommentAccessSpecifier } from "@plane/constants";
 // plane imports
@@ -53,6 +53,9 @@ type LiteTextEditorWrapperProps = MakeOptional<
   // B-21: 親が入力欄を畳んだ(帯に戻した)合図。全画面のまま送信 → 帯 → 次に開いたら
   //   いきなり全画面、を防ぐため、畳まれたら全画面状態を捨てる。
   isCollapsed?: boolean;
+  // B-22: スマホの紧凑条に「畳む」ボタンを出す。中身があっても手で帯に戻せる
+  //   (自動で畳むのは空のときだけ、という B-21 の約束はそのまま)。
+  onCollapse?: () => void;
 } & (
     | {
         editable: false;
@@ -90,6 +93,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
     showPlaceholderOnEmpty = true,
     submitButtonText = "common.comment",
     isCollapsed = false,
+    onCollapse,
     ...rest
   } = props;
   // states
@@ -157,6 +161,7 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
 
   const fsLabel = t("issue.comments.fullscreen");
   const fsExitLabel = t("issue.comments.exit_fullscreen");
+  const collapseLabel = t("issue.comments.collapse");
   const toggleFullScreen = () => {
     setIsFullScreen((f) => !f);
     setIsFocused(true);
@@ -241,7 +246,9 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
               { "p-2": !editable },
               // B-7 自适应高度: 随内容长高, 超 60vh 内部滚动; 全屏时撑满。
               // (评论框已无 bubble menu → overflow 不再裁浮层, 恢复限高滚动)
-              editable && (isFullScreen ? "h-full overflow-y-auto" : "max-h-[60vh] overflow-y-auto"),
+              // B-23: 親がドラッグで決めた高さ(--composer-min-h)が 60vh を超えるならそこまで許す
+              editable &&
+                (isFullScreen ? "h-full overflow-y-auto" : "max-h-[max(var(--composer-min-h,0px),60vh)] overflow-y-auto"),
               // B-20: 让出右上角悬浮全屏按钮的位置, 第一行长文不再钻到按钮底下
               showFloatingFullScreenButton && !isFullScreen && "pr-7",
               // 移动端软键盘会吃掉一半视口, 限高再收一档
@@ -362,6 +369,18 @@ export const LiteTextEditor = React.forwardRef(function LiteTextEditor(
                 {isFullScreen ? <Minimize2 className="size-4" strokeWidth={2} /> : <Maximize2 className="size-4" strokeWidth={2} />}
               </button>
             </Tooltip>
+            {onCollapse && !isFullScreen && (
+              <Tooltip tooltipContent={collapseLabel}>
+                <button
+                  type="button"
+                  aria-label={collapseLabel}
+                  onClick={onCollapse}
+                  className="grid size-8 place-items-center rounded-sm border-[0.5px] border-subtle text-tertiary transition-colors hover:bg-layer-1 hover:text-primary"
+                >
+                  <ChevronDown className="size-4" strokeWidth={2} />
+                </button>
+              </Tooltip>
+            )}
             <div className="flex-1" />
             {showSubmitButton && (
               <Button
