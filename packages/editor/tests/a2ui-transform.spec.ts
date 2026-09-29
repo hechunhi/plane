@@ -140,6 +140,13 @@ describe("従来描画との字面一致", () => {
     expect(byId([{ type: "header", title: "X" }])["hdr-eyebrow-0"].text).toBe("審査");
   });
 
+  it("eyebrow 上書き・空文字で非表示・sub は caption", () => {
+    const m = byId([{ type: "header", title: "X", eyebrow: "発送", sub: "写真は別添" }]);
+    expect(m["hdr-eyebrow-0"].text).toBe("発送");
+    expect(m["hdr-sub-0"].text).toBe("写真は別添");
+    expect(byId([{ type: "header", title: "X", eyebrow: "" }])["hdr-eyebrow-0"]).toBeUndefined();
+  });
+
   it("kv は全角なかぐろで連結", () => {
     const m = byId([
       {

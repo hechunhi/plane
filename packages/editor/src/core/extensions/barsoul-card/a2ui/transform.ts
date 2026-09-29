@@ -96,9 +96,12 @@ export function buildPresentationMessages(input: PresentationTransformInput): A2
     const ty = String(b?.type ?? "");
 
     if (ty === "header") {
+      // eyebrow: 既定「審査」。登録フォーム等は spec 側で上書き("" で非表示)
+      const eyebrow = b.eyebrow == null ? "審査" : String(b.eyebrow);
       const badge = b.badge ? ` · ${String(b.badge)}` : "";
-      rootChildren.push(text(`hdr-eyebrow-${i}`, `審査${badge}`, "caption"));
+      if (eyebrow !== "") rootChildren.push(text(`hdr-eyebrow-${i}`, `${eyebrow}${badge}`, "caption"));
       rootChildren.push(text(`hdr-title-${i}`, String(b.title ?? ""), "h3"));
+      if (b.sub) rootChildren.push(text(`hdr-sub-${i}`, String(b.sub), "caption"));
       continue;
     }
 
