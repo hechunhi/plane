@@ -22,6 +22,7 @@ import {
   safeExternalHref,
   subscribeA2uiAtomsFlag,
 } from "./a2ui";
+import { evalSummary as evalSummaryWith, fieldText } from "./form-helpers";
 
 type Blk = Record<string, any>;
 type Theme = Record<string, string>;
@@ -795,6 +796,7 @@ function resolveP(root: any, path: string): any[] {
   };
   return walk(root, segs);
 }
+const evalSummary = (st: any, expr: string) => evalSummaryWith(st, expr, resolveP);
 const isEmpty = (v: any) =>
   v == null ||
   (typeof v === "string" && !v.trim()) ||
@@ -946,7 +948,14 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
   const [confirm, setConfirm] = useState<"approve" | "reject" | null>(null);
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<{ msg: string; bad: boolean } | null>(null);
+  // 押して弾かれるまでは赤枠を出さない（開いた瞬間に全部赤＝怒られてる感しかない）
+  const [tried, setTried] = useState(false);
   const errs = useMemo(() => validateForm(st, spec?.rules || []), [st, spec]);
+  const errAt = useMemo(() => {
+    const m = new Map<string, string>();
+    if (tried) for (const e of errs) if (!m.has(e.path)) m.set(e.path, e.msg);
+    return m;
+  }, [errs, tried]);
   const set = (path: string, v: any) => setSt((s: any) => setP(s, path, v));
   // P2: 池↔箱の項目移動（数量保存）。複数 path を 1 回で原子変異。
   const moveItem = (fromPath: string, toPath: string, id: any) =>
@@ -968,6 +977,7 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
   const submit = async (decision: "approve" | "reject") => {
     setConfirm(null);
     if (decision === "approve" && errs.length) {
+      setTried(true);
       setFlash({ msg: errs[0].msg, bad: true });
       return;
     }
@@ -1028,22 +1038,26 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
         if (ro)
           return (
             <div key={k} style={S.meta}>
-              <b>{a.label}</b>：{String(val ?? "—")}
+              <b>{a.label}</b>：{fieldText(val, a)}
             </div>
           );
+        const err = errAt.get(bind);
+        const box = err ? { ...inp, borderColor: t.rejectFg } : inp;
+        // suggest = 候補（自由入力可）。datalist id はカード内で一意なら十分
+        const listId = Array.isArray(a.suggest) && a.suggest.length ? `dl-${bind.replace(/[^\w]/g, "_")}` : undefined;
         return (
           <div key={k}>
             {a.label && <div style={lbl}>{a.label}</div>}
             {it === "textarea" ? (
               <textarea
-                style={{ ...inp, minHeight: 56 }}
+                style={{ ...box, minHeight: 56 }}
                 value={val ?? ""}
                 placeholder={a.placeholder}
                 onChange={(e) => set(bind, e.target.value)}
               />
             ) : it === "select" ? (
-              <select style={inp} value={val ?? ""} onChange={(e) => set(bind, e.target.value)}>
-                <option value=""></option>
+              <select style={box} value={val ?? ""} onChange={(e) => set(bind, e.target.value)}>
+                <option value="">{a.placeholder || "選択してください"}</option>
                 {(a.options || []).map((o: any) => (
                   <option key={o.value ?? o} value={o.value ?? o}>
                     {o.label ?? o}
@@ -1052,16 +1066,26 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
               </select>
             ) : (
               <input
-                style={inp}
+                style={box}
                 type={it}
+                inputMode={it === "number" ? "decimal" : undefined}
                 value={val ?? ""}
                 placeholder={a.placeholder}
                 min={a.min}
                 max={a.max}
                 step={a.step}
+                list={listId}
                 onChange={(e) => set(bind, it === "number" ? toNum(e.target.value) : e.target.value)}
               />
             )}
+            {listId && (
+              <datalist id={listId}>
+                {a.suggest.map((s: string) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            )}
+            {err && <div style={{ color: t.rejectFg, fontSize: 11.5, marginTop: 3 }}>{err}</div>}
           </div>
         );
       }
@@ -1166,17 +1190,7 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
         );
       }
       case "summary": {
-        const fn = (a.expr || "").match(/^(sum|count|len)\((.+)\)$/);
-        let out: any = "";
-        if (fn) {
-          const vs = resolveP(st, fn[2]);
-          out =
-            fn[1] === "sum"
-              ? vs.reduce((x, v) => x + (toNum(v) ?? 0), 0)
-              : fn[1] === "count"
-                ? vs.filter((v) => !isEmpty(v)).length
-                : vs.length;
-        }
+        const out = evalSummary(st, a.expr || "");
         return (
           <div key={k} style={{ ...S.meta, fontWeight: 600 }}>
             {a.label}：{out}
