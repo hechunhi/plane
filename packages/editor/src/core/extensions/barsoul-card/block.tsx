@@ -12,7 +12,7 @@
  */
 import type { NodeViewProps } from "@tiptap/react";
 import { NodeViewWrapper } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 // R5: A2UI v0.9 試験導入（摘要部のみ・フラグ既定 OFF）。詳細は ./a2ui/ 配下。
 import type { AtomicActionHandlers } from "./a2ui";
 import {
@@ -22,7 +22,8 @@ import {
   safeExternalHref,
   subscribeA2uiAtomsFlag,
 } from "./a2ui";
-import { evalSummary as evalSummaryWith, fieldText } from "./form-helpers";
+import { celebrate, isExtraAtom, renderExtraAtom } from "./form-atoms";
+import { evalSummary as evalSummaryWith, fieldText, isRequired, matchWhen, resolveQuick } from "./form-helpers";
 
 type Blk = Record<string, any>;
 type Theme = Record<string, string>;
@@ -797,6 +798,8 @@ function resolveP(root: any, path: string): any[] {
   return walk(root, segs);
 }
 const evalSummary = (st: any, expr: string) => evalSummaryWith(st, expr, resolveP);
+// when 用：[idx] 付きの行パスも読めるよう getP で 1 値を返す（cards formWhen と同義）
+const whenGet = (s: any, p: string) => [getP(s, p)];
 const isEmpty = (v: any) =>
   v == null ||
   (typeof v === "string" && !v.trim()) ||
@@ -810,6 +813,8 @@ const toNum = (v: any) => {
 function validateForm(state: any, rules: any[]): { path: string; msg: string }[] {
   const out: { path: string; msg: string }[] = [];
   for (const r of rules || []) {
+    // when = 条件付き rule（隠れている欄は検証しない。cards form.go と同義）
+    if (r.when && !matchWhen(state, r.when, "", whenGet)) continue;
     const as = r.assert,
       msg = r.msg || "";
     if (r.each) {
@@ -941,6 +946,39 @@ function TimelineBlock(props: { b: any; t: Theme; S: any }) {
   );
 }
 
+const QUICK_LABEL: Record<string, string> = { today: "今日", tomorrow: "明日", eom: "月末", "+7d": "1週間後", "-1d": "昨日" };
+
+function CopyBtn(props: { text: string; t: Theme }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <button
+      type="button"
+      title="コピー"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(props.text);
+          setOk(true);
+          setTimeout(() => setOk(false), 1200);
+        } catch {
+          /* clipboard 不可（http 等） */
+        }
+      }}
+      style={{
+        flexShrink: 0,
+        padding: "1px 8px",
+        fontSize: 11.5,
+        borderRadius: 10,
+        border: `1px solid ${props.t.border}`,
+        background: "transparent",
+        color: ok ? props.t.approveBg : props.t.muted,
+        cursor: "pointer",
+      }}
+    >
+      {ok ? "✓ コピー済" : "コピー"}
+    </button>
+  );
+}
+
 function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<void> }) {
   const { spec, t, S, reload } = props;
   const editable = spec?.editable !== false && !!spec?.submit;
@@ -950,6 +988,47 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
   const [flash, setFlash] = useState<{ msg: string; bad: boolean } | null>(null);
   // 押して弾かれるまでは赤枠を出さない（開いた瞬間に全部赤＝怒られてる感しかない）
   const [tried, setTried] = useState(false);
+  // 下書き自動保存（per 端末の便利機能。消えても困らない＝localStorage で十分）
+  const draftKey = spec?.submit?.url && spec?.submit?.u ? `bs-card-draft:${spec.submit.url}:${spec.submit.u}` : "";
+  const [draftAt, setDraftAt] = useState<number | null>(null);
+  const baseRef = useRef<string>(JSON.stringify(spec?.state ?? {}));
+  const btnRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!editable || !draftKey) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const d = JSON.parse(raw);
+      if (d?.state && JSON.stringify(d.state) !== baseRef.current) {
+        setSt(d.state);
+        setDraftAt(d.at || Date.now());
+      }
+    } catch {
+      /* 保存領域なし・壊れた下書きは無視 */
+    }
+  }, [draftKey, editable]);
+  useEffect(() => {
+    if (!editable || !draftKey) return;
+    const id = setTimeout(() => {
+      try {
+        const cur = JSON.stringify(st);
+        if (cur === baseRef.current) localStorage.removeItem(draftKey);
+        else localStorage.setItem(draftKey, JSON.stringify({ at: Date.now(), state: st }));
+      } catch {
+        /* noop */
+      }
+    }, 600);
+    return () => clearTimeout(id);
+  }, [st, draftKey, editable]);
+  const discardDraft = () => {
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      /* noop */
+    }
+    setSt(JSON.parse(baseRef.current));
+    setDraftAt(null);
+  };
   const errs = useMemo(() => validateForm(st, spec?.rules || []), [st, spec]);
   const errAt = useMemo(() => {
     const m = new Map<string, string>();
@@ -1004,6 +1083,14 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
         return;
       }
       setFlash({ msg: (j.msg || "受け付けました") + " — 状態を更新中…", bad: false });
+      try {
+        if (draftKey) localStorage.removeItem(draftKey);
+      } catch {
+        /* noop */
+      }
+      baseRef.current = JSON.stringify(st);
+      setDraftAt(null);
+      if (decision === "approve" && spec.celebrate) celebrate(btnRef.current);
       // ADR-027 補正: Temporal は async 故 BaseUpdate に 1-3s かかる. その間
       // reload しても chain block が古いまま → ユーザ "効いてない?" と再 submit
       // → 重複 reassign signal. 1.5s 待ってから reload で大半救う + busy 維持.
@@ -1029,25 +1116,66 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
   };
   const ro = !editable;
 
-  const Atom = (a: any, bp = "", k?: React.Key) => {
+  const Atom = (a: any, bp = "", k?: React.Key): React.ReactNode => {
+    // when: 条件表示（「.x」は repeater 行内の相対パス）
+    if (a.when && !matchWhen(st, a.when, bp, whenGet)) return null;
     const bind = bp ? `${bp}.${a.bind}` : a.bind;
     const val = bind ? getP(st, bind) : undefined;
+    const req = !ro && !!bind && isRequired(spec?.rules || [], bind);
+    const head = (a.label || a.help) && (
+      <>
+        {a.label && (
+          <div style={lbl}>
+            {a.label}
+            {req && (
+              <span style={{ color: t.rejectFg, marginLeft: 3 }} title="必須">
+                *
+              </span>
+            )}
+          </div>
+        )}
+        {a.help && !ro && <div style={{ fontSize: 11.5, color: t.muted, margin: "-2px 0 4px" }}>{a.help}</div>}
+      </>
+    );
+    if (isExtraAtom(a.atom))
+      return renderExtraAtom(
+        a,
+        {
+          bind,
+          val,
+          set,
+          ro,
+          t,
+          S,
+          inp,
+          err: bind ? errAt.get(bind) : undefined,
+          label: head,
+          evalExpr: (e: string) => evalSummary(st, e),
+          renderChild: (c: any, ck: React.Key) => Atom(c, bp, ck),
+        },
+        k
+      );
     switch (a.atom) {
       case "field": {
         const it = a.input || "text";
         if (ro)
           return (
-            <div key={k} style={S.meta}>
-              <b>{a.label}</b>：{fieldText(val, a)}
+            <div key={k} style={{ ...S.meta, display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
+                <b>{a.label}</b>：{fieldText(val, a)}
+              </span>
+              {a.copy && !isEmpty(val) && <CopyBtn text={String(val)} t={t} />}
             </div>
           );
         const err = errAt.get(bind);
+        // quick = ワンタップ入力（"today" / "+7d" 等は日付に解決）
+        const quick: any[] = Array.isArray(a.quick) ? a.quick : [];
         const box = err ? { ...inp, borderColor: t.rejectFg } : inp;
         // suggest = 候補（自由入力可）。datalist id はカード内で一意なら十分
         const listId = Array.isArray(a.suggest) && a.suggest.length ? `dl-${bind.replace(/[^\w]/g, "_")}` : undefined;
         return (
           <div key={k}>
-            {a.label && <div style={lbl}>{a.label}</div>}
+            {head}
             {it === "textarea" ? (
               <textarea
                 style={{ ...box, minHeight: 56 }}
@@ -1084,6 +1212,34 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                   <option key={s} value={s} />
                 ))}
               </datalist>
+            )}
+            {quick.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+                {quick.map((q: any) => {
+                  const qv = resolveQuick(q && typeof q === "object" ? q.value : q);
+                  const ql = q && typeof q === "object" ? q.label : QUICK_LABEL[q] || String(q);
+                  const on = val === qv || String(val ?? "") === String(qv);
+                  return (
+                    <button
+                      key={ql}
+                      type="button"
+                      onClick={() => set(bind, it === "number" ? toNum(qv) : qv)}
+                      style={{
+                        minHeight: 28,
+                        padding: "2px 10px",
+                        fontSize: 12,
+                        borderRadius: 14,
+                        border: `1px solid ${on ? t.accent : t.border}`,
+                        background: on ? t.accent : "transparent",
+                        color: on ? "#fff" : t.fg,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {ql}
+                    </button>
+                  );
+                })}
+              </div>
             )}
             {err && <div style={{ color: t.rejectFg, fontSize: 11.5, marginTop: 3 }}>{err}</div>}
           </div>
@@ -1525,6 +1681,21 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
 
   return (
     <div>
+      {draftAt && editable && (
+        <div style={{ ...S.note, display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+          <span style={{ flex: 1 }}>
+            前回の入力途中を復元しました（
+            {new Date(draftAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）
+          </span>
+          <button
+            type="button"
+            onClick={discardDraft}
+            style={{ background: "none", border: 0, color: t.accent, cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
+          >
+            破棄
+          </button>
+        </div>
+      )}
       {(spec.blocks || []).map((a: any, i: number) => Atom(a, "", i))}
       {editable && (
         <>
@@ -1534,17 +1705,19 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
               {errs.length > 1 && ` 他 ${errs.length - 1} 件`}
             </div>
           )}
+          {/* 紙吹雪の起点。ボタン自体は確認バー/送信中で消えるので常在の枠に ref を付ける */}
+          <div ref={btnRef} />
           {!confirm && !busy && (
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button
                 type="button"
-                disabled={errs.length > 0}
-                onClick={() => setConfirm("approve")}
+                aria-disabled={errs.length > 0}
+                // 無効化せず押せる：押したら未入力欄を赤枠で示す（disabled だと何が足りないか分からない）
+                onClick={() => (errs.length ? submit("approve") : setConfirm("approve"))}
                 style={{
                   ...S.btn(true),
                   marginLeft: 0,
-                  opacity: errs.length > 0 ? 0.4 : 1,
-                  cursor: errs.length > 0 ? "not-allowed" : "pointer",
+                  opacity: errs.length > 0 ? 0.55 : 1,
                 }}
               >
                 {spec.approveLabel || "✅ 承認"}
