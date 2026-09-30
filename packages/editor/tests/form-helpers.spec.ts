@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   addTags,
   countdownText,
+  crowdTally,
   evalSummary,
   fieldText,
   isRequired,
@@ -12,6 +13,7 @@ import {
   pct,
   resolveQuick,
   stepBy,
+  wallEntries,
 } from "../src/core/extensions/barsoul-card/form-helpers";
 
 describe("fieldText", () => {
@@ -145,5 +147,24 @@ describe("pct / countdownText", () => {
     expect(countdownText("2026-09-29T05:30:00Z", now).soon).toBe(true);
     expect(countdownText("2026-09-28T23:00:00Z", now)).toEqual({ text: "1時間0分 超過", overdue: true, soon: false });
     expect(countdownText("", now).text).toBe("—");
+  });
+});
+
+describe("crowdTally / wallEntries", () => {
+  const crowd = [
+    { id: "a", name: "甲", state: { clap: true, msg: "おめでとう", mood: 5 }, at_ms: 2 },
+    { id: "b", name: "乙", state: { clap: false, msg: " " }, at_ms: 3 },
+    { id: "c", name: "丙", state: { clap: true, msg: "すごい" }, at_ms: 1 },
+  ];
+  it("押した人だけ数え、本人判定する", () => {
+    expect(crowdTally(crowd, "clap", "c")).toEqual({ count: 2, names: ["甲", "丙"], mine: true });
+    expect(crowdTally(crowd, "clap", "b").mine).toBe(false);
+    expect(crowdTally(undefined, "clap")).toEqual({ count: 0, names: [], mine: false });
+  });
+  it("ひとことのある人を新しい順、評価付き", () => {
+    expect(wallEntries(crowd, "msg", "mood")).toEqual([
+      { id: "a", name: "甲", text: "おめでとう", rate: 5, at_ms: 2 },
+      { id: "c", name: "丙", text: "すごい", rate: null, at_ms: 1 },
+    ]);
   });
 });

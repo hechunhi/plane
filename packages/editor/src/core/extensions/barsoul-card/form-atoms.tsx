@@ -13,9 +13,13 @@
  *   tally     タップで数えるカウンター（振動・1 つ戻す）
  *   countdown 期限までの残り（at か bind の日時、毎分更新）
  *   group     見出し付きの枠（cols 横並び・collapsed 折り畳み・children）
+ *   clap      みんなで 1 回ずつ押すボタン（押した人数と名前、押すと即送信＋紙吹雪）※cheer 卡
+ *   wall      みんなのひとこと一覧（bind=本文、rateBind=評価を添える）※cheer 卡
  */
+import { PartyPopper } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
-import { addTags, countdownText, normOptions, pct, stepBy } from "./form-helpers";
+import { addTags, countdownText, crowdTally, normOptions, pct, stepBy, wallEntries } from "./form-helpers";
+import type { CrowdEntry } from "./form-helpers";
 
 type Theme = Record<string, string>;
 export type AtomCtx = {
@@ -33,9 +37,14 @@ export type AtomCtx = {
   evalExpr: (expr: string) => number | "";
   /** 子原子の描画（group 用） */
   renderChild: (a: any, k: React.Key) => React.ReactNode;
+  /** 多人参与卡：全員の最新提出（cards が配る）と自分の id */
+  crowd?: CrowdEntry[];
+  me?: string;
+  /** 値を入れて即送信（clap のワンタップ用）。anchor は紙吹雪の起点 */
+  quick?: (path: string, v: any, anchor?: HTMLElement | null) => void;
 };
 
-const EXTRA = new Set(["choice", "toggle", "stepper", "rating", "slider", "tags", "progress", "tally", "countdown", "group"]);
+const EXTRA = new Set(["choice", "toggle", "stepper", "rating", "slider", "tags", "progress", "tally", "countdown", "group", "clap", "wall"]);
 export const isExtraAtom = (atom: string) => EXTRA.has(atom);
 
 const chip = (t: Theme, on: boolean, ro: boolean): React.CSSProperties => ({
@@ -93,6 +102,10 @@ export function renderExtraAtom(a: any, c: AtomCtx, k?: React.Key): React.ReactN
       return <Tally key={k} a={a} c={c} />;
     case "countdown":
       return <Countdown key={k} a={a} c={c} />;
+    case "clap":
+      return <Clap key={k} a={a} c={c} />;
+    case "wall":
+      return <Wall key={k} a={a} c={c} />;
     case "group":
       return <Group key={k} a={a} c={c} />;
     default:
@@ -595,6 +608,138 @@ function Group({ a, c }: P) {
           }
         >
           {kids}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const Avatar = ({ name, t, size = 26 }: { name: string; t: Theme; size?: number }) => (
+  <span
+    title={name}
+    style={{
+      width: size,
+      height: size,
+      flexShrink: 0,
+      borderRadius: "50%",
+      background: t.chipBg,
+      border: `1px solid ${t.border}`,
+      color: t.fg,
+      fontSize: size * 0.46,
+      fontWeight: 700,
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+    }}
+  >
+    {Array.from(name || "?")[0]}
+  </span>
+);
+
+function Clap({ a, c }: P) {
+  const { t, ro, bind } = c;
+  const btn = useRef<HTMLButtonElement | null>(null);
+  const tally = crowdTally(c.crowd, bind, c.me);
+  // 送信直後〜reload までの間も押した見た目にする（二度押し防止）
+  const mine = tally.mine || !!c.val;
+  const shown = tally.names.slice(0, a.maxNames || 12);
+  const rest = tally.names.length - shown.length;
+  const hit = () => {
+    if (ro || mine || !c.quick) return;
+    try {
+      navigator.vibrate?.(15);
+    } catch {
+      /* 非対応端末 */
+    }
+    c.quick(bind, true, btn.current);
+  };
+  return (
+    <div style={{ margin: "10px 0" }}>
+      {c.label}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <button
+          ref={btn}
+          type="button"
+          disabled={ro || mine}
+          onClick={hit}
+          aria-pressed={mine}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            minHeight: 48,
+            padding: "0 20px",
+            borderRadius: 24,
+            border: `1.5px solid ${mine ? t.approveBg : t.accent}`,
+            background: mine ? t.approveBg : t.bg,
+            color: mine ? "#fff" : t.accent,
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: ro || mine ? "default" : "pointer",
+            touchAction: "manipulation",
+            transition: "background .2s",
+          }}
+        >
+          <PartyPopper size={18} strokeWidth={2.2} />
+          <span>{mine ? a.doneText || `${a.text || "おめでとう"} 送りました` : a.text || "おめでとう"}</span>
+          <span
+            style={{
+              minWidth: 22,
+              padding: "0 6px",
+              borderRadius: 11,
+              fontSize: 13,
+              background: mine ? "rgba(255,255,255,.25)" : t.chipBg,
+              color: mine ? "#fff" : t.fg,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {tally.count + (mine && !tally.mine ? 1 : 0)}
+          </span>
+        </button>
+        {tally.count === 0 && !mine && (
+          <span style={{ fontSize: 12, color: t.muted }}>{a.emptyText || "最初のひとりになろう"}</span>
+        )}
+      </div>
+      {shown.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+          {shown.map((n, i) => (
+            <Avatar key={i} name={n} t={t} />
+          ))}
+          <span style={{ fontSize: 12, color: t.muted, marginLeft: 4 }}>
+            {shown.join("、")}
+            {rest > 0 ? ` ほか${rest}人` : ""}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Wall({ a, c }: P) {
+  const { t } = c;
+  const rows = wallEntries(c.crowd, c.bind, a.rateBind || "");
+  const fmt = (ms: number) =>
+    new Date(ms).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    <div style={{ margin: "10px 0" }}>
+      {c.label}
+      {rows.length === 0 ? (
+        <div style={{ fontSize: 12, color: t.muted }}>{a.emptyText || "まだメッセージはありません"}</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {rows.map((r) => (
+            <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <Avatar name={r.name} t={t} />
+              <div style={{ flex: 1, minWidth: 0, background: t.chipBg, borderRadius: 10, padding: "6px 10px" }}>
+                <div style={{ fontSize: 11.5, color: t.muted, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, color: t.fg }}>{r.name}</span>
+                  {r.rate != null && <span style={{ color: t.accent }}>{"★".repeat(Math.min(5, r.rate))}</span>}
+                  <span>{fmt(r.at_ms)}</span>
+                </div>
+                <div style={{ fontSize: 13, color: t.fg, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{r.text}</div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

@@ -171,3 +171,31 @@ function defaultGetAll(root: any, path: string): any[] {
   };
   return walk(root, path.replace(/^state\.?/, "").split(".").filter(Boolean));
 }
+
+/** 多人参与卡（barsoul.form.cheer.v1）：cards が配る crowd の 1 行。 */
+export type CrowdEntry = { id: string; name: string; state: any; at_ms: number };
+
+const crowdVal = (st: any, bind: string) =>
+  bind.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), st);
+
+/** clap：押した人（crowd 順＝参加順）と本人が押したか。 */
+export function crowdTally(crowd: CrowdEntry[] | undefined, bind: string, me = ""): { count: number; names: string[]; mine: boolean } {
+  const on = (crowd || []).filter((e) => !!crowdVal(e.state, bind));
+  return { count: on.length, names: on.map((e) => e.name), mine: !!me && on.some((e) => e.id === me) };
+}
+
+/** wall：ひとことのある人だけ、新しい順。rateBind があれば評価も添える。 */
+export function wallEntries(
+  crowd: CrowdEntry[] | undefined,
+  bind: string,
+  rateBind = ""
+): { id: string; name: string; text: string; rate: number | null; at_ms: number }[] {
+  return (crowd || [])
+    .map((e) => {
+      const text = String(crowdVal(e.state, bind) ?? "").trim();
+      const r = rateBind ? Number(crowdVal(e.state, rateBind)) : NaN;
+      return { id: e.id, name: e.name, text, rate: Number.isFinite(r) && r > 0 ? r : null, at_ms: e.at_ms };
+    })
+    .filter((e) => e.text)
+    .sort((a, b) => b.at_ms - a.at_ms);
+}

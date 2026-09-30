@@ -1030,6 +1030,14 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
     setDraftAt(null);
   };
   const errs = useMemo(() => validateForm(st, spec?.rules || []), [st, spec]);
+  const errsNow = errs;
+  const stNow = st;
+  // clap：値を入れて即送信（確認ダイアログなし＝1 タップで完結）
+  const quick = (path: string, v: any, anchor?: HTMLElement | null) => {
+    const next = setP(st, path, v);
+    setSt(next);
+    void submit("approve", { state: next, anchor });
+  };
   const errAt = useMemo(() => {
     const m = new Map<string, string>();
     if (tried) for (const e of errs) if (!m.has(e.path)) m.set(e.path, e.msg);
@@ -1053,8 +1061,10 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
       return c;
     });
 
-  const submit = async (decision: "approve" | "reject") => {
+  const submit = async (decision: "approve" | "reject", over?: { state: any; anchor?: HTMLElement | null }) => {
     setConfirm(null);
+    const errs = over ? validateForm(over.state, spec?.rules || []) : errsNow;
+    const st = over ? over.state : stNow;
     if (decision === "approve" && errs.length) {
       setTried(true);
       setFlash({ msg: errs[0].msg, bad: true });
@@ -1090,12 +1100,14 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
       }
       baseRef.current = JSON.stringify(st);
       setDraftAt(null);
-      if (decision === "approve" && spec.celebrate) celebrate(btnRef.current);
+      if (decision === "approve" && spec.celebrate) celebrate(over?.anchor || btnRef.current);
       // ADR-027 補正: Temporal は async 故 BaseUpdate に 1-3s かかる. その間
       // reload しても chain block が古いまま → ユーザ "効いてない?" と再 submit
       // → 重複 reassign signal. 1.5s 待ってから reload で大半救う + busy 維持.
       await new Promise((res) => setTimeout(res, 1500));
       await reload();
+      // 更新が済んだら「更新中…」を外す（残ると止まって見える）
+      setFlash({ msg: j.msg || "受け付けました", bad: false });
     } catch (e) {
       setFlash({ msg: `送信に失敗しました（${String(e)}）`, bad: true });
     } finally {
@@ -1152,6 +1164,9 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
           label: head,
           evalExpr: (e: string) => evalSummary(st, e),
           renderChild: (c: any, ck: React.Key) => Atom(c, bp, ck),
+          crowd: spec?.crowd,
+          me: spec?.me,
+          quick: editable ? quick : undefined,
         },
         k
       );
@@ -1713,7 +1728,10 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                 type="button"
                 aria-disabled={errs.length > 0}
                 // 無効化せず押せる：押したら未入力欄を赤枠で示す（disabled だと何が足りないか分からない）
-                onClick={() => (errs.length ? submit("approve") : setConfirm("approve"))}
+                // confirm:false = 取り消しの効く軽い送信（ひとこと等）は確認バーを挟まない
+                onClick={() =>
+                  errs.length || spec.confirm === false ? submit("approve") : setConfirm("approve")
+                }
                 style={{
                   ...S.btn(true),
                   marginLeft: 0,
