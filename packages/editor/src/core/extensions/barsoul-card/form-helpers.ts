@@ -199,3 +199,49 @@ export function wallEntries(
     .filter((e) => e.text)
     .sort((a, b) => b.at_ms - a.at_ms);
 }
+
+/**
+ * poll：選択肢ごとの票数と投票者。myVal があれば自分の行をそれで差し替える
+ * （送信直後〜reload までの間も自分の票を反映）。multi は配列値を 1 票ずつ数える。
+ * voters=投票した人数（選択肢数ではない）、lead=最多票の value（同数なら無し）。
+ */
+export function pollTally(
+  crowd: CrowdEntry[] | undefined,
+  bind: string,
+  options: { value: any }[],
+  me = "",
+  myVal?: any
+): { counts: Map<any, { n: number; names: string[] }>; voters: number; lead: any } {
+  const counts = new Map<any, { n: number; names: string[] }>();
+  for (const o of options) counts.set(o.value, { n: 0, names: [] });
+  const rows = (crowd || []).map((e) => ({ id: e.id, name: e.name, v: crowdVal(e.state, bind) }));
+  if (me && myVal !== undefined) {
+    const i = rows.findIndex((r) => r.id === me);
+    if (i >= 0) rows[i] = { ...rows[i], v: myVal };
+    else rows.push({ id: me, name: "", v: myVal });
+  }
+  let voters = 0;
+  for (const r of rows) {
+    const vs = (Array.isArray(r.v) ? r.v : [r.v]).filter((x) => x !== null && x !== undefined && x !== "");
+    let hit = false;
+    for (const v of vs) {
+      const c = counts.get(v);
+      if (!c) continue; // 選択肢から消えた値は数えない
+      c.n++;
+      if (r.name) c.names.push(r.name);
+      hit = true;
+    }
+    if (hit) voters++;
+  }
+  let lead: any = undefined;
+  let best = 0;
+  let tie = false;
+  for (const [v, c] of counts) {
+    if (c.n > best) {
+      best = c.n;
+      lead = v;
+      tie = false;
+    } else if (c.n === best && best > 0) tie = true;
+  }
+  return { counts, voters, lead: tie ? undefined : lead };
+}

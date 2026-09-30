@@ -11,6 +11,7 @@ import {
   isRequired,
   matchWhen,
   pct,
+  pollTally,
   resolveQuick,
   stepBy,
   wallEntries,
@@ -166,5 +167,46 @@ describe("crowdTally / wallEntries", () => {
       { id: "a", name: "甲", text: "おめでとう", rate: 5, at_ms: 2 },
       { id: "c", name: "丙", text: "すごい", rate: null, at_ms: 1 },
     ]);
+  });
+});
+
+describe("pollTally", () => {
+  const opts = [{ value: "A" }, { value: "B" }, { value: "C" }];
+  const crowd = [
+    { id: "u1", name: "山下", state: { vote: "A" }, at_ms: 1 },
+    { id: "u2", name: "何", state: { vote: "B" }, at_ms: 2 },
+    { id: "u3", name: "角", state: { vote: "A" }, at_ms: 3 },
+    { id: "u4", name: "熊", state: { msg: "まだ" }, at_ms: 4 },
+  ];
+  it("数える・最多・投票者数", () => {
+    const r = pollTally(crowd, "vote", opts);
+    expect(r.counts.get("A")).toEqual({ n: 2, names: ["山下", "角"] });
+    expect(r.counts.get("C")!.n).toBe(0);
+    expect(r.voters).toBe(3);
+    expect(r.lead).toBe("A");
+  });
+  it("自分の送信直後の値で差し替え（票の付け替え）", () => {
+    const r = pollTally(crowd, "vote", opts, "u3", "B");
+    expect(r.counts.get("A")!.n).toBe(1);
+    expect(r.counts.get("B")!.names).toEqual(["何", "角"]);
+    expect(r.lead).toBe("B");
+  });
+  it("同数は lead なし・未知の値は数えない", () => {
+    const r = pollTally([...crowd, { id: "u5", name: "x", state: { vote: "Z" }, at_ms: 5 }], "vote", opts, "u1", "B");
+    expect(r.lead).toBe("B");
+    const t = pollTally(crowd.slice(0, 2), "vote", opts);
+    expect(t.lead).toBeUndefined();
+    expect(t.voters).toBe(2);
+  });
+  it("multi は 1 人が複数票・投票者は 1 人", () => {
+    const r = pollTally([{ id: "u1", name: "山下", state: { vote: ["A", "C"] }, at_ms: 1 }], "vote", opts);
+    expect(r.counts.get("A")!.n).toBe(1);
+    expect(r.counts.get("C")!.n).toBe(1);
+    expect(r.voters).toBe(1);
+  });
+  it("crowd に居ない自分の初投票も数える", () => {
+    const r = pollTally([], "vote", opts, "me", "C");
+    expect(r.counts.get("C")!.n).toBe(1);
+    expect(r.voters).toBe(1);
   });
 });

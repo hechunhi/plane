@@ -15,10 +15,11 @@
  *   group     見出し付きの枠（cols 横並び・collapsed 折り畳み・children）
  *   clap      みんなで 1 回ずつ押すボタン（押した人数と名前、押すと即送信＋紙吹雪）※cheer 卡
  *   wall      みんなのひとこと一覧（bind=本文、rateBind=評価を添える）※cheer 卡
+ *   poll      みんなで投票（選択肢ごとの票数バー＋投票者、タップで即送信・付け替え可、img で画像選択肢）※多人卡
  */
-import { PartyPopper } from "lucide-react";
+import { Check, PartyPopper } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
-import { addTags, countdownText, crowdTally, normOptions, pct, stepBy, wallEntries } from "./form-helpers";
+import { addTags, countdownText, crowdTally, normOptions, pct, pollTally, stepBy, wallEntries } from "./form-helpers";
 import type { CrowdEntry } from "./form-helpers";
 
 type Theme = Record<string, string>;
@@ -42,9 +43,12 @@ export type AtomCtx = {
   me?: string;
   /** 値を入れて即送信（clap のワンタップ用）。anchor は紙吹雪の起点 */
   quick?: (path: string, v: any, anchor?: HTMLElement | null) => void;
+  /** 参加できる人数（cards の crowd_total、0/未指定＝不明）と締切済みか */
+  crowdTotal?: number;
+  closed?: boolean;
 };
 
-const EXTRA = new Set(["choice", "toggle", "stepper", "rating", "slider", "tags", "progress", "tally", "countdown", "group", "clap", "wall"]);
+const EXTRA = new Set(["choice", "toggle", "stepper", "rating", "slider", "tags", "progress", "tally", "countdown", "group", "clap", "wall", "poll"]);
 export const isExtraAtom = (atom: string) => EXTRA.has(atom);
 
 const chip = (t: Theme, on: boolean, ro: boolean): React.CSSProperties => ({
@@ -106,6 +110,8 @@ export function renderExtraAtom(a: any, c: AtomCtx, k?: React.Key): React.ReactN
       return <Clap key={k} a={a} c={c} />;
     case "wall":
       return <Wall key={k} a={a} c={c} />;
+    case "poll":
+      return <Poll key={k} a={a} c={c} />;
     case "group":
       return <Group key={k} a={a} c={c} />;
     default:
@@ -742,6 +748,118 @@ function Wall({ a, c }: P) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function Poll({ a, c }: P) {
+  const { t, bind } = c;
+  const opts: { value: any; label: string; sub?: string; img?: string }[] = normOptions(a.options || []).map(
+    (o, i) => ({ ...o, img: (a.options || [])[i]?.img })
+  );
+  const multi = !!a.multi;
+  const ro = c.ro || !!c.closed || !c.quick;
+  const mineArr: any[] = multi ? (Array.isArray(c.val) ? c.val : []) : c.val == null || c.val === "" ? [] : [c.val];
+  const { counts, voters, lead } = pollTally(c.crowd, bind, opts, c.me, c.me ? (multi ? mineArr : (c.val ?? null)) : undefined);
+  const total = c.crowdTotal || 0;
+  const all = total > 0 && voters >= total;
+  const pick = (v: any, el: HTMLElement) => {
+    if (ro) return;
+    let next: any;
+    if (multi) next = mineArr.includes(v) ? mineArr.filter((x) => x !== v) : a.max && mineArr.length >= a.max ? mineArr : [...mineArr, v];
+    else next = mineArr[0] === v ? null : v; // 同じのをもう一度＝取り消し
+    try {
+      navigator.vibrate?.(12);
+    } catch {
+      /* 非対応端末 */
+    }
+    c.quick!(bind, next, el);
+  };
+  const status = c.closed
+    ? `締め切り · ${voters}人が投票`
+    : all
+      ? `全員投票済み（${voters}/${total}）`
+      : total > 0
+        ? `${voters}/${total} 人が投票`
+        : `${voters}人が投票`;
+  const hasImg = opts.some((o) => o.img);
+  return (
+    <div style={{ margin: "10px 0" }}>
+      {c.label}
+      <div
+        style={
+          hasImg
+            ? { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }
+            : { display: "flex", flexDirection: "column", gap: 6 }
+        }
+      >
+        {opts.map((o) => {
+          const cnt = counts.get(o.value) || { n: 0, names: [] };
+          const on = mineArr.includes(o.value);
+          const w = voters ? Math.round((cnt.n / voters) * 100) : 0;
+          const top = lead !== undefined && lead === o.value && (c.closed || all);
+          return (
+            <button
+              key={String(o.value)}
+              type="button"
+              disabled={ro}
+              aria-pressed={on}
+              onClick={(e) => pick(o.value, e.currentTarget)}
+              style={{
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                padding: hasImg ? 6 : "8px 10px",
+                borderRadius: 10,
+                border: `1.5px solid ${on || top ? t.accent : t.border}`,
+                background: t.bg,
+                color: t.fg,
+                textAlign: "left",
+                cursor: ro ? "default" : "pointer",
+                overflow: "hidden",
+                touchAction: "manipulation",
+              }}
+            >
+              {o.img && (
+                <img
+                  src={o.img}
+                  alt={o.label}
+                  loading="lazy"
+                  style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", borderRadius: 6, background: t.chipBg }}
+                />
+              )}
+              {!hasImg && (
+                <span
+                  aria-hidden
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: `${w}%`,
+                    background: t.chipBg,
+                    transition: "width .3s",
+                  }}
+                />
+              )}
+              <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, fontSize: 13.5 }}>
+                {on && <Check size={15} strokeWidth={2.6} color={t.accent} />}
+                <span style={{ flex: 1, minWidth: 0, fontWeight: on ? 700 : 500, wordBreak: "break-word" }}>{o.label}</span>
+                <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{cnt.n}</span>
+                <span style={{ fontSize: 11.5, color: t.muted, minWidth: 32, textAlign: "right" }}>{voters ? `${w}%` : ""}</span>
+              </span>
+              {cnt.names.length > 0 && (
+                <span style={{ position: "relative", fontSize: 11.5, color: t.muted, wordBreak: "break-word" }}>
+                  {cnt.names.join("・")}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 12, color: all || c.closed ? t.fg : t.muted }}>
+        {status}
+        {!ro && (multi ? "　· 複数選べます・もう一度押すと外れます" : "　· 押すと投票・付け替えもできます")}
+      </div>
     </div>
   );
 }

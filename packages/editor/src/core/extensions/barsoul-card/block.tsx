@@ -981,7 +981,7 @@ function CopyBtn(props: { text: string; t: Theme }) {
 
 function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<void> }) {
   const { spec, t, S, reload } = props;
-  const editable = spec?.editable !== false && !!spec?.submit;
+  const editable = spec?.editable !== false && !!spec?.submit && !spec?.closed;
   const [st, setSt] = useState<any>(() => spec?.state ?? {});
   const [confirm, setConfirm] = useState<"approve" | "reject" | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1167,6 +1167,8 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
           crowd: spec?.crowd,
           me: spec?.me,
           quick: editable ? quick : undefined,
+          crowdTotal: spec?.crowd_total,
+          closed: !!spec?.closed,
         },
         k
       );
@@ -1722,7 +1724,8 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
           )}
           {/* 紙吹雪の起点。ボタン自体は確認バー/送信中で消えるので常在の枠に ref を付ける */}
           <div ref={btnRef} />
-          {!confirm && !busy && (
+          {/* hideButton = 原子だけで送信が完結するフォーム（poll/clap のみ）。ボタンがあると「押さないと投票されない？」と迷う */}
+          {!confirm && !busy && spec.hideButton !== true && (
             <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
               <button
                 type="button"
