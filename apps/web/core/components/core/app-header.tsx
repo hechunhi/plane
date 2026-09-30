@@ -5,12 +5,15 @@
  */
 
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { observer } from "mobx-react";
 // plane imports
 import { Row } from "@plane/ui";
 // components
 import { cn } from "@plane/utils";
 import { MOBILE_CHROME_CLASS, useMobileChromeRef } from "@/components/navigation/mobile-chrome";
+import { useProjectHeaderSlot } from "@/components/navigation/project-header-slot";
+import { useShortViewport } from "@/hooks/use-tight-viewport";
 import { ExtendedAppHeader } from "@/plane-web/components/common/extended-app-header";
 
 export interface AppHeaderProps {
@@ -24,6 +27,19 @@ export const AppHeader = observer(function AppHeader(props: AppHeaderProps) {
   const { header, mobileHeader, className, rowClassName } = props;
   // BARSOUL 2026-09: スマホでは下スクロールで畳まれる(mobile-chrome.tsx)
   const chromeRef = useMobileChromeRef<HTMLDivElement>();
+  // BARSOUL 2026-09: 低い画面(short: 高さ ≤ 879px)ではプロジェクトタブ行の右端へ畳み込み、
+  // この行自体は出さない。器はデスクトップ幅でしか見えない(short は min-width 768px 込み)ので
+  // mobileHeader(md:hidden)は持っていかない。詳細は project-header-slot.tsx。
+  const headerSlot = useProjectHeaderSlot();
+  const isShort = useShortViewport();
+  if (headerSlot && isShort) {
+    return createPortal(
+      <div className="flex h-full items-center gap-2">
+        <ExtendedAppHeader header={header} />
+      </div>,
+      headerSlot
+    );
+  }
 
   return (
     <div ref={chromeRef} data-edge="top" className={cn(MOBILE_CHROME_CLASS, "z-[18]", className)}>

@@ -5,6 +5,15 @@
  */
 
 import { action, observable, makeObservable, runInAction } from "mobx";
+import { isLaptopViewport } from "@/hooks/use-tight-viewport";
+
+/**
+ * BARSOUL 2026-09: サイドバーの開閉は「ノート PC 幅」と「それ以外」で別々に覚える。
+ * ノート PC(768〜1599px)は既定で畳む(未設定なら true)。大画面・モバイルは従来キーの
+ * まま = 既存の挙動と保存値に一切触れない。読み出し側は lib/wrappers/store-wrapper.tsx。
+ */
+export const SIDEBAR_COLLAPSED_KEY = "app_sidebar_collapsed";
+export const SIDEBAR_COLLAPSED_LAPTOP_KEY = "app_sidebar_collapsed_laptop";
 
 export interface IThemeStore {
   // observables
@@ -94,7 +103,10 @@ export class ThemeStore implements IThemeStore {
     } else {
       this.sidebarCollapsed = collapsed;
     }
-    localStorage.setItem("app_sidebar_collapsed", this.sidebarCollapsed.toString());
+    localStorage.setItem(
+      isLaptopViewport() ? SIDEBAR_COLLAPSED_LAPTOP_KEY : SIDEBAR_COLLAPSED_KEY,
+      this.sidebarCollapsed.toString()
+    );
   };
 
   /**

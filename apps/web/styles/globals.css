@@ -456,3 +456,12 @@ em-emoji-picker {
     font-size: 16px;
   }
 }
+
+/* BARSOUL 2026-09: 低い画面でプロジェクトタブ行へ畳み込んだ AppHeader(project-header-slot.tsx)。
+   器は中身の幅で決まる(flex-none)ので、中の <Header> の @container(inline-size 包含)を外す。
+   外さないと包含のせいで幅 0 に潰れる。副作用として @4xl: 系は一致しなくなり、
+   レイアウト切替は 1 つのドロップダウン、アナリティクスはアイコンだけ、という
+   既存の「狭いとき」の表示に自動で落ちる(= 横幅も節約)。 */
+[data-project-header-slot] .\@container {
+  container-type: normal;
+}

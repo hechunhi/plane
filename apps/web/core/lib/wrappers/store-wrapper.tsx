@@ -17,6 +17,8 @@ import { applyCustomTheme, clearCustomTheme } from "@plane/utils";
 import { useAppTheme } from "@/hooks/store/use-app-theme";
 import { useRouterParams } from "@/hooks/store/use-router-params";
 import { useUserProfile } from "@/hooks/store/user";
+import { isLaptopViewport, useLaptopViewport } from "@/hooks/use-tight-viewport";
+import { SIDEBAR_COLLAPSED_KEY, SIDEBAR_COLLAPSED_LAPTOP_KEY } from "@/store/theme.store";
 
 type TStoreWrapper = {
   children: ReactNode;
@@ -31,6 +33,8 @@ function StoreWrapper(props: TStoreWrapper) {
   // store hooks
   const { setQuery } = useRouterParams();
   const { sidebarCollapsed, toggleSidebar } = useAppTheme();
+  const isLaptop = useLaptopViewport();
+  const prevIsLaptopRef = useRef<boolean | null>(null);
   const { data: userProfile } = useUserProfile();
   const { changeLanguage } = useTranslation();
 
@@ -45,10 +49,30 @@ function StoreWrapper(props: TStoreWrapper) {
    * Sidebar collapsed fetching from local storage
    */
   useEffect(() => {
-    const localValue = localStorage && localStorage.getItem("app_sidebar_collapsed");
+    // BARSOUL 2026-09: ノート PC 幅(768〜1599px)は別キーで覚え、未設定なら畳む。
+    // hook の値は「区分が変わったら再実行する」ためだけに deps に入れ、判定は実際の
+    // matchMedia で行う(hydration 直後の 1 回目は hook が false を返すため)。
+    const laptopNow = isLaptopViewport();
+    const prev = prevIsLaptopRef.current;
+    prevIsLaptopRef.current = laptopNow;
+    if (laptopNow) {
+      if (prev === true) return; // 同じ区分の中での開閉はユーザ操作 = 触らない
+      const laptopValue = localStorage && localStorage.getItem(SIDEBAR_COLLAPSED_LAPTOP_KEY);
+      const want = laptopValue === null ? true : laptopValue === "true";
+      if (sidebarCollapsed !== want) toggleSidebar(want);
+      return;
+    }
+    if (prev === true) {
+      // ノート PC 幅 → 広い画面へ戻った(ウィンドウを広げた等): 広い画面側の保存値に戻す
+      const want = localStorage && localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+      if (sidebarCollapsed !== want) toggleSidebar(want);
+      return;
+    }
+    // 以下は従来どおり(大画面・モバイル)
+    const localValue = localStorage && localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
     const localBoolValue = localValue ? (localValue === "true" ? true : false) : false;
     if (localValue && sidebarCollapsed === undefined) toggleSidebar(localBoolValue);
-  }, [sidebarCollapsed, setTheme, toggleSidebar]);
+  }, [isLaptop, sidebarCollapsed, setTheme, toggleSidebar]);
 
   /**
    * Effect 1: Initial theme sync from server (one-time only)

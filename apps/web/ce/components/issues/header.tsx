@@ -18,7 +18,7 @@ import {
 } from "@plane/constants";
 import { useTranslation } from "@plane/i18n";
 import { Button } from "@plane/propel/button";
-import { NewTabIcon, WorkItemsIcon } from "@plane/propel/icons";
+import { NewTabIcon, PlusIcon, WorkItemsIcon } from "@plane/propel/icons";
 import { Tooltip } from "@plane/propel/tooltip";
 import { EIssuesStoreType } from "@plane/types";
 import { Breadcrumbs, Header } from "@plane/ui";
@@ -127,9 +127,14 @@ export const IssuesHeader = observer(function IssuesHeader() {
               toggleCreateIssueModal(true, EIssuesStoreType.PROJECT);
             }}
             data-ph-element={WORK_ITEM_TRACKER_ELEMENTS.HEADER_ADD_BUTTON.WORK_ITEMS}
+            aria-label={t("issue.add.label")}
+            title={t("issue.add.label")}
           >
             <div className="block sm:hidden">{t("issue.label", { count: 1 })}</div>
-            <div className="hidden sm:block">{t("issue.add.label")}</div>
+            {/* BARSOUL 2026-09: ヘッダの幅が 56rem 未満(= ノート PC で詰めた時・低い画面で
+                タブ行へ畳み込んだ時)はアイコンだけ。大画面はヘッダが広いので従来の文字のまま。 */}
+            <div className="hidden @4xl:block">{t("issue.add.label")}</div>
+            <PlusIcon className="hidden size-3.5 sm:block @4xl:hidden!" />
           </Button>
         )}
       </Header.RightItem>

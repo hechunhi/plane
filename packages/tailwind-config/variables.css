@@ -1,6 +1,12 @@
 @custom-variant dark (&:where([data-theme*="dark"], [data-theme*="dark"] *));
 @custom-variant dark-high-contrast (&:where([data-theme="dark-contrast"], [data-theme="dark-contrast"] *));
 @custom-variant light-high-contrast (&:where([data-theme="light-contrast"], [data-theme="light-contrast"] *));
+/* BARSOUL 2026-09 ノート PC 密度 — 大画面(4K 等)は一切変えず、狭い/低い画面だけ詰める。
+   laptop = 横が足りない(13" Win 150% ≈ 1280 / MBA 13" ≈ 1470 / 15.6" Win 125% = 1536)
+   short  = 縦が足りない(同 ≈ 620 / ≈ 830。1080p 外部モニタ + Dock ≈ 900 は対象外)
+   JS 側の同じ境界は apps/web/core/hooks/use-tight-viewport.ts。変えるなら両方同時に。 */
+@custom-variant laptop (@media (min-width: 768px) and (max-width: 1599px));
+@custom-variant short (@media (min-width: 768px) and (max-height: 879px));
 
 @layer base {
   :root,

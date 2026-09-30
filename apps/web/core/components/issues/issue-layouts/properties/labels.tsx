@@ -20,6 +20,7 @@ import type { IIssueLabel } from "@plane/types";
 import { cn } from "@plane/utils";
 import { useLabel } from "@/hooks/store/use-label";
 import { usePlatformOS } from "@/hooks/use-platform-os";
+import { useLaptopViewport } from "@/hooks/use-tight-viewport";
 import { LabelDropdown } from "./label-dropdown";
 
 export interface IIssuePropertyLabels {
@@ -122,6 +123,25 @@ type LabelItemProps = {
   noLabelBorder: boolean;
 };
 
+/**
+ * BARSOUL 2026-09: 当社のラベルは「🏢 総務・社内 / 行政内务」のように 日 / 中 の 2 言語併記。
+ * ノート PC 幅(laptop: 768〜1599px)ではカード 1 枚の横幅が 240px 前後しかなく、併記だと
+ * チップ 1 個でほぼ 1 行を使い切ってプロパティ行が増える(= カードが縦に伸びる)。
+ * そこで閲覧者の言語の片側だけを出す(先頭の絵文字は両側で共有)。ツールチップは常に全文。
+ * " / " でちょうど 2 分割できない名前・日中以外の UI 言語はそのまま。表示だけで保存値は不変。
+ */
+const LEADING_SYMBOLS = /^[\p{Extended_Pictographic}\uFE0F\u200D\s]+/u;
+const pickViewerHalf = (name: string, locale: string): string => {
+  const parts = name.split(" / ");
+  if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) return name;
+  if (locale === "ja") return parts[0].trim();
+  if (!locale.startsWith("zh")) return name;
+  const second = parts[1].trim();
+  if (LEADING_SYMBOLS.test(second)) return second;
+  const lead = parts[0].match(LEADING_SYMBOLS)?.[0] ?? "";
+  return (lead + second).trim();
+};
+
 const LabelItem = observer(function LabelItem({
   label,
   isMobile,
@@ -130,7 +150,10 @@ const LabelItem = observer(function LabelItem({
   fullWidth,
   noLabelBorder,
 }: LabelItemProps) {
-  const { t } = useTranslation();
+  const { t, currentLocale } = useTranslation();
+  const isLaptop = useLaptopViewport();
+  const fullName = label?.name ?? "";
+  const shownName = isLaptop ? pickViewerHalf(fullName, currentLocale) : fullName;
 
   return (
     <Tooltip
@@ -155,7 +178,7 @@ const LabelItem = observer(function LabelItem({
               backgroundColor: label?.color ?? "#000000",
             }}
           />
-          <div className="line-clamp-1 inline-block w-auto max-w-[200px] truncate">{label?.name}</div>
+          <div className="line-clamp-1 inline-block w-auto max-w-[200px] truncate">{shownName}</div>
         </div>
       </div>
     </Tooltip>
