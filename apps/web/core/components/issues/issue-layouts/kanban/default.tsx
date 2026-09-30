@@ -146,7 +146,7 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
   const isSubGroup = !!sub_group_id && sub_group_id !== "null";
 
   return (
-    <ContentWrapper className={cn("relative flex-row !pt-2 !pb-0", KANBAN_COLUMN_GAP_CLASS)}>
+    <ContentWrapper className={cn("relative flex-row !pt-2 !pb-0 short:!pt-1", KANBAN_COLUMN_GAP_CLASS)}>
       {list &&
         list.length > 0 &&
         list.map((subList: IGroupByColumn, groupIndex) => {
@@ -170,7 +170,7 @@ export const KanBan = observer(function KanBan(props: IKanBan) {
               )}
             >
               {sub_group_by === null && (
-                <div className="sticky top-0 z-[2] w-full flex-shrink-0 bg-surface-2 py-1 max-sm:bg-layer-1 max-sm:py-0.5">
+                <div className="sticky top-0 z-[2] w-full flex-shrink-0 bg-surface-2 py-1 max-sm:bg-layer-1 max-sm:py-0.5 short:py-0.5">
                   <HeaderGroupByCard
                     sub_group_by={sub_group_by}
                     group_by={group_by}

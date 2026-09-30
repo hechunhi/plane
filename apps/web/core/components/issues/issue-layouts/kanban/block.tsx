@@ -230,8 +230,9 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
       )}
 
       <IssueProperties
-        /* BARSOUL 2026-08: スマホではバッジ間隔を詰めて折返し行数を減らす。 */
-        className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary max-md:gap-1.5"
+        /* BARSOUL 2026-08: スマホではバッジ間隔を詰めて折返し行数を減らす。
+           2026-09: 高さ 879px 以下(short:)ではカード余白・列ヘッダも一段詰める。大画面は不変。 */
+        className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary max-md:gap-1.5 short:gap-1.5 short:pt-1"
         issue={issue}
         displayProperties={displayProperties}
         activeLayout="Kanban"
@@ -261,7 +262,7 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
           displayPropertyKey="sub_issue_count"
           shouldRenderProperty={(properties) => !!properties.sub_issue_count && !!subIssueCount}
         >
-          <IssueStats issueId={issue.id} className="mt-2 font-medium text-tertiary" />
+          <IssueStats issueId={issue.id} className="mt-2 font-medium text-tertiary short:mt-1.5" />
         </WithDisplayPropertiesHOC>
       )}
     </>
@@ -406,7 +407,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
       <div
         id={`issue-${issueId}`}
         // make Z-index higher at the beginning of drag, to have a issue drag image of issue block without any overlaps
-        className={cn("group/kanban-block relative mb-2", { "z-[1]": isCurrentBlockDragging })}
+        className={cn("group/kanban-block relative mb-2 short:mb-1.5", { "z-[1]": isCurrentBlockDragging })}
         // BARSOUL DIS v3: 整卡 hover → 全局 AI 当前态浮层(仅当该卡有派生态时)
         // BARSOUL 2026-08: 触屏では hover は合成イベントなので信用しない。
         // (タップ→mouseenter→表示予約→同じタップの click で peek が開き浮層が消える、
@@ -447,7 +448,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           href={workItemLink}
           ref={cardRef}
           className={cn(
-            "relative block w-full rounded-lg border border-subtle bg-layer-2 p-2.5 text-13 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
+            "relative block w-full rounded-lg border border-subtle bg-layer-2 p-2.5 text-13 short:p-2 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
             { "hover:cursor-pointer": isDragAllowed },
             { "border border-accent-strong hover:border-accent-strong": getIsIssuePeeked(issue.id) },
             // BARSOUL 未読 v6(2026-05-25, Gmail/Linear 流):

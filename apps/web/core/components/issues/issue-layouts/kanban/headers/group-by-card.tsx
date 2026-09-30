@@ -126,7 +126,7 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
         />
       )}
       <div
-        className={`relative flex flex-shrink-0 gap-1 py-1.5 ${
+        className={`relative flex flex-shrink-0 gap-1 py-1.5 short:py-1 ${
           verticalAlignPosition ? `w-[44px] flex-col items-center` : `w-full flex-row items-center`
         }`}
       >
@@ -140,7 +140,7 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
           }`}
         >
           <div
-            className={`line-clamp-1 inline-block truncate overflow-hidden font-medium text-primary ${
+            className={`line-clamp-1 inline-block truncate overflow-hidden font-medium text-primary short:text-14 ${
               verticalAlignPosition ? `max-h-[400px] vertical-lr` : ``
             }`}
           >
