@@ -23,6 +23,7 @@ from plane.db.models import (
     MeetingChatReaction,
     ProjectMember,
     ProjectPage,
+    WorkspaceMember,
     WeeklyMeeting,
     WeeklyReportEntry,
     Workspace,
@@ -36,9 +37,61 @@ logger = logging.getLogger("plane.weekly")
 # 既定の会期長。初回(過去に確定会議が無い)だけ使う。以降は前回 held_at が起点。
 DEFAULT_PERIOD_DAYS = int(os.environ.get("WEEKLY_DEFAULT_PERIOD_DAYS", "7"))
 
+# 会期の窓の上限。**「前回から」を無条件に信じない為の歯止め**(hechun 2026-09-09)。
+#
+# 実測で踏んだ事故: 7/24 に開いた会期が一度も確定されないまま 9/3 まで残り、
+# 窓が 47 日に育っていた。period_start は開いた時のまま、period_end だけが
+# refresh の度に now へ伸びるので、放置した会期は **黙って伸び続ける**。
+# 結果は日付ラベルが変なだけでは済まない —— 1 人の sources が 180 件
+# (progress 114 / discussion 146)になり、「今週何をしたか」を読む道具ではなく
+# 47 日分の水道管になっていた。「週報が使われていない」の実体はこれ。
+#
+# 金曜開催が翌週月曜へずれる運用例外(設計 論点 2)は数日の話なので、31 日で
+# 抑えても本来の「前回から」は一切損なわれない。ここに当たるという事は
+# **前回の会議が確定されていない** という事で、その時に欲しいのは 6 週間の
+# 集計ではなく直近の週の集計。
+MAX_PERIOD_DAYS = int(os.environ.get("WEEKLY_MAX_PERIOD_DAYS", "31"))
+
+# 「窓が長すぎる」と画面が警告し始める境目。上限(MAX_PERIOD_DAYS)とは別物で、
+# こちらは **人に気付かせる為だけ** の線 —— 週次の会議なら 10 日を超えた時点で
+# 「確定を押し忘れている」がほぼ確実に当たる。値は画面へ渡して判定は画面が持つ
+# (同じ数字を TS 側に書き写さない)。
+LONG_PERIOD_DAYS = int(os.environ.get("WEEKLY_LONG_PERIOD_DAYS", "10"))
+
 
 def _ws(slug):
     return Workspace.objects.get(slug=slug)
+
+
+def _is_workspace_admin(user, workspace_id):
+    return WorkspaceMember.objects.filter(
+        workspace_id=workspace_id, member=user, role=ROLE.ADMIN.value, is_active=True
+    ).exists()
+
+
+def _parse_dt(value):
+    """ISO-8601 → aware datetime。読めなければ None(呼出側が 400 を返す)。
+
+    画面の日付入力は "2026-09-01" の様に日付だけを送ってくる。`parse_datetime` は
+    それを None にするので日付だけの形も受け、**現地時間の 0 時** として解釈する
+    (UTC で解釈すると、日本から見て前日の 9 時が窓の端になる)。
+    """
+    from django.utils.dateparse import parse_date, parse_datetime
+
+    if not value or not isinstance(value, str):
+        return None
+    value = value.strip()
+    dt = parse_datetime(value)
+    if dt is None:
+        d = parse_date(value)
+        if d is None:
+            return None
+        from datetime import datetime, time
+
+        dt = datetime.combine(d, time.min)
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
 
 
 def _user_json(u):
@@ -79,7 +132,7 @@ def _page_projects(page_ids):
     return {str(p): str(pr) for p, pr in rows}
 
 
-def _meeting_json(m, entries=None, page_projects=None):
+def _meeting_json(m, entries=None, page_projects=None, counts=None):
     pp = _page_projects([m.page_id]) if page_projects is None else page_projects
     d = {
         "id": str(m.id),
@@ -90,10 +143,31 @@ def _meeting_json(m, entries=None, page_projects=None):
         "held_at": m.held_at.isoformat() if m.held_at else None,
         "page_id": str(m.page_id) if m.page_id else None,
         "page_project_id": pp.get(str(m.page_id)) if m.page_id else None,
+        # 窓が長すぎると画面が言い出す境目。同じ数字を TS 側へ書き写さない為に配る。
+        "long_period_days": LONG_PERIOD_DAYS,
     }
     if entries is not None:
         d["entries"] = [_entry_json(e) for e in entries]
+    if counts is not None:
+        # 削除が何に阻まれるか **押す前に** 言える様にする(削除の註を参照)。
+        d["counts"] = counts
     return d
+
+
+def _blockers(meeting):
+    """この会期の削除を阻む「人が書いた物」の数。
+
+    数を返すのは、断るだけの 409 が一番困る失敗だったから —— 画面は
+    「定稿か発言があるので消せません」としか言えず、**何が・幾つ** 引っ掛かって
+    いるのかも、どうすれば消せるのかも出せなかった。実際に詰まった会期の中身は
+    6 週間前の定稿 1 本と、5 分で終わった疎通確認の発言 17 件だった。
+    """
+    entries = WeeklyReportEntry.objects.filter(meeting=meeting, deleted_at__isnull=True)
+    return {
+        "final_entries": entries.exclude(content_html="").exclude(content_html__isnull=True).count(),
+        "chat_messages": MeetingChatMessage.objects.filter(
+            meeting=meeting, deleted_at__isnull=True).count(),
+    }
 
 
 def _entries_qs(meeting):
@@ -143,7 +217,10 @@ def _default_period(workspace_id):
         .first()
     )
     if last:
-        return last.held_at, end
+        # 前回が遠すぎる時は遡らない(MAX_PERIOD_DAYS の註)。長い休みや確定の
+        # 押し忘れの後に「前回から」を素直に信じると、開いた瞬間から読めない
+        # 分量の会期になる。
+        return max(last.held_at, end - timedelta(days=MAX_PERIOD_DAYS)), end
     return end - timedelta(days=DEFAULT_PERIOD_DAYS), end
 
 
@@ -236,7 +313,7 @@ class WeeklyMeetingDetailEndpoint(BaseAPIView):
         ws = _ws(slug)
         m = WeeklyMeeting.objects.get(id=meeting_id, workspace_id=ws.id, deleted_at__isnull=True)
         entries = list(_entries_qs(m))
-        return Response(_meeting_json(m, entries), status=status.HTTP_200_OK)
+        return Response(_meeting_json(m, entries, counts=_blockers(m)), status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
     def patch(self, request, slug, meeting_id):
@@ -246,7 +323,50 @@ class WeeklyMeetingDetailEndpoint(BaseAPIView):
             m.title = (request.data.get("title") or "").strip()[:255]
         if "page_id" in request.data:
             m.page_id = request.data.get("page_id") or None
+
+        # 会期の窓を人が直せる様にする(hechun 2026-09-09)。
+        #
+        # 今まで period_start を動かせるのは「前の会期を確定する」時だけだった。
+        # 確定は会期を凍らせる終端操作なので、窓がずれている事に会議中に気付いても
+        # 直す手が無い —— 実際 47 日に育った会期はそのまま放置されていた。
+        # 窓は集計の入力でしかないので、直せて当たり前の物として扱う。
+        #
+        # 直した後は **その場で投影を作り直す**。窓だけ変えて sources が古いままだと、
+        # 見出しは 7 日なのに本文は 47 日分という一番読めない状態になる。
+        # 下書きは作り直さない —— 生成は 1 人 ~70s の直列で、窓をつまむ度に
+        # 数分待たされるのでは誰も直さなくなる。作り直しは「作り直す」が担う。
+        period = {}
+        for field in ("period_start", "period_end"):
+            if field in request.data:
+                parsed = _parse_dt(request.data.get(field))
+                if parsed is None:
+                    return Response(
+                        {"error": f"{field} must be an ISO-8601 datetime"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                period[field] = parsed
+        if period:
+            if m.status == WeeklyMeeting.STATUS_CONFIRMED:
+                # 確定済みは記録。窓を後から動かすと「その時こう報告した」が変わる。
+                return Response(
+                    {"error": "cannot change the period of a confirmed meeting"},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            start = period.get("period_start", m.period_start)
+            end = period.get("period_end", m.period_end)
+            if start >= end:
+                return Response(
+                    {"error": "period_start must be before period_end"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            m.period_start, m.period_end = start, end
+
         m.save()
+        if period:
+            entries = _rebuild(m, generate_draft=False)
+            return Response(
+                _meeting_json(m, entries, counts=_blockers(m)), status=status.HTTP_200_OK
+            )
         return Response(_meeting_json(m), status=status.HTTP_200_OK)
 
     @allow_permission([ROLE.ADMIN, ROLE.MEMBER], level="WORKSPACE")
@@ -260,19 +380,42 @@ class WeeklyMeetingDetailEndpoint(BaseAPIView):
         ws = _ws(slug)
         m = WeeklyMeeting.objects.get(id=meeting_id, workspace_id=ws.id, deleted_at__isnull=True)
 
-        entries = WeeklyReportEntry.objects.filter(meeting=m, deleted_at__isnull=True)
-        has_content = entries.exclude(content_html="").exclude(content_html__isnull=True).exists()
-        has_chat = MeetingChatMessage.objects.filter(meeting=m, deleted_at__isnull=True).exists()
-        if has_content or has_chat:
+        counts = _blockers(m)
+        blocked = counts["final_entries"] or counts["chat_messages"]
+        # force = 「中身は分かった上で捨てる」。**管理者だけ**(hechun 2026-09-09)。
+        #
+        # 断るだけの門は正しくなかった。実際に詰まった会期を塞いでいたのは
+        # 6 週間前の定稿 1 本と 5 分の疎通確認 17 件で、その二つの為に週報機能
+        # そのものが使えない状態が 6 週間続いた。門を外すのではなく **出口を作る**:
+        #   ・誰でも通れる訳ではない(ADMIN のみ)
+        #   ・何を捨てるか数で先に見せる(counts / 上の _blockers)
+        #   ・捨て方は今まで通り soft delete —— deleted_at を置くだけで、
+        #     行そのものは DB に残る。層③の SoR は「消さない」が守られている。
+        force = str(request.query_params.get("force", "")).lower() in ("1", "true", "yes")
+        if blocked and not force:
             return Response(
-                {"error": "meeting has human-authored content"},
+                {"error": "meeting has human-authored content", "counts": counts},
                 status=status.HTTP_409_CONFLICT,
+            )
+        if blocked and force and not _is_workspace_admin(request.user, ws.id):
+            return Response(
+                {"error": "only a workspace admin can discard human-authored content",
+                 "counts": counts},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
         now = timezone.now()
-        entries.update(deleted_at=now)
+        WeeklyReportEntry.objects.filter(meeting=m, deleted_at__isnull=True).update(deleted_at=now)
+        if blocked:
+            # 発言も一緒に伏せる。会期だけ消すと、辿れないのに生きている行が残る。
+            MeetingChatMessage.objects.filter(meeting=m, deleted_at__isnull=True).update(deleted_at=now)
         m.deleted_at = now
         m.save()
+        if blocked:
+            logger.warning(
+                "weekly: meeting %s force-deleted by %s (final=%d chat=%d)",
+                m.id, request.user.id, counts["final_entries"], counts["chat_messages"],
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

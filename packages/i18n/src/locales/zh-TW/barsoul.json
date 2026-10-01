@@ -108,6 +108,17 @@
       "expand": "顯示全文",
       "collapse": "收起"
     },
+    "period": {
+      "days": "{count} 天",
+      "hint": "本期統計的時間範圍，從上次會議之後算起。",
+      "too_long_hint": "範圍太長了，多半是上次忘了按確定 —— 縮短後內容就回到能讀的量。",
+      "last_days": "最近 {count} 天",
+      "since_last": "從上次會議起",
+      "apply": "用這個範圍",
+      "apply_hint": "改範圍會重新收集來源，但不會重跑草稿（要重跑請按「重新產生」）。",
+      "updated": "範圍已更新",
+      "frozen": "已確定的會期不能改範圍。"
+    },
     "actions": {
       "open": "新開一期",
       "opened": "已新開一期",
@@ -128,6 +139,12 @@
       "deleting": "刪除中…",
       "deleted": "已刪除本期",
       "delete_modal": "本期連同草稿一起刪除。只有還沒人寫過東西的期才能刪。",
+      "delete_blocked_title": "本期還留著人寫的內容：",
+      "delete_blocked_entries": "定稿 {count} 則",
+      "delete_blocked_chat": "發言 {count} 則",
+      "delete_blocked_hint": "只有管理員能刪除，請找管理員處理。",
+      "delete_force_hint": "按「仍要刪除」會連同上面的內容一起隱藏本期。不會真的抹掉（僅管理員）。",
+      "delete_force": "仍要刪除",
       "delete_conflict": "本期已有定稿或發言記錄，不能刪除。",
       "rename": "重新命名本期",
       "rename_placeholder": "例：7月第4週 例會",

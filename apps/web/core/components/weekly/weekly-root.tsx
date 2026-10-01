@@ -18,6 +18,7 @@ import {
   MessagesSquare,
   MoreHorizontal,
   NotebookPen,
+  AlertTriangle,
   Pencil,
   Plus,
   RefreshCw,
@@ -49,6 +50,201 @@ const fmtDate = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
 };
+
+const DAY = 86400000;
+
+/** 窓の長さ(日)。0 日は無いので下限 1 — 「0 日間」と出る方が壊れて見える。 */
+const spanDays = (m: { period_start: string; period_end: string }) => {
+  const a = new Date(m.period_start).getTime();
+  const b = new Date(m.period_end).getTime();
+  if (Number.isNaN(a) || Number.isNaN(b)) return 0;
+  return Math.max(1, Math.round((b - a) / DAY));
+};
+
+/** <input type="date"> は YYYY-MM-DD しか受けない。**現地時間で** 切る
+ *  (toISOString は UTC なので、日本から見ると前日が出る)。 */
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toDateInput = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+};
+
+/**
+ * 会期の窓。**日付ラベルではなく操作** として置く(hechun 2026-09-09)。
+ *
+ * ここが読み取り専用だったせいで、7/24 に開いた会期が確定されないまま 9/3 まで
+ * 残り、窓が 47 日に育っていた。period_start を動かせるのは「前の会期を確定する」
+ * 時だけ ——確定は会期を凍らせる終端操作なので、会議中にずれに気付いても直す手が
+ * 無かった。結果は日付が変なだけでは済まず、1 人の出処が 180 件になって
+ * 「今週何をしたか」を読む道具ではなくなる。「週報が使われていない」の実体はこれ。
+ *
+ * なので (1) 長さを日数で必ず出し、(2) 長過ぎる時は自分から警告し、
+ * (3) その場で詰められる様にする。既定値を賢くするだけでは足りない ——
+ * 既に育ってしまった会期を人が直せないと、同じ所で詰まったままになる。
+ *
+ * CustomMenu ではなく素の popover なのは、中に <input> を置くから
+ * (headlessui の Menu はキー入力を項目移動として食う)。
+ */
+function PeriodControl({
+  meeting,
+  editable,
+  lastHeldAt,
+  onApply,
+  busy,
+}: {
+  meeting: TWeeklyMeeting;
+  editable: boolean;
+  /** 直近の確定会議の held_at。「前回の会議から」の起点(無ければその選択肢を出さない)。 */
+  lastHeldAt: string | null;
+  onApply: (start: string, end: string) => Promise<void>;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+
+  const days = spanDays(meeting);
+  // 境目はサーバが配る(long_period_days)。同じ数字を TS 側に書き写さない。
+  const tooLong = days > (meeting.long_period_days ?? 10);
+
+  useEffect(() => {
+    setStart(toDateInput(meeting.period_start));
+    setEnd(toDateInput(meeting.period_end));
+  }, [meeting.period_start, meeting.period_end]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const apply = async (s: string, e: string) => {
+    await onApply(s, e);
+    setOpen(false);
+  };
+  // 末端は「その日いっぱい」。日付だけを渡すと 0 時で切れて、その日の分が丸ごと落ちる。
+  //
+  // 送るのは **必ずオフセット付き**(toISOString)。api コンテナは UTC で回っているので、
+  // 素の "2026-09-01T00:00:00" を渡すと UTC 0 時 = 日本の朝 9 時として切られ、
+  // 選んだ日の午前中が窓から落ちる。ここで現地時間として解いてから UTC に直す。
+  const applyInputs = () =>
+    start &&
+    end &&
+    void apply(new Date(`${start}T00:00:00`).toISOString(), new Date(`${end}T23:59:59.999`).toISOString());
+  const applyLastDays = (n: number) =>
+    void apply(new Date(Date.now() - n * DAY).toISOString(), new Date().toISOString());
+
+  const label = (
+    <>
+      <span className="tabular-nums">
+        {fmtDate(meeting.period_start)} – {fmtDate(meeting.period_end)}
+      </span>
+      {/* 日数を必ず添える。「7/17 – 9/3」だけだと、何日分を見ているのかが読み取れない
+          ——47 日である事に誰も気付かないまま 6 週間使われた。 */}
+      <span className={cn("tabular-nums", tooLong ? "font-medium" : "text-placeholder")}>
+        {t("weekly.period.days", { count: days })}
+      </span>
+      {tooLong && <AlertTriangle className="size-3 shrink-0" strokeWidth={2} />}
+    </>
+  );
+
+  if (!editable)
+    return (
+      <Tooltip tooltipContent={tooLong ? t("weekly.period.too_long_hint") : t("weekly.period.hint")} position="bottom">
+        <span
+          className={cn(
+            "hidden shrink-0 items-center gap-1.5 text-11 sm:flex",
+            tooLong ? "text-warning-primary" : "text-placeholder"
+          )}
+        >
+          {label}
+        </span>
+      </Tooltip>
+    );
+
+  return (
+    <div ref={box} className="relative hidden shrink-0 sm:block">
+      <Tooltip tooltipContent={tooLong ? t("weekly.period.too_long_hint") : t("weekly.period.hint")} position="bottom">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2 py-1 text-11 transition-colors hover:bg-layer-1",
+            tooLong ? "text-warning-primary" : "text-placeholder hover:text-secondary"
+          )}
+        >
+          {label}
+        </button>
+      </Tooltip>
+
+      {open && (
+        <div className="absolute top-full left-0 z-30 mt-1 w-[17rem] rounded-lg border border-subtle bg-surface-2 p-3 shadow-lg">
+          <p className="mb-2 text-11 leading-relaxed text-tertiary">
+            {tooLong ? t("weekly.period.too_long_hint") : t("weekly.period.hint")}
+          </p>
+
+          {/* 詰めるのが一番多い操作なので、押す所を先に置く。長過ぎる時は
+              「最近 7 日」を主導線にする —— 詰まった人が読まずに押しても正しい。 */}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <Button variant={tooLong ? "primary" : "secondary"} size="sm" disabled={busy} onClick={() => applyLastDays(7)}>
+              {t("weekly.period.last_days", { count: 7 })}
+            </Button>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => applyLastDays(14)}>
+              {t("weekly.period.last_days", { count: 14 })}
+            </Button>
+            {lastHeldAt && (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={busy}
+                onClick={() => void apply(lastHeldAt, new Date().toISOString())}
+              >
+                {t("weekly.period.since_last")}
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={start}
+              max={end || undefined}
+              onChange={(e) => setStart(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-subtle bg-layer-transparent px-2 py-1 text-11 text-primary outline-none focus:border-accent-strong"
+            />
+            <span className="shrink-0 text-11 text-tertiary">–</span>
+            <input
+              type="date"
+              value={end}
+              min={start || undefined}
+              onChange={(e) => setEnd(e.target.value)}
+              className="min-w-0 flex-1 rounded-md border border-subtle bg-layer-transparent px-2 py-1 text-11 text-primary outline-none focus:border-accent-strong"
+            />
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-2 w-full"
+            loading={busy}
+            disabled={busy || !start || !end || start > end}
+            onClick={applyInputs}
+          >
+            {t("weekly.period.apply")}
+          </Button>
+          {/* 窓を直すと出処は作り直されるが下書きは作り直さない(1 人 ~70s の直列)。
+              黙って古い下書きが残ると誤解を招くので、先に言っておく。 */}
+          <p className="mt-2 text-11 leading-relaxed text-tertiary">{t("weekly.period.apply_hint")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** 会期のまとめ。人ごとの偏りではなく「今週どれだけ動いたか」を出す(評価はしない)。 */
 function StatCards({ entries }: { entries: TWeeklyEntry[] }) {
@@ -123,12 +319,18 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
     workspaceSlug
   );
 
+  // force 削除だけは管理者に限る(API 側も同じ線引き)。
+  const isAdmin = allowPermissions([EUserPermissions.ADMIN], EUserPermissionsLevel.WORKSPACE, workspaceSlug);
+
   const [meetingId, setMeetingId] = useState<string | null>(null);
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"" | "refresh" | "sources" | "confirm" | "reopen" | "open" | "delete" | "page">("");
+  const [busy, setBusy] = useState<"" | "refresh" | "sources" | "confirm" | "reopen" | "open" | "delete" | "page" | "period">("");
   // 確定は「会期を閉じる」終端操作。押した瞬間に全員の編集が止まるので、必ず訊く。
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  /** 409 で返ってきた「何が引っ掛かっているか」。押した後にしか分からない事もあるので
+   *  掴んでおいて、モーダルの中で数のまま出す。 */
+  const [deleteBlocked, setDeleteBlocked] = useState<{ final_entries: number; chat_messages: number } | null>(null);
   /** 22rem のドックだと長い発言が読めない問題を「常に最大化」で解消。
    *  ドック/最大化のトグルはもう無い — 開けば常にコンテナ内いっぱい。 */
   const [chatOpen, setChatOpen] = useState(false);
@@ -223,9 +425,12 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
     try {
       if (kind === "delete") {
         const gone = meetingId;
-        await weeklyService.remove(workspaceSlug, gone as string);
+        // 阻まれると分かっている時だけ force を付ける。既定は今まで通り「空の会期しか
+        // 消せない」で、force は **管理者が中身を見た上で** 押した時にだけ立つ。
+        await weeklyService.remove(workspaceSlug, gone as string, { force: forceDelete });
         const rest = await mutateList();
         setDeleteOpen(false);
+        setDeleteBlocked(null);
         // 消した会期に居座らせない。開いている会期があればそこへ、無ければ直近へ。
         const next = (rest || []).filter((m) => m.id !== gone);
         setMeetingId(next.find((m) => m.status === "OPEN")?.id ?? next[0]?.id ?? null);
@@ -254,7 +459,11 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
       }
     } catch (err) {
       // 409 は「直せる失敗」。何が邪魔しているかを言わないと打つ手が無くなる。
-      const conflict = (err as { response?: { status?: number } })?.response?.status === 409;
+      const res = (err as { response?: { status?: number; data?: { counts?: typeof deleteBlocked } } })?.response;
+      const conflict = res?.status === 409;
+      // 削除が阻まれた時は数を掴んでモーダルに残す。「消せません」だけ言われて
+      // 何が引っ掛かっているかも分からない、が 6 週間続いた失敗の形。
+      if (conflict && kind === "delete") setDeleteBlocked(res?.data?.counts ?? null);
       const key =
         conflict && kind === "reopen"
           ? "weekly.actions.reopen_conflict"
@@ -317,7 +526,41 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
     }
   };
 
+  /**
+   * 窓を直す。返るのは投影を作り直した後の会期(entries 入り)なので丸ごと差し替える。
+   * 下書きは作り直されない — 必要なら「作り直す」を押す(生成は 1 人 ~70s の直列で、
+   * 窓をつまむ度に数分待たされるのでは誰も直さなくなる)。
+   */
+  const savePeriod = async (period_start: string, period_end: string) => {
+    if (!meeting) return;
+    setBusy("period");
+    try {
+      const next = await weeklyService.patch_(workspaceSlug, meeting.id, { period_start, period_end });
+      void mutateMeeting(next as TWeeklyMeeting, { revalidate: false });
+      await mutateList();
+      setToast({ type: TOAST_TYPE.SUCCESS, title: t("weekly.period.updated") });
+    } catch (err) {
+      const conflict = (err as { response?: { status?: number } })?.response?.status === 409;
+      setToast({
+        type: TOAST_TYPE.ERROR,
+        title: t(conflict ? "weekly.period.frozen" : "weekly.actions.failed"),
+      });
+    } finally {
+      setBusy("");
+    }
+  };
+
   const confirmed = meeting?.status === "CONFIRMED";
+  // 「前回の会議から」の起点。確定済みで一番新しいもの(一覧は period_end の降順)。
+  const lastHeldAt = useMemo(
+    () => (meetings || []).find((m) => m.id !== meeting?.id && m.held_at)?.held_at ?? null,
+    [meetings, meeting?.id]
+  );
+  // 押す前に分かる分は先に出す(GET detail が counts を配る)。押して初めて
+  // 分かった分(409 の本文)は deleteBlocked に入るので、どちらかを使う。
+  const blockers = deleteBlocked ?? meeting?.counts ?? null;
+  const willBlock = !!blockers && (blockers.final_entries > 0 || blockers.chat_messages > 0);
+  const forceDelete = willBlock && isAdmin;
 
   if (!meetings) return <div className="h-full animate-pulse bg-layer-transparent" />;
 
@@ -430,9 +673,14 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
           </span>
         )}
         {meeting && (
-          <span className="hidden shrink-0 text-11 text-placeholder tabular-nums sm:inline">
-            {fmtDate(meeting.period_start)} – {fmtDate(meeting.period_end)}
-          </span>
+          <PeriodControl
+            meeting={meeting}
+            /* 確定済みの窓は記録なので動かさない(API も 409 を返す)。 */
+            editable={canEdit && !confirmed}
+            lastHeldAt={lastHeldAt}
+            onApply={savePeriod}
+            busy={busy === "period"}
+          />
         )}
 
         <span className="flex-1" />
@@ -710,15 +958,50 @@ export const WeeklyRoot = observer(function WeeklyRoot({ workspaceSlug }: { work
         secondaryButtonText={t("weekly.final.cancel")}
       />
 
+      {/* 削除。**押す前に** 何が引っ掛かるかを数で出す(hechun 2026-09-09)。
+          以前はここが静的な一文で、押して初めて「定稿か発言があるので消せません」と
+          言われ、何が・幾つ引っ掛かっているかも、どうすれば消せるかも出せなかった。
+          実際に詰まっていたのは 6 週間前の定稿 1 本と 5 分の疎通確認 17 件で、
+          その二つの為に会期が消せないまま週報機能そのものが使われなくなった。 */}
       <AlertModalCore
         isOpen={deleteOpen}
         variant="danger"
-        handleClose={() => setDeleteOpen(false)}
+        handleClose={() => {
+          setDeleteOpen(false);
+          setDeleteBlocked(null);
+        }}
         handleSubmit={() => void run("delete")}
         isSubmitting={busy === "delete"}
+        /* 管理者でも無いのに「それでも削除」は出さない。押せない物を押せる形で見せない。 */
+        isSubmitDisabled={willBlock && !isAdmin}
         title={t("weekly.actions.delete")}
-        content={t("weekly.actions.delete_modal")}
-        primaryButtonText={{ default: t("weekly.actions.delete"), loading: t("weekly.actions.deleting") }}
+        content={
+          <span className="block">
+            <span className="block">{t("weekly.actions.delete_modal")}</span>
+            {willBlock && blockers && (
+              <span className="mt-2 block rounded-md border border-subtle bg-layer-1 px-2.5 py-2 text-11 leading-relaxed text-secondary">
+                <span className="block font-medium text-primary">{t("weekly.actions.delete_blocked_title")}</span>
+                {blockers.final_entries > 0 && (
+                  <span className="block tabular-nums">
+                    {t("weekly.actions.delete_blocked_entries", { count: blockers.final_entries })}
+                  </span>
+                )}
+                {blockers.chat_messages > 0 && (
+                  <span className="block tabular-nums">
+                    {t("weekly.actions.delete_blocked_chat", { count: blockers.chat_messages })}
+                  </span>
+                )}
+                <span className="mt-1.5 block text-tertiary">
+                  {t(isAdmin ? "weekly.actions.delete_force_hint" : "weekly.actions.delete_blocked_hint")}
+                </span>
+              </span>
+            )}
+          </span>
+        }
+        primaryButtonText={{
+          default: t(forceDelete ? "weekly.actions.delete_force" : "weekly.actions.delete"),
+          loading: t("weekly.actions.deleting"),
+        }}
         secondaryButtonText={t("weekly.final.cancel")}
       />
     </div>

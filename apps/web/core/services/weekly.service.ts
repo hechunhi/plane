@@ -64,6 +64,10 @@ export type TWeeklyMeeting = {
   /** 議事ノート = Plane ネイティブ Page。CE では project 配下にしか置けないので対で持つ。 */
   page_id: string | null;
   page_project_id: string | null;
+  /** 「窓が長すぎる」と画面が言い出す境目(日)。サーバが配る — 同じ数字を二箇所に書かない。 */
+  long_period_days?: number;
+  /** 削除を阻んでいる「人が書いた物」の数。**押す前に** 何が引っ掛かるかを出す為の物。 */
+  counts?: { final_entries: number; chat_messages: number };
   entries?: TWeeklyEntry[];
 };
 
@@ -135,16 +139,28 @@ class WeeklyService extends APIService {
     return this.post(this.base(slug), { title: title ?? "" }).then((r) => r?.data);
   }
 
-  async patch_(slug: string, meetingId: string, data: { title?: string; page_id?: string | null }) {
+  /**
+   * 会期の書き換え。period_* を渡すと窓を直せる(確定済みは 409 — 記録は動かさない)。
+   * 窓を直すと投影はその場で作り直されるので、返る meeting は entries 入り。
+   */
+  async patch_(
+    slug: string,
+    meetingId: string,
+    data: { title?: string; page_id?: string | null; period_start?: string; period_end?: string }
+  ) {
     return this.patch(`${this.base(slug)}${meetingId}/`, data).then((r) => r?.data);
   }
 
   /**
-   * 開き間違えた会期を捨てる。人が書いたもの(定稿・発言)が 1 つでもあれば 409 —
-   * 消せるのは「空の会期」だけ、というのが三層境界の帰結。
+   * 開き間違えた会期を捨てる。人が書いたもの(定稿・発言)があれば既定では 409 で、
+   * 本文に `counts` が入る — 画面は「何が幾つ引っ掛かっているか」を出せる。
+   *
+   * force は **管理者だけ** の逃げ道。門を外すのではなく出口を作る為の物で、
+   * 消し方は force でも soft delete(deleted_at を置くだけ)。
    */
-  async remove(slug: string, meetingId: string): Promise<void> {
-    return this.delete(`${this.base(slug)}${meetingId}/`).then((r) => r?.data);
+  async remove(slug: string, meetingId: string, opts: { force?: boolean } = {}): Promise<void> {
+    const q = opts.force ? "?force=1" : "";
+    return this.delete(`${this.base(slug)}${meetingId}/${q}`).then((r) => r?.data);
   }
 
   /**

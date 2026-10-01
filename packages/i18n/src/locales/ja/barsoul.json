@@ -108,6 +108,17 @@
       "expand": "全文を表示",
       "collapse": "畳む"
     },
+    "period": {
+      "days": "{count} 日間",
+      "hint": "この会期が集めている範囲。前回の会議からの分をまとめています。",
+      "too_long_hint": "範囲が長すぎます。前回の確定を押し忘れている可能性があります —— 縮めると読める分量に戻ります。",
+      "last_days": "最近 {count} 日",
+      "since_last": "前回の会議から",
+      "apply": "この範囲にする",
+      "apply_hint": "範囲を直すと出処は集め直します。下書きは作り直しません（「作り直す」で）。",
+      "updated": "範囲を更新しました",
+      "frozen": "確定済みの会期は範囲を変えられません。"
+    },
     "actions": {
       "open": "新しい会期",
       "opened": "会期を開きました",
@@ -128,6 +139,12 @@
       "deleting": "削除中…",
       "deleted": "会期を削除しました",
       "delete_modal": "この会期と下書きを削除します。誰も書いていない会期だけ削除できます。",
+      "delete_blocked_title": "この会期には人が書いたものが残っています:",
+      "delete_blocked_entries": "確定版 {count} 件",
+      "delete_blocked_chat": "発言 {count} 件",
+      "delete_blocked_hint": "削除できるのは管理者だけです。管理者に依頼してください。",
+      "delete_force_hint": "「それでも削除」を押すと、上の内容ごとこの会期を伏せます。完全には消えません（管理者のみ）。",
+      "delete_force": "それでも削除",
       "delete_conflict": "確定版か発言が既にあるため、この会期は削除できません。",
       "rename": "会期の名前を変更",
       "rename_placeholder": "例: 7月第4週 定例",

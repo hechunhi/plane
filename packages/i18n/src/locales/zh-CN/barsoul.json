@@ -108,6 +108,17 @@
       "expand": "显示全文",
       "collapse": "收起"
     },
+    "period": {
+      "days": "{count} 天",
+      "hint": "本期统计的时间范围，从上次会议之后算起。",
+      "too_long_hint": "范围太长了，多半是上次忘了点确定 —— 缩短后内容就回到能读的量。",
+      "last_days": "最近 {count} 天",
+      "since_last": "从上次会议起",
+      "apply": "用这个范围",
+      "apply_hint": "改范围会重新收集来源，但不会重跑草稿（要重跑请点「重新生成」）。",
+      "updated": "范围已更新",
+      "frozen": "已确定的会期不能改范围。"
+    },
     "actions": {
       "open": "新开一期",
       "opened": "已新开一期",
@@ -128,6 +139,12 @@
       "deleting": "删除中…",
       "deleted": "已删除本期",
       "delete_modal": "本期连同草稿一起删除。只有还没人写过东西的期才能删。",
+      "delete_blocked_title": "本期还留着人写的内容：",
+      "delete_blocked_entries": "定稿 {count} 条",
+      "delete_blocked_chat": "发言 {count} 条",
+      "delete_blocked_hint": "只有管理员能删除，请找管理员处理。",
+      "delete_force_hint": "点「仍然删除」会连同上面的内容一起隐藏本期。不会真的抹掉（仅管理员）。",
+      "delete_force": "仍然删除",
       "delete_conflict": "本期已有定稿或发言记录，不能删除。",
       "rename": "重命名本期",
       "rename_placeholder": "例：7月第4周 例会",

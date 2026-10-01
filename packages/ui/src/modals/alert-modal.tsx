@@ -24,6 +24,9 @@ type Props = {
   handleSubmit: () => void;
   hideIcon?: boolean;
   isSubmitting: boolean;
+  /** 主導線を押せなくする(押しても必ず失敗する時)。理由は content 側で言う —
+   *  灰色のボタンだけ出して黙るのは、押せない事より分からない事の方が困る。 */
+  isSubmitDisabled?: boolean;
   isOpen: boolean;
   position?: EModalPosition;
   primaryButtonText?: {
@@ -59,6 +62,7 @@ export function AlertModalCore(props: Props) {
     handleSubmit,
     hideIcon = false,
     isSubmitting,
+    isSubmitDisabled = false,
     isOpen,
     position = EModalPosition.CENTER,
     primaryButtonText = {
@@ -96,7 +100,13 @@ export function AlertModalCore(props: Props) {
         <Button variant="secondary" onClick={handleClose}>
           {secondaryButtonText}
         </Button>
-        <Button variant={BUTTON_VARIANTS[variant]} tabIndex={1} onClick={handleSubmit} loading={isSubmitting}>
+        <Button
+          variant={BUTTON_VARIANTS[variant]}
+          tabIndex={1}
+          onClick={handleSubmit}
+          loading={isSubmitting}
+          disabled={isSubmitDisabled}
+        >
           {isSubmitting ? primaryButtonText.loading : primaryButtonText.default}
         </Button>
       </div>
