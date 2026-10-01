@@ -27,8 +27,6 @@ import { BreadcrumbLink } from "@/components/common/breadcrumb-link";
 import { CountChip } from "@/components/common/count-chip";
 // constants
 import { HeaderFilters } from "@/components/issues/filters";
-// BARSOUL DIS v3: 看板/待我处理 切换 + AI 语言设置 + 图例
-import { AIBoardControls } from "@/components/issues/issue-layouts/kanban/ai-board-controls";
 // helpers
 // hooks
 import { useCommandPalette } from "@/hooks/store/use-command-palette";
@@ -110,7 +108,8 @@ export const IssuesHeader = observer(function IssuesHeader() {
         )}
       </Header.LeftItem>
       <Header.RightItem>
-        <AIBoardControls />
+        {/* BARSOUL 2026-10: 「看板 / 待我处理」切替 + 色の凡例(AIBoardControls)は一旦外す。
+            待我处理はサイドバーの「我的工作」に統一。部品は kanban/ai-board-controls.tsx に残置。 */}
         <div className="hidden gap-2 md:flex">
           <HeaderFilters
             projectId={projectId}
