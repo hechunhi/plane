@@ -4,7 +4,6 @@
  * See the LICENSE file for details.
  */
 
-import { useEffect } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
@@ -12,9 +11,7 @@ import useSWR from "swr";
 import { ISSUE_DISPLAY_FILTERS_BY_PAGE, PROJECT_VIEW_TRACKER_ELEMENTS } from "@plane/constants";
 import { EIssueLayoutTypes, EIssuesStoreType } from "@plane/types";
 import { Spinner } from "@plane/ui";
-// BARSOUL DIS: 待我处理 视图 + 全局当前态浮层(切换在真实 header)
-import { AIDigestView } from "../kanban/ai-digest-view";
-import { useAiView, setAiView } from "../kanban/ai-state-line";
+// BARSOUL DIS: 全局当前态浮层 + 行动对话框
 import { GlobalAICurrentStatePopover } from "../kanban/ai-current-state-popover";
 import { GlobalDISActionDialogs } from "../kanban/ai-state-actions";
 // components
@@ -53,9 +50,6 @@ export const ProjectLayoutRoot = observer(function ProjectLayoutRoot() {
   const { workspaceSlug: routerWorkspaceSlug, projectId: routerProjectId } = useParams();
   const workspaceSlug = routerWorkspaceSlug ? routerWorkspaceSlug.toString() : undefined;
   const projectId = routerProjectId ? routerProjectId.toString() : undefined;
-  // BARSOUL DIS: 当前视图(看板/待我处理),切换在真实 header;切项目时重置回看板
-  const aiView = useAiView();
-  useEffect(() => { setAiView("board"); }, [projectId]);
   // hooks
   const { issues, issuesFilter } = useIssues(EIssuesStoreType.PROJECT);
   // derived values
@@ -87,8 +81,7 @@ export const ProjectLayoutRoot = observer(function ProjectLayoutRoot() {
       >
         {({ filter: projectWorkItemsFilter }) => (
           <div className="relative flex h-full w-full flex-col overflow-hidden">
-            {/* BARSOUL: digest/数据表 等自定义视图不需要 issues 过滤工具条(避免双层/死控件) */}
-            {aiView === "board" && projectWorkItemsFilter && (
+            {projectWorkItemsFilter && (
               <WorkItemFiltersRow
                 filter={projectWorkItemsFilter}
                 trackerElements={{
@@ -103,11 +96,7 @@ export const ProjectLayoutRoot = observer(function ProjectLayoutRoot() {
                   <Spinner className="h-4 w-4" />
                 </div>
               )}
-              {aiView === "digest" ? (
-                <AIDigestView workspaceSlug={workspaceSlug} projectId={projectId} />
-              ) : (
-                <ProjectIssueLayout activeLayout={activeLayout} />
-              )}
+              <ProjectIssueLayout activeLayout={activeLayout} />
             </div>
             {/* peek overview */}
             <IssuePeekOverview />

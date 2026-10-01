@@ -1,7 +1,7 @@
 /**
  * BARSOUL BS-216 Path A: 工作区级「我的工作」(Personal Work Hub)ヘッダ。
  * Inbox を「動的タイムライン」から「毎日開く個人作業入口」へ——その入口ページの
- * ヘッダ。DIS 作业台(AIDigestView)を workspace 全域スコープで載せる。
+ * ヘッダ。中身は MyWorkRoot(通知センター流用 + レンズ)。
  */
 import { observer } from "mobx-react";
 import { useTranslation } from "@plane/i18n";

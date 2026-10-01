@@ -110,8 +110,8 @@ export const IssuesHeader = observer(function IssuesHeader() {
         )}
       </Header.LeftItem>
       <Header.RightItem>
-        {/* BARSOUL 2026-10: 「看板 / 待我处理」切替 + 色の凡例(AIBoardControls)は一旦外す。
-            待我处理はサイドバーの「我的工作」に統一。部品は kanban/ai-board-controls.tsx に残置。 */}
+        {/* BARSOUL 2026-10: 「看板 / 待我处理」切替 + 色の凡例は廃止(待我处理はサイドバーの「我的工作」に統一)。
+            digest ビュー本体も 2026-10-01 に削除済。 */}
         <div className="hidden gap-2 md:flex">
           <HeaderFilters
             projectId={projectId}

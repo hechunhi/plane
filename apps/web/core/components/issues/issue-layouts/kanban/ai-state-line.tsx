@@ -66,14 +66,6 @@ const LOW_CONF = 0.45;
 
 export function isZhLocale(loc: string | undefined) { return (loc || "").toLowerCase().startsWith("zh"); }
 
-// ── 看板 ↔ 待我处理 视图(切换在真实 header, digest 在 layout root → 模块级共享)──
-type AiView = "board" | "digest";
-let _aiView: AiView = "board";
-const _viewSubs = new Set<() => void>();
-export function setAiView(v: AiView) { _aiView = v; _viewSubs.forEach((f) => f()); }
-export function useAiView(): AiView {
-  return useSyncExternalStore((cb) => { _viewSubs.add(cb); return () => _viewSubs.delete(cb); }, () => _aiView, () => _aiView);
-}
 /** 派生文案显示语言 = 跟随 Plane 界面语言设置(v5 移除独立语言控件)。 */
 export function useZh(): boolean {
   const { currentLocale } = useTranslation();
@@ -213,13 +205,8 @@ function _notify(id: string) { _subs.get(id)?.forEach((f) => f()); }
 function _store(id: string, v: DerivedIssueState | null) { _cache.set(id, v); _cacheTs.set(id, Date.now()); _notify(id); }
 function _fresh(id: string) { return _cacheTs.has(id) && Date.now() - (_cacheTs.get(id) || 0) < _TTL_MS; }
 export function getCachedAIState(id: string): DerivedIssueState | null { return _cache.get(id) ?? null; }
-// 全局「DIS 数据可能变了」事件 → 作业台(digest)等聚合视图据此重拉(它有自己的取数,
-// 不走 per-id 缓存,所以单靠 _notify(id) 刷不到它)。
-const _disChangeSubs = new Set<() => void>();
-export function onAIStateChange(fn: () => void): () => void { _disChangeSubs.add(fn); return () => { _disChangeSubs.delete(fn); }; }
-function _emitDISChange() { _disChangeSubs.forEach((f) => { try { f(); } catch { /* noop */ } }); }
-/** 失效某卡缓存 → 订阅者重拉(人工补充/重判后刷新)。同时广播全局变更给聚合视图。 */
-export function invalidateAIState(id: string) { _cache.delete(id); _cacheTs.delete(id); _notify(id); _emitDISChange(); }
+/** 失效某卡缓存 → 订阅者重拉(人工补充/重判后刷新)。 */
+export function invalidateAIState(id: string) { _cache.delete(id); _cacheTs.delete(id); _notify(id); }
 async function _flush() {
   const slug = _slug; const byProject = new Map(_pending); _pending.clear();
   for (const [projectId, idSet] of byProject) {

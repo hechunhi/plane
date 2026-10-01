@@ -1,6 +1,6 @@
 /**
  * BARSOUL BS-216 Path A: 「我的工作」レイアウト。drafts/notifications と同じ
- * AppHeader + スクロール本体の枠。中身(page)は AIDigestView を ws スコープで描画。
+ * AppHeader + スクロール本体の枠。中身(page)は MyWorkRoot。
  */
 import { Outlet } from "react-router";
 // components
