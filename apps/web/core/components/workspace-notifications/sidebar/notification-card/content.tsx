@@ -21,7 +21,7 @@ import {
   ADDITIONAL_NOTIFICATION_CONTENT_MAP,
   renderAdditionalValue,
   shouldShowConnector,
-} from "@/plane-web/components/workspace-notifications/notification-card/content";
+} from "../../notification-card/content";
 // BARSOUL: 提醒/定期 通知专属文案(无 issue_activity, 走自有渲染)
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 import { translatePriority } from "@/lib/priority-label";

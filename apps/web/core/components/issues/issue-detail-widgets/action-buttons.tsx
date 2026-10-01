@@ -11,8 +11,6 @@ import { LinkIcon, ViewsIcon, RelationPropertyIcon } from "@plane/propel/icons";
 // plane imports
 import type { TIssueServiceType, TWorkItemWidgets } from "@plane/types";
 import { EIssueServiceType } from "@plane/types";
-// plane web imports
-import { WorkItemAdditionalWidgetActionButtons } from "@/plane-web/components/issues/issue-detail-widgets/action-buttons";
 // BARSOUL B-2p v2: 任务动作统一进快捷动作行; B-5b: 审批并入发起流程下拉(仅审批=最短流程)
 import { StartFlowButton } from "@/components/smart-table/start-flow-button";
 // local imports
@@ -95,14 +93,6 @@ export function IssueDetailWidgetActionButtons(props: Props) {
           issueServiceType={issueServiceType}
         />
       )}
-      <WorkItemAdditionalWidgetActionButtons
-        disabled={disabled}
-        hideWidgets={hideWidgets ?? []}
-        issueServiceType={issueServiceType}
-        projectId={projectId}
-        workItemId={issueId}
-        workspaceSlug={workspaceSlug}
-      />
       {/* BARSOUL B-2p v2(用户点名: 任务相关动作统一进本行); B-5b: 単一入口 —
           下拉=已发布蓝图(顶层卡)+仅审批(全卡), 審査=最短のフロー */}
       {issueServiceType === EIssueServiceType.ISSUES && !disabled && (

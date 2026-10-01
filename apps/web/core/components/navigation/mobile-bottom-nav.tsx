@@ -16,7 +16,7 @@ import { cn, joinUrlPath } from "@plane/utils";
 import { useCommandPalette } from "@/hooks/store/use-command-palette";
 import { useUserPermissions } from "@/hooks/store/user";
 // plane web imports
-import { getSidebarNavigationItemIcon } from "@/plane-web/components/workspace/sidebar/helper";
+import { getSidebarNavigationItemIcon } from "@/components/workspace/sidebar/helper";
 
 /**
  * BARSOUL 2026-08 — スマホ用の下部タブバー + 作成 FAB。

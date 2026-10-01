@@ -5,14 +5,15 @@
  */
 
 import { observer } from "mobx-react";
+// types
+import type { TIssueRelationTypes } from "@plane/types";
 // hooks
 import { useTranslation } from "@plane/i18n";
 import type { TIssueActivity } from "@plane/types";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
-// Plane-web
-import { useTimeLineRelationOptions } from "@/plane-web/components/relations";
-import type { TIssueRelationTypes } from "@/plane-web/types";
-//
+// components
+import { useTimeLineRelationOptions } from "@/components/relations";
+// local helpers
 import { IssueActivityBlockComponent } from "./";
 
 type TIssueRelationActivity = { activityId: string; ends: "top" | "bottom" | undefined };

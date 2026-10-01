@@ -26,7 +26,7 @@ import { useCompactViewport } from "@/hooks/use-compact-viewport";
 import { useParseEditorContent } from "@/hooks/use-parse-editor-content";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // plane web hooks
-import { useEditorFlagging } from "@/plane-web/hooks/use-editor-flagging";
+import { useEditorFlagging } from "@/hooks/use-editor-flagging";
 // plane web service
 import { WorkspaceService } from "@/services/workspace.service";
 import { LiteToolbar } from "./lite-toolbar";

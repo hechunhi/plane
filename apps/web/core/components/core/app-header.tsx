@@ -14,7 +14,7 @@ import { cn } from "@plane/utils";
 import { MOBILE_CHROME_CLASS, useMobileChromeRef } from "@/components/navigation/mobile-chrome";
 import { useProjectHeaderSlot } from "@/components/navigation/project-header-slot";
 import { useShortViewport } from "@/hooks/use-tight-viewport";
-import { ExtendedAppHeader } from "@/plane-web/components/common/extended-app-header";
+import { ExtendedAppHeader } from "@/components/common/extended-app-header";
 
 export interface AppHeaderProps {
   header: ReactNode;

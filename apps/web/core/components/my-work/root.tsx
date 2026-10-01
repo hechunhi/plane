@@ -2,7 +2,7 @@
  * BARSOUL「我的工作」— 個人の作業入口 (hechun 2026-07-25)
  *
  * 産品決定 2026-07-25:**通知センターを別実装で作り直さない**。
- *   「動態 / @我」= 通知センターの store とカードをそのまま流用(NotificationListRoot)。
+ *   「動態 / @我」= 通知センターの store とカードをそのまま流用(NotificationCardListRoot)。
  *   増強はその上に **レンズ** を足すだけ — 通知が答えられない
  *   「で、私は何をすればいい?」に、球/情報不足/承認/期限/担当 で答える。
  * レンズを切り替えても**行の見た目は 1 つ**(WorkCard)。別物に見えたら二重実装に戻っている。
@@ -24,7 +24,7 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import { useUser } from "@/hooks/store/user";
 import { useWorkspace } from "@/hooks/store/use-workspace";
-import { NotificationListRoot } from "@/plane-web/components/workspace-notifications/list-root";
+import { NotificationCardListRoot } from "@/components/workspace-notifications/notification-card/root";
 import { ApprovalInboxRow } from "@/components/approvals/inbox-row";
 import { dueInfo, isMyBall, pick, useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 import { MyCommentsTimeline } from "./my-comments";
@@ -190,7 +190,7 @@ export const MyWorkRoot = observer(function MyWorkRoot({ workspaceSlug }: { work
       if (loader === ENotificationLoader.INIT_LOADER) return <NotificationsLoader />;
       if (!workspaceId || !notificationIdsByWorkspaceId(workspaceId)?.length)
         return emptyLine(zh ? "没有新的动态" : "新しい動きはありません");
-      return <NotificationListRoot workspaceSlug={workspaceSlug} workspaceId={workspaceId} grouped />;
+      return <NotificationCardListRoot workspaceSlug={workspaceSlug} workspaceId={workspaceId} grouped />;
     }
 
     if (lens === "comments") return <MyCommentsTimeline workspaceSlug={workspaceSlug} />;

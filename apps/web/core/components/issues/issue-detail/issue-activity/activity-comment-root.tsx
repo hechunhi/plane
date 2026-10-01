@@ -14,9 +14,6 @@ import type { TCommentsOperations } from "@plane/types";
 import { CommentCard } from "@/components/comments/card/root";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
-// plane web components
-import { IssueAdditionalPropertiesActivity } from "@/plane-web/components/issues/issue-details/issue-properties-activity";
-import { IssueActivityWorklog } from "@/plane-web/components/issues/worklog/activity/root";
 // local imports
 import { IssueActivityItem } from "./activity/activity-list";
 import { IssueActivityLoader } from "./loader";
@@ -151,16 +148,6 @@ export const IssueActivityCommentRoot = observer(function IssueActivityCommentRo
             />
           ) : BASE_ACTIVITY_FILTER_TYPES.includes(activityComment.activity_type as EActivityFilterType) ? (
             <IssueActivityItem activityId={activityComment.id} ends={ends} />
-          ) : activityComment.activity_type === "ISSUE_ADDITIONAL_PROPERTIES_ACTIVITY" ? (
-            <IssueAdditionalPropertiesActivity activityId={activityComment.id} ends={ends} />
-          ) : activityComment.activity_type === "WORKLOG" ? (
-            <IssueActivityWorklog
-              workspaceSlug={workspaceSlug}
-              projectId={projectId}
-              issueId={issueId}
-              activityComment={activityComment}
-              ends={ends}
-            />
           ) : null;
         // BARSOUL: 稳定锚点，供通知点击后滚动定位（scroll-mt 让其不被
         // 顶部 sticky 区遮挡）。

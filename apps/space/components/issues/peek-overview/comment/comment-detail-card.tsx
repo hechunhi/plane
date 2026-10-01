@@ -115,7 +115,7 @@ export const CommentCard = observer(function CommentCard(props: Props) {
                     editable
                     anchor={anchor}
                     workspaceId={workspaceID?.toString() ?? ""}
-                    onEnterKeyPress={handleSubmit(handleCommentUpdate)}
+                    onEnterKeyPress={() => void handleSubmit(handleCommentUpdate)()}
                     ref={editorRef}
                     id={comment.id}
                     initialValue={value}

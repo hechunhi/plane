@@ -15,7 +15,7 @@ import type { EIssuesStoreType, TIssue } from "@plane/types";
 import type { TContextMenuItem } from "@plane/ui";
 import { copyUrlToClipboard, generateWorkItemLink } from "@plane/utils";
 // types
-import { createCopyMenuWithDuplication } from "@/plane-web/components/issues/issue-layouts/quick-action-dropdowns";
+import { createCopyMenuWithDuplication } from "./copy-menu-helper";
 // BARSOUL フォローアップ・スヌーズ / 定期化(用户: 这些做进卡片右键菜单, 不进卡也能点; 删掉杵着的独立按钮)
 import { recurringService, type TReminderInput } from "@/services/recurring.service";
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
@@ -150,6 +150,7 @@ export const useIssueActionHandlers = (props: MenuItemFactoryProps) => {
       return;
     }
     await handleRestore()
+      // oxlint-disable-next-line promise/always-return
       .then(() => {
         setToast({
           type: TOAST_TYPE.SUCCESS,

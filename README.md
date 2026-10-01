@@ -10,7 +10,7 @@
 <p align="center">
     <a href="https://plane.so/"><b>Website</b></a> •
     <a href="https://forum.plane.so"><b>Forum</b></a> •
-    <a href="https://twitter.com/planepowers"><b>Twitter</b></a> •
+    <a href="https://x.com/planepowers"><b>X</b></a> •
     <a href="https://docs.plane.so/"><b>Documentation</b></a>
 </p>
 
@@ -42,6 +42,7 @@ Getting started with Plane is simple. Choose the setup that works best for you:
 | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Docker               | [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white)](https://developers.plane.so/self-hosting/methods/docker-compose)         |
 | Kubernetes           | [![Kubernetes](https://img.shields.io/badge/kubernetes-%23326ce5.svg?style=for-the-badge&logo=kubernetes&logoColor=white)](https://developers.plane.so/self-hosting/methods/kubernetes) |
+| Managed hosting      | [<img alt="Deploy with Zenith" src="https://cdn.zenith.hosting/buttons/deploy-with-zenith.svg" height="40">](https://zenith.hosting/host/plane) |
 
 `Instance admins` can configure instance settings with [God mode](https://developers.plane.so/self-hosting/govern/instance-admin).
 

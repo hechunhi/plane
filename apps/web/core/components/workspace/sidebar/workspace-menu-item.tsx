@@ -20,7 +20,7 @@ import { useHasAnyUnread, UnreadDot } from "@/components/notifications/issue-unr
 import { useUserPermissions } from "@/hooks/store/user";
 import { useCloseSidebarOnNavigate } from "@/hooks/use-sidebar-navigation-close";
 // plane web imports
-import { UpgradeBadge } from "@/plane-web/components/workspace/upgrade-badge";
+import { UpgradeBadge } from "@/components/workspace/upgrade-badge";
 
 export type SidebarWorkspaceMenuItemProps = {
   item: {

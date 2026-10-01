@@ -25,7 +25,7 @@ import { cn, generateWorkItemLink } from "@plane/utils";
 // components
 import RenderIfVisible from "@/components/core/render-if-visible-HOC";
 import { HIGHLIGHT_CLASS, getIssueBlockId } from "@/components/issues/issue-layouts/utils";
-// helpers
+import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useKanbanView } from "@/hooks/store/use-kanban-view";
@@ -33,8 +33,6 @@ import { useProject } from "@/hooks/store/use-project";
 import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-redirection";
 import { useCompactViewport } from "@/hooks/use-compact-viewport";
 import { usePlatformOS } from "@/hooks/use-platform-os";
-// plane web components
-import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
 // BARSOUL: 未読関連 helper (IssueUnreadBadge は廃止 — v6 では border+bold)
 import {
   useIssueUnreadCount,
@@ -55,10 +53,8 @@ import { ParentBreadcrumb } from "@/components/issues/parent-breadcrumb";
 import { PinButton } from "@/components/issues/pin-button";
 import { useProjectState } from "@/hooks/store/use-project-state";
 // local components
-import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
 import type { TRenderQuickActions } from "../list/list-view-types";
 import { IssueProperties } from "../properties/all-properties";
-import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
 // BARSOUL DIS: 派生卡片当前态 摘要条 + 全局浮层控制器(整卡 hover 触发)
 import { AICardBar, aiPopover, getCachedAIState, supportsHover } from "./ai-state-line";
 
@@ -152,8 +148,6 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
     </button>
   );
 
-  // derived values
-  const subIssueCount = issue?.sub_issues_count ?? 0;
 
   useOutsideClickDetector(menuActionRef, () => setIsMenuActive(false));
 
@@ -256,15 +250,6 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         />
       )}
 
-      {isEpic && displayProperties && (
-        <WithDisplayPropertiesHOC
-          displayProperties={displayProperties}
-          displayPropertyKey="sub_issue_count"
-          shouldRenderProperty={(properties) => !!properties.sub_issue_count && !!subIssueCount}
-        >
-          <IssueStats issueId={issue.id} className="mt-2 font-medium text-tertiary short:mt-1.5" />
-        </WithDisplayPropertiesHOC>
-      )}
     </>
   );
 });
@@ -389,6 +374,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
         },
       })
     );
+    // oxlint-disable-next-line eslint-plugin-react-hooks/exhaustive-deps
   }, [
     cardRef?.current,
     issue?.id,

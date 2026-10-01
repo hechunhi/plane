@@ -9,7 +9,7 @@ import uniq from "lodash-es/uniq";
 import { observer } from "mobx-react";
 // plane package imports
 import type { TActivityFilters } from "@plane/constants";
-import { E_SORT_ORDER, defaultActivityFilters, EUserPermissions } from "@plane/constants";
+import { E_SORT_ORDER, defaultActivityFilters } from "@plane/constants";
 import { useLocalStorage } from "@plane/hooks";
 // i18n
 import { useTranslation } from "@plane/i18n";
@@ -23,13 +23,11 @@ import { useRealtimeCommentVersion } from "@/components/core/realtime-bus";
 // hooks
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
-import { useUser, useUserPermissions } from "@/hooks/store/user";
-// plane web components
-import { ActivityFilterRoot } from "@/plane-web/components/issues/worklog/activity/filter-root";
-import { IssueActivityWorklogCreateButton } from "@/plane-web/components/issues/worklog/activity/worklog-create-button";
+// local imports
 import { IssueActivityCommentRoot } from "./activity-comment-root";
 import { useWorkItemCommentOperations } from "./helper";
 import { ActivitySortRoot } from "./sort-root";
+import { ActivityFilterRoot } from "./filter-root";
 
 type TIssueActivity = {
   workspaceSlug: string;
@@ -84,16 +82,8 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rtCommentVersion]);
 
-  const { getProjectRoleByWorkspaceSlugAndProjectId } = useUserPermissions();
   const { getProjectById } = useProject();
-  const { data: currentUser } = useUser();
-  // derived values
-  const issue = issueId ? getIssueById(issueId) : undefined;
-  const currentUserProjectRole = getProjectRoleByWorkspaceSlugAndProjectId(workspaceSlug, projectId);
-  const isAdmin = currentUserProjectRole === EUserPermissions.ADMIN;
-  const isGuest = currentUserProjectRole === EUserPermissions.GUEST;
-  const isAssigned = issue?.assignee_ids && currentUser?.id ? issue?.assignee_ids.includes(currentUser?.id) : false;
-  const isWorklogButtonEnabled = !isIntakeIssue && !isGuest && (isAdmin || isAssigned);
+
   // toggle filter
   const toggleFilter = (filter: TActivityFilters) => {
     if (!selectedFilters) return;
@@ -115,6 +105,7 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
   // helper hooks
   const activityOperations = useWorkItemCommentOperations(workspaceSlug, projectId, issueId);
 
+  const issue = issueId ? getIssueById(issueId) : undefined;
   const project = getProjectById(projectId);
   const renderCommentCreationBox = useMemo(
     () => (
@@ -141,14 +132,6 @@ export const IssueActivity = observer(function IssueActivity(props: TIssueActivi
         <div className="flex items-center justify-between">
           <div className="text-h5-medium text-primary">{t("common.activity")}</div>
           <div className="flex items-center gap-2">
-            {isWorklogButtonEnabled && (
-              <IssueActivityWorklogCreateButton
-                workspaceSlug={workspaceSlug}
-                projectId={projectId}
-                issueId={issueId}
-                disabled={disabled}
-              />
-            )}
             <ActivitySortRoot sortOrder={sortOrder || E_SORT_ORDER.ASC} toggleSort={toggleSortOrder} />
             <ActivityFilterRoot
               selectedFilters={selectedFilters || defaultActivityFilters}

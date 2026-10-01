@@ -23,8 +23,8 @@ import { useProjectState } from "@/hooks/store/use-project-state";
 import { useIssueStoreType } from "@/hooks/use-issue-layout-store";
 import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-redirection";
 import { usePlatformOS } from "@/hooks/use-platform-os";
-// plane web components
-import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
+// components
+import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
 // BARSOUL 2026-09-01: 件名の表示翻訳(display-only, issue.name は不変)
 import { useTranslatedTitle } from "@/components/issues/translate/card-title-translate";
 // local components
@@ -68,12 +68,16 @@ export const CalendarIssueBlock = observer(
     const blockTitle = useTranslatedTitle(issue?.id, issue?.name);
 
     // handlers
-    const handleIssuePeekOverview = (issue: TIssue) => handleRedirection(workspaceSlug.toString(), issue, isMobile);
+    const handleIssuePeekOverview = (peekIssue: TIssue) =>
+      handleRedirection(workspaceSlug?.toString(), peekIssue, isMobile);
 
     useOutsideClickDetector(menuActionRef, () => setIsMenuActive(false));
 
     const customActionButton = (
+      // CustomMenu renders this inside its own <button>, which already carries the
+      // interactive semantics and keyboard handling — this div is presentational.
       <div
+        role="presentation"
         ref={menuActionRef}
         className={`w-full cursor-pointer rounded-sm p-1 text-placeholder hover:bg-layer-1 ${
           isMenuActive ? "bg-layer-1-active text-primary" : "text-secondary"
@@ -85,7 +89,9 @@ export const CalendarIssueBlock = observer(
     );
 
     const isMenuActionRefAboveScreenBottom =
-      menuActionRef?.current && menuActionRef?.current?.getBoundingClientRect().bottom < window.innerHeight - 220;
+      typeof window !== "undefined" &&
+      menuActionRef?.current &&
+      menuActionRef?.current?.getBoundingClientRect().bottom < window.innerHeight - 220;
 
     const placement = isMenuActionRefAboveScreenBottom ? "bottom-end" : "top-end";
 
@@ -152,7 +158,10 @@ export const CalendarIssueBlock = observer(
                       {blockTitle.title}
                     </div>
                   </div>
+                  {/* Wrapper exists only to stop clicks reaching the ControlLink; the
+                      quick-action menu inside carries its own interactive semantics. */}
                   <div
+                    role="presentation"
                     className={cn("size-5 flex-shrink-0", {
                       "hidden group-hover/calendar-block:block": !isMobile,
                       block: isMenuActive,

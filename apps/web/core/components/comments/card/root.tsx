@@ -13,12 +13,12 @@ import { IconButton } from "@plane/propel/icon-button";
 import { ReplyIcon } from "@plane/propel/icons";
 import { cn } from "@plane/utils";
 import type { TIssueComment, TCommentsOperations } from "@plane/types";
-// plane web imports
-import { CommentBlock, CommentCardDisplay } from "@/plane-web/components/comments";
 // local imports
 import { CommentQuickActions } from "../quick-actions";
 import { useCommentReply } from "../reply-context";
 import { CommentReplyQuote } from "./reply-quote";
+import { CommentBlock } from "../comment-block";
+import { CommentCardDisplay } from "./display";
 
 type TCommentCard = {
   workspaceSlug: string;

@@ -11,9 +11,7 @@ import type { TIssueServiceType, TWorkItemWidgets } from "@plane/types";
 // hooks
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
 import { useIssueDetail } from "@/hooks/store/use-issue-detail";
-// Plane-web
-import { WorkItemAdditionalWidgetCollapsibles } from "@/plane-web/components/issues/issue-detail-widgets/collapsibles";
-import { useTimeLineRelationOptions } from "@/plane-web/components/relations";
+import { useTimeLineRelationOptions } from "@/components/relations";
 // local imports
 import { AttachmentsCollapsible } from "./attachments";
 import { LinksCollapsible } from "./links";
@@ -153,14 +151,6 @@ html[data-theme*="dark"] .barsoul-sibling-tree [id="issue-${issueId}"]>div{backg
           issueServiceType={issueServiceType}
         />
       )}
-      <WorkItemAdditionalWidgetCollapsibles
-        disabled={disabled}
-        hideWidgets={hideWidgets ?? []}
-        issueServiceType={issueServiceType}
-        projectId={projectId}
-        workItemId={issueId}
-        workspaceSlug={workspaceSlug}
-      />
     </div>
   );
 });

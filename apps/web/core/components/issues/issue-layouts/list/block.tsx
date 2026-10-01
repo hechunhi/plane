@@ -23,6 +23,7 @@ import { cn, generateWorkItemLink } from "@plane/utils";
 import { MultipleSelectEntityAction } from "@/components/core/multiple-select";
 import { IssueProperties } from "@/components/issues/issue-layouts/properties";
 import { ParentBreadcrumb } from "@/components/issues/parent-breadcrumb";
+import { IssueIdentifier } from "@/components/issues/issue-detail/issue-identifier";
 // helpers
 // hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
@@ -30,8 +31,6 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useProject } from "@/hooks/store/use-project";
 import type { TSelectionHelper } from "@/hooks/use-multiple-select";
 import { usePlatformOS } from "@/hooks/use-platform-os";
-// plane web components
-import { IssueIdentifier } from "@/plane-web/components/issues/issue-details/issue-identifier";
 // BARSOUL: 未読関連 helper のみ(IssueUnreadBadge は廃止 — 左バーに一本化)
 import { useIssueUnreadCount, useIssueUnreadKind, isMutedState } from "@/components/notifications/issue-unread-badge";
 import { useWorkspaceNotifications } from "@/hooks/store/notifications";
@@ -45,9 +44,6 @@ import { ApproverTitle } from "@/components/issues/approver-title";
 import { useTranslatedTitle, TitleTooltipContent } from "@/components/issues/translate/card-title-translate";
 import { TranslateGlyph } from "@/components/issues/translate/issue-field-translate";
 import { useProjectState } from "@/hooks/store/use-project-state";
-import { IssueStats } from "@/plane-web/components/issues/issue-layouts/issue-stats";
-// types
-import { WithDisplayPropertiesHOC } from "../properties/with-display-properties-HOC";
 import { calculateIdentifierWidth } from "../utils";
 import type { TRenderQuickActions } from "./list-view-types";
 
@@ -379,15 +375,6 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
             </Tooltip>
             {/* BARSOUL B-2m: 子卡の帰属面包屑(行内尾注) */}
             <ParentBreadcrumb parentId={issue.parent_id} inline />
-            {isEpic && displayProperties && (
-              <WithDisplayPropertiesHOC
-                displayProperties={displayProperties}
-                displayPropertyKey="sub_issue_count"
-                shouldRenderProperty={(properties) => !!properties.sub_issue_count}
-              >
-                <IssueStats issueId={issue.id} className="ml-2 text-body-xs-medium text-tertiary" />
-              </WithDisplayPropertiesHOC>
-            )}
           </div>
           {!issue?.tempId && (
             <div
@@ -415,6 +402,7 @@ export const IssueBlock = observer(function IssueBlock(props: IssueBlockProps) {
                 activeLayout="List"
                 isEpic={isEpic}
               />
+              {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
               <div
                 className={cn("hidden", {
                   "md:flex": isSidebarCollapsed,
