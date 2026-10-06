@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:26-alpine
 
 RUN apk add --no-cache libc6-compat
 
@@ -7,7 +7,8 @@ WORKDIR /app
 
 COPY . .
 
-RUN corepack enable pnpm && pnpm add -g turbo
+# Node 25+ 公式イメージは corepack を同梱しないので先に入れる
+RUN npm i -g corepack@latest && corepack enable pnpm && pnpm add -g turbo
 RUN pnpm install
 
 EXPOSE 3002
