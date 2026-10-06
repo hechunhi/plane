@@ -11,6 +11,7 @@ import { cn } from "@plane/utils";
 import { AppRailRoot } from "@/components/navigation";
 import { MobileBottomNav } from "@/components/navigation/mobile-bottom-nav";
 import { MobileChrome, useMobileChromeAutoHide } from "@/components/navigation/mobile-chrome";
+import { AichanChatDock } from "@/components/comments/aichan-chat";
 import { WebPushBridge } from "@/components/web-push";
 import { useAppRailVisibility } from "@/lib/app-rail";
 import { TopNavigationRoot } from "@/components/navigation/top-navigation-root";
@@ -35,6 +36,8 @@ export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper
       <PendingApprovalsTabBadge />
       {/* BARSOUL 2026-08: Service Worker 登録 / 通知タップの遷移 / OS バッジ。描画なし */}
       <WebPushBridge />
+      {/* BARSOUL 2026-10-06: 愛ちゃん私聊の後台返答待ち(閉じても/移っても続く)を右下で知らせる */}
+      <AichanChatDock />
       <div className="relative flex size-full overflow-hidden">
         {/* Conditionally render AppRailRoot based on context */}
         {shouldRenderAppRail && <AppRailRoot />}

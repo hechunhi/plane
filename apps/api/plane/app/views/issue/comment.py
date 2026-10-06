@@ -935,12 +935,25 @@ class IssueAIApprovalEndpoint(BaseAPIView):
                 "workspace_slug": slug,
                 "lang": (data.get("lang") or "ja").strip()[:5],
             }
-            ep = "/ai/chat"
+            # BARSOUL 2026-10-06(hechun「途中で他へ移ったら? 後台モード」):
+            # background=true → ai-bot が job を受け付けて即 job_id を返す。
+            # 返答は ai-bot 側に保持され、画面を離れても / 閉じても後で受け取れる。
+            ep = "/ai/chat-job" if data.get("background") else "/ai/chat"
+        elif action == "chat_poll":
+            # 後台私聊の結果取得。job は発起人(actor_id)にしか見せない(ai-bot 側で照合)。
+            job_id = (data.get("job_id") or "").strip()[:64]
+            if not job_id:
+                return Response({"error": "job_id required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            body = {"actor_id": str(request.user.id), "job_id": job_id,
+                    "issue_id": str(issue_id)}
+            ep = "/ai/chat-job/poll"
         else:
             return Response({"error": "action must be analyze|compose|invoke|decide|chat"},
                             status=status.HTTP_400_BAD_REQUEST)
         try:
-            r = _req.post(_AIBOT_BASE + ep, json=body, headers=headers, timeout=60)
+            # 2026-10-06: 云模型(cloud-deep→fast→glm 兜底链)は最悪 1 分超もあり得る → 120s。
+            r = _req.post(_AIBOT_BASE + ep, json=body, headers=headers, timeout=120)
             j = r.json()
         except Exception as e:
             logger.exception("ai-approval proxy failed")

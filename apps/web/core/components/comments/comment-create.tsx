@@ -20,7 +20,7 @@ import { cn, isCommentEmpty } from "@plane/utils";
 // BARSOUL 2026-06-06: 爱酱发起审批入口(评论框旁图标 → 表单, 替代评论区 @爱酱去污染)
 // BARSOUL 2026-07-25: 斜杠命令 —— `/審査` は公開(全員に届く)、`/愛ちゃん` は私聊(自分だけ)
 import { AichanApprovalButton } from "@/components/comments/aichan-approval-button";
-import { AichanChatPanel } from "@/components/comments/aichan-chat";
+import { AichanChatPanel, consumeReopen, subscribeJobs } from "@/components/comments/aichan-chat";
 // BARSOUL コメント返信 A 案: 返信先の受け渡しは reply-context (設計背景もそこ)
 import { useCommentQuotePreview } from "@/components/comments/card/reply-quote";
 import { useCommentReply } from "@/components/comments/reply-context";
@@ -78,7 +78,8 @@ const readComposerHeight = (): number | null => {
   }
 };
 // ポータルに出る浮層(ツールバーの T ドロップダウン / メンション / ダイアログ)は「外側クリック」扱いにしない
-const POPOVER_SELECTOR = '[role="menu"],[role="listbox"],[role="dialog"],[data-radix-popper-content-wrapper],.tippy-box';
+const POPOVER_SELECTOR =
+  '[role="menu"],[role="listbox"],[role="dialog"],[data-radix-popper-content-wrapper],.tippy-box';
 
 /**
  * BARSOUL(2026-07-25 hechun「審査を一等市民に」): コメント欄スラッシュ命令の受け皿。
@@ -117,6 +118,14 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
   // BARSOUL: スラッシュ命令で開いた意図(審査モーダル / 愛ちゃん私聊)
   const [intent, setIntent] = useState<TIntentState>(null);
   const [approvalSeed, setApprovalSeed] = useState("");
+  // BARSOUL 2026-10-06: 右下 dock の札から戻ってきたら、私聊パネルを開き直す(返答はもうスレッドにある)。
+  useEffect(() => {
+    const check = () => {
+      if (consumeReopen(entityId)) setIntent({ kind: "aichan", query: "" });
+    };
+    check();
+    return subscribeJobs(check);
+  }, [entityId]);
   // refs
   const editorRef = useRef<EditorRefApi>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -366,7 +375,7 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
       title={t("issue.comments.resize")}
       onPointerDown={onResizeStart}
       onDoubleClick={onResizeReset}
-      className="hidden h-3 cursor-row-resize touch-none select-none items-center justify-center text-placeholder hover:text-tertiary md:flex"
+      className="hidden h-3 cursor-row-resize touch-none items-center justify-center text-placeholder select-none hover:text-tertiary md:flex"
     >
       <GripHorizontal className="size-4" strokeWidth={2} />
     </div>
@@ -446,7 +455,9 @@ export const CommentCreate = observer(function CommentCreate(props: TCommentCrea
             <span className="min-w-0 flex-1 truncate">{t("issue.comments.placeholder")}</span>
           ) : (
             <>
-              <span className="shrink-0 rounded-sm bg-layer-2 px-1 text-[11px] text-tertiary">{t("issue.comments.draft")}</span>
+              <span className="shrink-0 rounded-sm bg-layer-2 px-1 text-[11px] text-tertiary">
+                {t("issue.comments.draft")}
+              </span>
               <span className="min-w-0 flex-1 truncate">{draftPreview || t("issue.comments.draft")}</span>
             </>
           )}
