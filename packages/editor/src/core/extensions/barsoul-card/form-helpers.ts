@@ -18,7 +18,8 @@ export function fieldText(val: any, a: { options?: any[]; unit?: string } = {}):
   if (isEmpty(val)) return "—";
   // select / choice は value ではなく見出しを出す（複数選択は「、」区切り）
   const opts = normOptions(a.options || []);
-  const one = (v: any) => opts.find((o) => o.value === v)?.label ?? (typeof v === "boolean" ? (v ? "はい" : "いいえ") : String(v));
+  const one = (v: any) =>
+    opts.find((o) => o.value === v)?.label ?? (typeof v === "boolean" ? (v ? "はい" : "いいえ") : String(v));
   const s = Array.isArray(val) ? val.map(one).join("、") : one(val);
   return a.unit ? `${s} ${a.unit}` : s;
 }
@@ -32,7 +33,11 @@ const tidy = (n: number) => Math.round(n * 1000) / 1000;
  *   sumprod(arrayPath, a, b) = Σ el[a]×el[b]（例: 数量×単重量＝総重量）
  * path 解決は呼び出し側の resolveP と同じ規約（getAll で注入）。
  */
-export function evalSummary(state: any, expr: string, getAll: (s: any, p: string) => any[] = defaultGetAll): number | "" {
+export function evalSummary(
+  state: any,
+  expr: string,
+  getAll: (s: any, p: string) => any[] = defaultGetAll
+): number | "" {
   const sp = expr.match(/^sumprod\(\s*([^,]+?)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)$/);
   if (sp) {
     const arr = getAll(state, sp[1]).flatMap((v) => (Array.isArray(v) ? v : [v]));
@@ -154,7 +159,9 @@ export function countdownText(target: any, now = Date.now()): { text: string; ov
 /** 選択肢の正規化: "A" / {value,label} どちらも {value,label} に。 */
 export function normOptions(opts: any[]): { value: any; label: string; sub?: string }[] {
   return (opts || []).map((o) =>
-    o && typeof o === "object" ? { value: o.value ?? o.label, label: String(o.label ?? o.value), sub: o.sub } : { value: o, label: String(o) }
+    o && typeof o === "object"
+      ? { value: o.value ?? o.label, label: String(o.label ?? o.value), sub: o.sub }
+      : { value: o, label: String(o) }
   );
 }
 
@@ -169,17 +176,26 @@ function defaultGetAll(root: any, path: string): any[] {
     if (flat) return Array.isArray(cur) ? cur.flatMap((e) => walk(e, rest)) : [];
     return walk(cur, rest);
   };
-  return walk(root, path.replace(/^state\.?/, "").split(".").filter(Boolean));
+  return walk(
+    root,
+    path
+      .replace(/^state\.?/, "")
+      .split(".")
+      .filter(Boolean)
+  );
 }
 
 /** 多人参与卡（barsoul.form.cheer.v1）：cards が配る crowd の 1 行。 */
 export type CrowdEntry = { id: string; name: string; state: any; at_ms: number };
 
-const crowdVal = (st: any, bind: string) =>
-  bind.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), st);
+const crowdVal = (st: any, bind: string) => bind.split(".").reduce((o: any, k) => (o == null ? undefined : o[k]), st);
 
 /** clap：押した人（crowd 順＝参加順）と本人が押したか。 */
-export function crowdTally(crowd: CrowdEntry[] | undefined, bind: string, me = ""): { count: number; names: string[]; mine: boolean } {
+export function crowdTally(
+  crowd: CrowdEntry[] | undefined,
+  bind: string,
+  me = ""
+): { count: number; names: string[]; mine: boolean } {
   const on = (crowd || []).filter((e) => !!crowdVal(e.state, bind));
   return { count: on.length, names: on.map((e) => e.name), mine: !!me && on.some((e) => e.id === me) };
 }
@@ -244,4 +260,75 @@ export function pollTally(
     } else if (c.n === best && best > 0) tie = true;
   }
   return { counts, voters, lead: tie ? undefined : lead };
+}
+
+// ── 共有チェックリスト（sharedlist、barsoul.form.shared.v1）────────────────
+export type MdSeg = { t: string; b?: boolean; i?: boolean; code?: boolean; s?: boolean; href?: string };
+
+/** 行内 Markdown の最小集合（**太字** *斜体* `code` ~~取消~~ [文字](URL)）。HTML は解釈しない＝原文は文字のまま。 */
+export function inlineMd(src: string): MdSeg[] {
+  const out: MdSeg[] = [];
+  const re = /\*\*(.+?)\*\*|`([^`]+)`|~~(.+?)~~|\[([^\]]+)\]\(([^)\s]+)\)|(?<![*\w])\*(?!\s)([^*]+?)\*(?![*\w])/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  const s = String(src ?? "");
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push({ t: s.slice(last, m.index) });
+    if (m[1] !== undefined) out.push({ t: m[1], b: true });
+    else if (m[2] !== undefined) out.push({ t: m[2], code: true });
+    else if (m[3] !== undefined) out.push({ t: m[3], s: true });
+    else if (m[4] !== undefined) {
+      const href = /^(https?:|mailto:|\/)/i.test(m[5]) ? m[5] : undefined;
+      out.push(href ? { t: m[4], href } : { t: m[0] });
+    } else out.push({ t: m[6], i: true });
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push({ t: s.slice(last) });
+  return out;
+}
+
+export type SharedItem = { on: boolean; by?: string; at_ms?: number };
+
+/** 項目の現在値：手元の楽観値 → cards の回放結果 → 原文の [x] の順。 */
+export function sharedOn(
+  id: string,
+  part: any,
+  items: Record<string, SharedItem> | undefined,
+  pend: Record<string, boolean> = {}
+): boolean {
+  if (id in pend) return pend[id];
+  const it = items?.[id];
+  if (it) return !!it.on;
+  return !!part?.checked;
+}
+
+/** 全体と各セクションの進捗。タスク 0 のセクションは total=0（表示側で数字を出さない）。 */
+export function sharedProgress(
+  sections: any[],
+  items: Record<string, SharedItem> | undefined,
+  pend: Record<string, boolean> = {}
+): { done: number; total: number; bySec: { done: number; total: number }[] } {
+  let done = 0;
+  let total = 0;
+  const bySec = (sections || []).map((sec) => {
+    let d = 0;
+    let n = 0;
+    for (const p of sec?.parts || []) {
+      if (p?.kind !== "task" || !p.id) continue;
+      n++;
+      if (sharedOn(p.id, p, items, pend)) d++;
+    }
+    done += d;
+    total += n;
+    return { done: d, total: n };
+  });
+  return { done, total, bySec };
+}
+
+/** 見出しタグ（【確定済み】【重要】など）の色調。done=緑 / warn=赤 / それ以外は中立。 */
+export function tagTone(tag: string): "done" | "warn" | "plain" {
+  const s = String(tag || "");
+  if (/(確定|完了|済|完成|done|DONE)/.test(s)) return "done";
+  if (/(重要|必須|至急|緊急|注意|要確認)/.test(s)) return "warn";
+  return "plain";
 }

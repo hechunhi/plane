@@ -946,7 +946,13 @@ function TimelineBlock(props: { b: any; t: Theme; S: any }) {
   );
 }
 
-const QUICK_LABEL: Record<string, string> = { today: "今日", tomorrow: "明日", eom: "月末", "+7d": "1週間後", "-1d": "昨日" };
+const QUICK_LABEL: Record<string, string> = {
+  today: "今日",
+  tomorrow: "明日",
+  eom: "月末",
+  "+7d": "1週間後",
+  "-1d": "昨日",
+};
 
 function CopyBtn(props: { text: string; t: Theme }) {
   const [ok, setOk] = useState(false);
@@ -989,7 +995,9 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
   // 押して弾かれるまでは赤枠を出さない（開いた瞬間に全部赤＝怒られてる感しかない）
   const [tried, setTried] = useState(false);
   // 下書き自動保存（per 端末の便利機能。消えても困らない＝localStorage で十分）
-  const draftKey = spec?.submit?.url && spec?.submit?.u ? `bs-card-draft:${spec.submit.url}:${spec.submit.u}` : "";
+  // 共有チェックリスト（spec.shared）は 1 タップ＝即送信なので下書きは持たない
+  const draftKey =
+    spec?.submit?.url && spec?.submit?.u && !spec?.shared ? `bs-card-draft:${spec.submit.url}:${spec.submit.u}` : "";
   const [draftAt, setDraftAt] = useState<number | null>(null);
   const baseRef = useRef<string>(JSON.stringify(spec?.state ?? {}));
   const btnRef = useRef<HTMLDivElement | null>(null);
@@ -1037,6 +1045,28 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
     const next = setP(st, path, v);
     setSt(next);
     void submit("approve", { state: next, anchor });
+  };
+  // sharedlist：1 件だけ静かに送る（flash も 1.5s 待ちも無し。取り直しは原子側）
+  const post = async (state: any): Promise<{ ok: boolean; msg?: string }> => {
+    try {
+      const r = await fetch(spec.submit.url, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          u: spec.submit.u,
+          sig: spec.submit.sig,
+          decision: "approve",
+          nonce: `shared-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          state,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.ok === false) return { ok: false, msg: j.msg || `HTTP ${r.status}` };
+      return { ok: true, msg: j.msg };
+    } catch (e) {
+      return { ok: false, msg: `送信に失敗しました（${String(e)}）` };
+    }
   };
   const errAt = useMemo(() => {
     const m = new Map<string, string>();
@@ -1169,6 +1199,9 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
           quick: editable ? quick : undefined,
           crowdTotal: spec?.crowd_total,
           closed: !!spec?.closed,
+          shared: spec?.shared,
+          post: editable ? post : undefined,
+          reload,
         },
         k
       );
@@ -1702,12 +1735,25 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
         <div style={{ ...S.note, display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
           <span style={{ flex: 1 }}>
             前回の入力途中を復元しました（
-            {new Date(draftAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）
+            {new Date(draftAt).toLocaleString("ja-JP", {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+            ）
           </span>
           <button
             type="button"
             onClick={discardDraft}
-            style={{ background: "none", border: 0, color: t.accent, cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
+            style={{
+              background: "none",
+              border: 0,
+              color: t.accent,
+              cursor: "pointer",
+              fontSize: 12,
+              textDecoration: "underline",
+            }}
           >
             破棄
           </button>
@@ -1732,9 +1778,7 @@ function FormBlock(props: { spec: any; t: Theme; S: any; reload: () => Promise<v
                 aria-disabled={errs.length > 0}
                 // 無効化せず押せる：押したら未入力欄を赤枠で示す（disabled だと何が足りないか分からない）
                 // confirm:false = 取り消しの効く軽い送信（ひとこと等）は確認バーを挟まない
-                onClick={() =>
-                  errs.length || spec.confirm === false ? submit("approve") : setConfirm("approve")
-                }
+                onClick={() => (errs.length || spec.confirm === false ? submit("approve") : setConfirm("approve"))}
                 style={{
                   ...S.btn(true),
                   marginLeft: 0,

@@ -16,11 +16,26 @@
  *   clap      みんなで 1 回ずつ押すボタン（押した人数と名前、押すと即送信＋紙吹雪）※cheer 卡
  *   wall      みんなのひとこと一覧（bind=本文、rateBind=評価を添える）※cheer 卡
  *   poll      みんなで投票（選択肢ごとの票数バー＋投票者、タップで即送信・付け替え可、img で画像選択肢）※多人卡
+ *   sharedlist 共有チェックリスト（sections→parts：task / text / table。状態はカードで 1 つ、
+ *             誰が勾っても全員に反映・誰がいつ勾ったか表示）※barsoul.form.shared.v1
  */
-import { Check, PartyPopper } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, PartyPopper } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
-import { addTags, countdownText, crowdTally, normOptions, pct, pollTally, stepBy, wallEntries } from "./form-helpers";
-import type { CrowdEntry } from "./form-helpers";
+import {
+  addTags,
+  countdownText,
+  crowdTally,
+  inlineMd,
+  normOptions,
+  pct,
+  pollTally,
+  sharedOn,
+  sharedProgress,
+  stepBy,
+  tagTone,
+  wallEntries,
+} from "./form-helpers";
+import type { CrowdEntry, SharedItem } from "./form-helpers";
 
 type Theme = Record<string, string>;
 export type AtomCtx = {
@@ -46,9 +61,30 @@ export type AtomCtx = {
   /** 参加できる人数（cards の crowd_total、0/未指定＝不明）と締切済みか */
   crowdTotal?: number;
   closed?: boolean;
+  /** 共有チェックリスト：cards の回放結果（items[id]={on,by,at_ms}） */
+  shared?: { items?: Record<string, SharedItem>; me_name?: string };
+  /** 画面を止めずに 1 件送る（flash・待ちなし）。sharedlist 用 */
+  post?: (state: any) => Promise<{ ok: boolean; msg?: string }>;
+  /** spec を静かに取り直す */
+  reload?: () => Promise<void>;
 };
 
-const EXTRA = new Set(["choice", "toggle", "stepper", "rating", "slider", "tags", "progress", "tally", "countdown", "group", "clap", "wall", "poll"]);
+const EXTRA = new Set([
+  "choice",
+  "toggle",
+  "stepper",
+  "rating",
+  "slider",
+  "tags",
+  "progress",
+  "tally",
+  "countdown",
+  "group",
+  "clap",
+  "wall",
+  "poll",
+  "sharedlist",
+]);
 export const isExtraAtom = (atom: string) => EXTRA.has(atom);
 
 const chip = (t: Theme, on: boolean, ro: boolean): React.CSSProperties => ({
@@ -112,6 +148,8 @@ export function renderExtraAtom(a: any, c: AtomCtx, k?: React.Key): React.ReactN
       return <Wall key={k} a={a} c={c} />;
     case "poll":
       return <Poll key={k} a={a} c={c} />;
+    case "sharedlist":
+      return <SharedList key={k} a={a} c={c} />;
     case "group":
       return <Group key={k} a={a} c={c} />;
     default:
@@ -237,7 +275,13 @@ function Stepper({ a, c }: P) {
     <div>
       {c.label}
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <button type="button" aria-label="減らす" disabled={atMin} onClick={() => set(bind, stepBy(n, -1, o))} style={sqBtn(t, atMin)}>
+        <button
+          type="button"
+          aria-label="減らす"
+          disabled={atMin}
+          onClick={() => set(bind, stepBy(n, -1, o))}
+          style={sqBtn(t, atMin)}
+        >
           −
         </button>
         <input
@@ -260,7 +304,13 @@ function Stepper({ a, c }: P) {
             borderColor: c.err ? t.rejectFg : inp.borderColor,
           }}
         />
-        <button type="button" aria-label="増やす" disabled={atMax} onClick={() => set(bind, stepBy(n, 1, o))} style={sqBtn(t, atMax)}>
+        <button
+          type="button"
+          aria-label="増やす"
+          disabled={atMax}
+          onClick={() => set(bind, stepBy(n, 1, o))}
+          style={sqBtn(t, atMax)}
+        >
           ＋
         </button>
         {a.unit && <span style={{ fontSize: 13, color: t.muted }}>{a.unit}</span>}
@@ -332,7 +382,14 @@ function Slider({ a, c }: P) {
     <div>
       <div style={{ display: "flex", alignItems: "baseline" }}>
         <div style={{ flex: 1 }}>{c.label}</div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: n == null ? t.muted : t.accent, fontVariantNumeric: "tabular-nums" }}>
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: n == null ? t.muted : t.accent,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
           {shown}
         </span>
       </div>
@@ -367,7 +424,9 @@ function Tags({ a, c }: P) {
     if (next.length !== arr.length) set(bind, next);
     setDraft("");
   };
-  const rest = (a.suggest || []).map(String).filter((s: string) => !arr.some((x) => x.toLowerCase() === s.toLowerCase()));
+  const rest = (a.suggest || [])
+    .map(String)
+    .filter((s: string) => !arr.some((x) => x.toLowerCase() === s.toLowerCase()));
   return (
     <div>
       {c.label}
@@ -386,15 +445,38 @@ function Tags({ a, c }: P) {
         {arr.map((s, i) => (
           <span
             key={s}
-            style={{ display: "inline-flex", alignItems: "center", gap: 2, padding: "2px 4px 2px 9px", fontSize: 12.5, borderRadius: 12, background: t.chipBg, border: `1px solid ${t.border}` }}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 2,
+              padding: "2px 4px 2px 9px",
+              fontSize: 12.5,
+              borderRadius: 12,
+              background: t.chipBg,
+              border: `1px solid ${t.border}`,
+            }}
           >
             {s}
             {!ro && (
               <button
                 type="button"
                 aria-label={`${s} を外す`}
-                onClick={() => set(bind, arr.filter((_, x) => x !== i))}
-                style={{ width: 20, height: 20, padding: 0, border: 0, background: "none", color: t.muted, cursor: "pointer", fontSize: 12 }}
+                onClick={() =>
+                  set(
+                    bind,
+                    arr.filter((_, x) => x !== i)
+                  )
+                }
+                style={{
+                  width: 20,
+                  height: 20,
+                  padding: 0,
+                  border: 0,
+                  background: "none",
+                  color: t.muted,
+                  cursor: "pointer",
+                  fontSize: 12,
+                }}
               >
                 ×
               </button>
@@ -427,7 +509,16 @@ function Tags({ a, c }: P) {
                 commit(draft + s);
               }
             }}
-            style={{ flex: 1, minWidth: 80, border: 0, outline: 0, background: "transparent", color: t.fg, fontSize: 13, padding: "2px 0" }}
+            style={{
+              flex: 1,
+              minWidth: 80,
+              border: 0,
+              outline: 0,
+              background: "transparent",
+              color: t.fg,
+              fontSize: 13,
+              padding: "2px 0",
+            }}
           />
         )}
       </div>
@@ -438,7 +529,15 @@ function Tags({ a, c }: P) {
               key={s}
               type="button"
               onClick={() => commit(s)}
-              style={{ padding: "3px 9px", fontSize: 12, borderRadius: 12, border: `1px dashed ${t.border}`, background: "transparent", color: t.fg, cursor: "pointer" }}
+              style={{
+                padding: "3px 9px",
+                fontSize: 12,
+                borderRadius: 12,
+                border: `1px dashed ${t.border}`,
+                background: "transparent",
+                color: t.fg,
+                cursor: "pointer",
+              }}
             >
               ＋ {s}
             </button>
@@ -478,11 +577,25 @@ function Progress({ a, c }: P) {
     <div style={{ margin: "8px 0" }}>
       <div style={{ display: "flex", alignItems: "baseline", fontSize: 12, marginBottom: 4 }}>
         <span style={{ flex: 1, fontWeight: 600, color: t.fg }}>{a.label}</span>
-        <span style={{ color: done ? green : t.muted, fontWeight: done ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>
-          {done ? `✓ ${a.doneLabel || "完了"}` : a.showCount === false ? `${p}%` : `${v === "" || v == null ? 0 : v} / ${of || 0}${a.unit ? ` ${a.unit}` : ""}`}
+        <span
+          style={{ color: done ? green : t.muted, fontWeight: done ? 700 : 400, fontVariantNumeric: "tabular-nums" }}
+        >
+          {done
+            ? `✓ ${a.doneLabel || "完了"}`
+            : a.showCount === false
+              ? `${p}%`
+              : `${v === "" || v == null ? 0 : v} / ${of || 0}${a.unit ? ` ${a.unit}` : ""}`}
         </span>
       </div>
-      <div style={{ height: 8, borderRadius: 4, background: t.chipBg, border: `1px solid ${t.border}`, overflow: "hidden" }}>
+      <div
+        style={{
+          height: 8,
+          borderRadius: 4,
+          background: t.chipBg,
+          border: `1px solid ${t.border}`,
+          overflow: "hidden",
+        }}
+      >
         <div
           style={{
             width: `${p}%`,
@@ -551,7 +664,15 @@ function Tally({ a, c }: P) {
             <button
               type="button"
               onClick={() => set(bind, Math.max(0, n - step))}
-              style={{ padding: "2px 0", border: 0, background: "none", color: t.muted, cursor: "pointer", fontSize: 12, textDecoration: "underline" }}
+              style={{
+                padding: "2px 0",
+                border: 0,
+                background: "none",
+                color: t.muted,
+                cursor: "pointer",
+                fontSize: 12,
+                textDecoration: "underline",
+              }}
             >
               1 つ戻す
             </button>
@@ -576,10 +697,19 @@ function Countdown({ a, c }: P) {
   return (
     <div style={{ ...c.S.meta, display: "flex", alignItems: "baseline", gap: 6 }}>
       <b>{a.label || "期限"}</b>
-      <span style={{ color, fontWeight: r.overdue || r.soon ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{r.text}</span>
+      <span style={{ color, fontWeight: r.overdue || r.soon ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>
+        {r.text}
+      </span>
       {target && r.text !== "—" && (
         <span style={{ fontSize: 11.5, color: t.muted }}>
-          （{new Date(typeof target === "number" ? target : Date.parse(target)).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）
+          （
+          {new Date(typeof target === "number" ? target : Date.parse(target)).toLocaleString("ja-JP", {
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
+          ）
         </span>
       )}
     </div>
@@ -592,15 +722,46 @@ function Group({ a, c }: P) {
   const cols = Math.max(1, Math.min(4, a.cols || 1));
   const kids = (a.children || []).map((ch: any, i: number) => c.renderChild(ch, i));
   return (
-    <div style={{ border: a.border === false ? 0 : `1px solid ${t.border}`, borderRadius: 8, padding: a.border === false ? 0 : "6px 10px 8px", margin: "8px 0" }}>
+    <div
+      style={{
+        border: a.border === false ? 0 : `1px solid ${t.border}`,
+        borderRadius: 8,
+        padding: a.border === false ? 0 : "6px 10px 8px",
+        margin: "8px 0",
+      }}
+    >
       {a.label && (
         <button
           type="button"
           onClick={() => setOpen(!open)}
           aria-expanded={open}
-          style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", minHeight: 28, padding: 0, border: 0, background: "none", color: t.fg, fontSize: 12.5, fontWeight: 700, cursor: "pointer", textAlign: "left" }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            width: "100%",
+            minHeight: 28,
+            padding: 0,
+            border: 0,
+            background: "none",
+            color: t.fg,
+            fontSize: 12.5,
+            fontWeight: 700,
+            cursor: "pointer",
+            textAlign: "left",
+          }}
         >
-          <span style={{ display: "inline-block", width: 10, color: t.muted, transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+          <span
+            style={{
+              display: "inline-block",
+              width: 10,
+              color: t.muted,
+              transform: open ? "rotate(90deg)" : "none",
+              transition: "transform .15s",
+            }}
+          >
+            ›
+          </span>
           <span style={{ flex: 1 }}>{a.label}</span>
           {!open && a.summary && <span style={{ fontWeight: 400, color: t.muted, fontSize: 12 }}>{a.summary}</span>}
         </button>
@@ -609,7 +770,11 @@ function Group({ a, c }: P) {
         <div
           style={
             cols > 1
-              ? { display: "grid", gridTemplateColumns: `repeat(auto-fit, minmax(${a.minColWidth || 140}px, 1fr))`, columnGap: 10 }
+              ? {
+                  display: "grid",
+                  gridTemplateColumns: `repeat(auto-fit, minmax(${a.minColWidth || 140}px, 1fr))`,
+                  columnGap: 10,
+                }
               : undefined
           }
         >
@@ -742,7 +907,9 @@ function Wall({ a, c }: P) {
                   {r.rate != null && <span style={{ color: t.accent }}>{"★".repeat(Math.min(5, r.rate))}</span>}
                   <span>{fmt(r.at_ms)}</span>
                 </div>
-                <div style={{ fontSize: 13, color: t.fg, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{r.text}</div>
+                <div style={{ fontSize: 13, color: t.fg, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {r.text}
+                </div>
               </div>
             </div>
           ))}
@@ -760,13 +927,24 @@ function Poll({ a, c }: P) {
   const multi = !!a.multi;
   const ro = c.ro || !!c.closed || !c.quick;
   const mineArr: any[] = multi ? (Array.isArray(c.val) ? c.val : []) : c.val == null || c.val === "" ? [] : [c.val];
-  const { counts, voters, lead } = pollTally(c.crowd, bind, opts, c.me, c.me ? (multi ? mineArr : (c.val ?? null)) : undefined);
+  const { counts, voters, lead } = pollTally(
+    c.crowd,
+    bind,
+    opts,
+    c.me,
+    c.me ? (multi ? mineArr : (c.val ?? null)) : undefined
+  );
   const total = c.crowdTotal || 0;
   const all = total > 0 && voters >= total;
   const pick = (v: any, el: HTMLElement) => {
     if (ro) return;
     let next: any;
-    if (multi) next = mineArr.includes(v) ? mineArr.filter((x) => x !== v) : a.max && mineArr.length >= a.max ? mineArr : [...mineArr, v];
+    if (multi)
+      next = mineArr.includes(v)
+        ? mineArr.filter((x) => x !== v)
+        : a.max && mineArr.length >= a.max
+          ? mineArr
+          : [...mineArr, v];
     else next = mineArr[0] === v ? null : v; // 同じのをもう一度＝取り消し
     try {
       navigator.vibrate?.(12);
@@ -826,7 +1004,13 @@ function Poll({ a, c }: P) {
                   src={o.img}
                   alt={o.label}
                   loading="lazy"
-                  style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", borderRadius: 6, background: t.chipBg }}
+                  style={{
+                    width: "100%",
+                    aspectRatio: "4 / 3",
+                    objectFit: "cover",
+                    borderRadius: 6,
+                    background: t.chipBg,
+                  }}
                 />
               )}
               {!hasImg && (
@@ -843,9 +1027,13 @@ function Poll({ a, c }: P) {
               )}
               <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 6, fontSize: 13.5 }}>
                 {on && <Check size={15} strokeWidth={2.6} color={t.accent} />}
-                <span style={{ flex: 1, minWidth: 0, fontWeight: on ? 700 : 500, wordBreak: "break-word" }}>{o.label}</span>
+                <span style={{ flex: 1, minWidth: 0, fontWeight: on ? 700 : 500, wordBreak: "break-word" }}>
+                  {o.label}
+                </span>
                 <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{cnt.n}</span>
-                <span style={{ fontSize: 11.5, color: t.muted, minWidth: 32, textAlign: "right" }}>{voters ? `${w}%` : ""}</span>
+                <span style={{ fontSize: 11.5, color: t.muted, minWidth: 32, textAlign: "right" }}>
+                  {voters ? `${w}%` : ""}
+                </span>
               </span>
               {cnt.names.length > 0 && (
                 <span style={{ position: "relative", fontSize: 11.5, color: t.muted, wordBreak: "break-word" }}>
@@ -892,4 +1080,409 @@ export function celebrate(anchor?: HTMLElement | null) {
     );
   }
   setTimeout(() => layer.remove(), 1700);
+}
+
+// ── 共有チェックリスト ─────────────────────────────────────────────
+function Md({ text, t }: { text: string; t: Theme }) {
+  return (
+    <>
+      {inlineMd(text).map((g, i) => {
+        if (g.href)
+          return (
+            <a
+              key={i}
+              href={g.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: t.accent }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {g.t}
+            </a>
+          );
+        if (g.code)
+          return (
+            <code
+              key={i}
+              style={{
+                fontSize: "0.92em",
+                padding: "0 4px",
+                borderRadius: 4,
+                background: t.chipBg,
+                border: `1px solid ${t.border}`,
+              }}
+            >
+              {g.t}
+            </code>
+          );
+        const st: React.CSSProperties = {};
+        if (g.b) st.fontWeight = 700;
+        if (g.i) st.fontStyle = "italic";
+        if (g.s) st.textDecoration = "line-through";
+        return g.b || g.i || g.s ? (
+          <span key={i} style={st}>
+            {g.t}
+          </span>
+        ) : (
+          <React.Fragment key={i}>{g.t}</React.Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+const fmtAt = (ms?: number) => {
+  if (!ms) return "";
+  const d = new Date(ms);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
+
+function Bar({ done, total, t, h = 6 }: { done: number; total: number; t: Theme; h?: number }) {
+  const p = pct(done, total);
+  const full = total > 0 && done >= total;
+  return (
+    <div
+      style={{
+        height: h,
+        borderRadius: h / 2,
+        background: t.chipBg,
+        border: `1px solid ${t.border}`,
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          width: `${p}%`,
+          height: "100%",
+          background: full ? t.approveBg : t.accent,
+          transition: "width .3s ease, background .2s",
+        }}
+      />
+    </div>
+  );
+}
+
+function SharedList({ a, c }: P) {
+  const { t, ro } = c;
+  const sections: any[] = Array.isArray(a.sections) ? a.sections : [];
+  const items = c.shared?.items || {};
+  // 楽観値：押した瞬間に勾れて見える。cards が受け付けて取り直したら外す
+  const [pend, setPend] = useState<Record<string, boolean>>({});
+  const [err, setErr] = useState("");
+  const [onlyOpen, setOnlyOpen] = useState(false);
+  const [fold, setFold] = useState<Record<number, boolean>>({});
+  const busyRef = useRef<Set<string>>(new Set());
+  const prog = sharedProgress(sections, items, pend);
+  const allDone = prog.total > 0 && prog.done >= prog.total;
+
+  // 他の人の勾りを拾う：表示中だけ 30 秒ごと＋タブに戻った時に静かに取り直す
+  const reload = c.reload;
+  useEffect(() => {
+    if (!reload) return;
+    const tick = () => {
+      if (document.visibilityState === "visible" && busyRef.current.size === 0) void reload();
+    };
+    const id = setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [reload]);
+
+  const toggle = async (id: string, part: any) => {
+    if (ro || !c.post || busyRef.current.has(id)) return;
+    const next = !sharedOn(id, part, items, pend);
+    busyRef.current.add(id);
+    setErr("");
+    setPend((p) => ({ ...p, [id]: next }));
+    try {
+      navigator.vibrate?.(10);
+    } catch {
+      /* 非対応端末 */
+    }
+    const r = await c.post({ __op: { id, on: next } });
+    if (!r.ok) setErr(r.msg || "更新できませんでした");
+    else await c.reload?.();
+    busyRef.current.delete(id);
+    setPend((p) => {
+      const q = { ...p };
+      delete q[id];
+      return q;
+    });
+  };
+
+  const tagStyle = (tag: string): React.CSSProperties => {
+    const tone = tagTone(tag);
+    return {
+      fontSize: 10.5,
+      fontWeight: 600,
+      padding: "1px 7px",
+      borderRadius: 9,
+      whiteSpace: "nowrap",
+      border: `1px solid ${tone === "done" ? t.approveBg : tone === "warn" ? t.rejectBorder : t.border}`,
+      color: tone === "done" ? t.approveBg : tone === "warn" ? t.rejectFg : t.muted,
+      background: "transparent",
+    };
+  };
+
+  const renderPart = (p: any, k: React.Key) => {
+    if (p.kind === "task" && p.id) {
+      const on = sharedOn(p.id, p, items, pend);
+      if (onlyOpen && on) return null;
+      const it = items[p.id];
+      const mine = p.id in pend;
+      return (
+        <div
+          key={k}
+          role="checkbox"
+          aria-checked={on}
+          aria-disabled={ro}
+          tabIndex={ro ? -1 : 0}
+          onClick={() => toggle(p.id, p)}
+          onKeyDown={(e) => {
+            if (e.key === " " || e.key === "Enter") {
+              e.preventDefault();
+              void toggle(p.id, p);
+            }
+          }}
+          style={{
+            display: "flex",
+            gap: 8,
+            alignItems: "flex-start",
+            padding: "6px 6px",
+            marginLeft: (p.indent || 0) * 18,
+            borderRadius: 6,
+            cursor: ro ? "default" : "pointer",
+            opacity: mine ? 0.7 : 1,
+          }}
+        >
+          <span
+            style={{
+              width: 18,
+              height: 18,
+              marginTop: 1,
+              flexShrink: 0,
+              borderRadius: 4,
+              border: `1.5px solid ${on ? t.approveBg : t.border}`,
+              background: on ? t.approveBg : "transparent",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "background .12s, border-color .12s",
+            }}
+          >
+            {on && <Check size={13} color="#fff" strokeWidth={3} />}
+          </span>
+          <span
+            style={{
+              flex: 1,
+              minWidth: 0,
+              fontSize: 13,
+              lineHeight: 1.55,
+              color: on ? t.muted : t.fg,
+              overflowWrap: "anywhere",
+            }}
+          >
+            <span style={on ? { textDecoration: "line-through", textDecorationColor: t.border } : undefined}>
+              <Md text={p.text} t={t} />
+            </span>
+            {it?.by && !mine && (
+              <span style={{ display: "block", fontSize: 11, color: t.muted, marginTop: 1 }}>
+                {it.on ? `✓ ${it.by} · ${fmtAt(it.at_ms)}` : `${it.by} が外しました · ${fmtAt(it.at_ms)}`}
+              </span>
+            )}
+          </span>
+        </div>
+      );
+    }
+    if (onlyOpen) return null;
+    if (p.kind === "table") {
+      const al = (i: number): React.CSSProperties["textAlign"] =>
+        p.align?.[i] === "right" ? "right" : p.align?.[i] === "center" ? "center" : "left";
+      const cell: React.CSSProperties = {
+        padding: "4px 8px",
+        borderBottom: `1px solid ${t.border}`,
+        whiteSpace: "nowrap",
+      };
+      return (
+        <div key={k} style={{ overflowX: "auto", margin: "6px 0 8px" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12, color: t.fg, minWidth: "60%" }}>
+            {p.head?.length > 0 && (
+              <thead>
+                <tr>
+                  {p.head.map((h: string, i: number) => (
+                    <th key={i} style={{ ...cell, textAlign: al(i), color: t.muted, fontWeight: 600 }}>
+                      <Md text={h} t={t} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {(p.rows || []).map((r: string[], ri: number) => (
+                <tr key={ri}>
+                  {r.map((v, i) => (
+                    <td key={i} style={{ ...cell, textAlign: al(i), fontVariantNumeric: "tabular-nums" }}>
+                      <Md text={v} t={t} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    if (p.kind === "text") {
+      const lines = String(p.text || "").split("\n");
+      if (p.quote)
+        return (
+          <div
+            key={k}
+            style={{
+              margin: "6px 0",
+              padding: "6px 10px",
+              borderLeft: `3px solid ${t.border}`,
+              background: t.chipBg,
+              borderRadius: 4,
+              fontSize: 12,
+              color: t.fg,
+              lineHeight: 1.6,
+            }}
+          >
+            {lines.map((l, i) => (
+              <div key={i}>
+                <Md text={l} t={t} />
+              </div>
+            ))}
+          </div>
+        );
+      // 「↓」だけの行は流れ図の矢印として小さく中央に
+      if (/^(?:↓|⇩|⬇\uFE0F?)+$/u.test(p.text.trim()))
+        return (
+          <div key={k} style={{ textAlign: "center", color: t.muted, fontSize: 12, lineHeight: 1.2 }}>
+            ↓
+          </div>
+        );
+      return (
+        <div key={k} style={{ fontSize: 12.5, color: t.fg, lineHeight: 1.6, padding: "1px 6px" }}>
+          <Md text={p.text} t={t} />
+        </div>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div style={{ margin: "4px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0 6px" }}>
+        <div style={{ flex: 1 }}>
+          <Bar done={prog.done} total={prog.total} t={t} h={8} />
+        </div>
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: allDone ? 700 : 600,
+            color: allDone ? t.approveBg : t.fg,
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {allDone ? "✓ 全項目完了" : `${prog.done} / ${prog.total}`}
+        </span>
+        <button
+          type="button"
+          aria-pressed={onlyOpen}
+          onClick={() => setOnlyOpen((v) => !v)}
+          style={{ ...chip(t, onlyOpen, false), minHeight: 26, padding: "2px 10px", fontSize: 11.5 }}
+        >
+          未完了のみ
+        </button>
+      </div>
+      {ro && (
+        <div style={{ fontSize: 11.5, color: t.muted, marginBottom: 4 }}>
+          {c.closed ? "締め切り済み（閲覧のみ）" : "閲覧のみ"}
+        </div>
+      )}
+      {err && <div style={{ color: t.rejectFg, fontSize: 11.5, margin: "2px 0 4px" }}>{err}</div>}
+      {sections.map((sec, si) => {
+        const sp = prog.bySec[si];
+        const secDone = sp.total > 0 && sp.done >= sp.total;
+        if (onlyOpen && (sp.total === 0 || secDone)) return null;
+        const folded = !!fold[si];
+        const sub = (sec.level || 2) > 2;
+        return (
+          <div
+            key={si}
+            style={{
+              marginTop: sub ? 2 : 10,
+              ...(sub
+                ? { marginLeft: 8 }
+                : { borderTop: si > 0 ? `1px solid ${t.border}` : "none", paddingTop: si > 0 ? 8 : 0 }),
+            }}
+          >
+            {(sec.title || sec.tag) && (
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={!folded}
+                onClick={() => setFold((f) => ({ ...f, [si]: !f[si] }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setFold((f) => ({ ...f, [si]: !f[si] }));
+                  }
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  cursor: "pointer",
+                  padding: "2px 0",
+                  userSelect: "none",
+                }}
+              >
+                {folded ? <ChevronRight size={14} color={t.muted} /> : <ChevronDown size={14} color={t.muted} />}
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: sub ? 12 : 13,
+                    fontWeight: 700,
+                    color: sub ? t.muted : t.fg,
+                  }}
+                >
+                  <Md text={sec.title} t={t} />
+                </span>
+                {sec.tag && <span style={tagStyle(sec.tag)}>{sec.tag}</span>}
+                {sp.total > 0 && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: secDone ? t.approveBg : t.muted,
+                      fontWeight: secDone ? 700 : 400,
+                      fontVariantNumeric: "tabular-nums",
+                      minWidth: 34,
+                      textAlign: "right",
+                    }}
+                  >
+                    {secDone ? "✓ 完了" : `${sp.done}/${sp.total}`}
+                  </span>
+                )}
+              </div>
+            )}
+            {!folded && sp.total > 1 && !secDone && (
+              <div style={{ margin: "3px 0 2px 20px" }}>
+                <Bar done={sp.done} total={sp.total} t={t} h={3} />
+              </div>
+            )}
+            {!folded && (
+              <div style={{ marginTop: 2 }}>{(sec.parts || []).map((p: any, pi: number) => renderPart(p, pi))}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
