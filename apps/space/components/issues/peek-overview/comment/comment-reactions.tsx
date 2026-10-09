@@ -9,7 +9,7 @@ import { observer } from "mobx-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 // plane imports
 import { stringToEmoji } from "@plane/propel/emoji-icon-picker";
-import { EmojiReactionGroup, EmojiReactionPicker } from "@plane/propel/emoji-reaction";
+import { EmojiReactionGroup, EmojiReactionPicker, isStickerReaction } from "@plane/propel/emoji-reaction";
 import type { EmojiReactionType } from "@plane/propel/emoji-reaction";
 // helpers
 import { groupReactions } from "@/helpers/emoji.helper";
@@ -109,7 +109,8 @@ export const CommentReactions = observer(function CommentReactions(props: Props)
     const emojiCodePoints = Array.from(emoji)
       .map((char) => char.codePointAt(0))
       .filter((cp): cp is number => cp !== undefined);
-    const reactionString = emojiCodePoints.join("-");
+    // BARSOUL: 社内スタンプ "sticker:<id>" はそのまま(コードポイント化しない)
+    const reactionString = isStickerReaction(emoji) ? emoji : emojiCodePoints.join("-");
     handleReactionClick(reactionString);
   };
 

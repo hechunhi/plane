@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { observer } from "mobx-react";
 // plane imports
 import { stringToEmoji } from "@plane/propel/emoji-icon-picker";
-import { EmojiReactionGroup, EmojiReactionPicker } from "@plane/propel/emoji-reaction";
+import { EmojiReactionGroup, EmojiReactionPicker, isStickerReaction } from "@plane/propel/emoji-reaction";
 import type { EmojiReactionType } from "@plane/propel/emoji-reaction";
 import type { TCommentsOperations, TIssueComment } from "@plane/types";
 // helpers
@@ -53,7 +53,8 @@ export const CommentReactions = observer(function CommentReactions(props: TProps
     if (disabled || !userReactions) return;
     // Convert emoji back to decimal string format for the API
     const emojiCodePoints = Array.from(emoji).map((char) => char.codePointAt(0));
-    const reactionString = emojiCodePoints.join("-");
+    // BARSOUL: 社内スタンプ "sticker:<id>" はそのまま(コードポイント化しない)
+    const reactionString = isStickerReaction(emoji) ? emoji : emojiCodePoints.join("-");
     activityOperations.react(comment.id, reactionString, userReactions);
   };
 

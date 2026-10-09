@@ -14,3 +14,15 @@ export type {
 
 export { EmojiReactionPicker } from "./emoji-reaction-picker";
 export type { EmojiReactionPickerProps } from "./emoji-reaction-picker";
+
+// BARSOUL: 社内スタンプ
+export {
+  STICKERS,
+  STICKER_PREFIX,
+  stickerReaction,
+  isStickerReaction,
+  getSticker,
+  StickerInline,
+  StickerPreview,
+} from "./stickers";
+export type { TSticker } from "./stickers";

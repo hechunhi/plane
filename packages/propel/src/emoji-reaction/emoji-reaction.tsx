@@ -11,6 +11,7 @@ import { AddReactionIcon } from "../icons";
 import { Tooltip } from "../tooltip";
 import { cn } from "../utils";
 import { IconButton } from "../icon-button";
+import { getSticker, StickerInline, StickerPreview } from "./stickers";
 
 export interface EmojiReactionType {
   emoji: string;
@@ -60,7 +61,20 @@ const EmojiReaction = React.forwardRef(function EmojiReaction(
     onReactionClick?.(emoji);
   };
 
+  const sticker = getSticker(emoji);
+
   const tooltipContent = React.useMemo(() => {
+    // BARSOUL: スタンプはホバーで大図(押した人が居なくても出す)
+    if (sticker) {
+      const shown = users.slice(0, 5);
+      const rest = users.length - shown.length;
+      return (
+        <StickerPreview
+          sticker={sticker}
+          footer={shown.length ? `${shown.join(", ")}${rest > 0 ? ` and ${rest} more` : ""}` : null}
+        />
+      );
+    }
     if (!users.length) return null;
 
     const displayUsers = users.slice(0, 5);
@@ -75,7 +89,7 @@ const EmojiReaction = React.forwardRef(function EmojiReaction(
         </div>
       </div>
     );
-  }, [emoji, users]);
+  }, [emoji, users, sticker]);
 
   const button = (
     <button
@@ -90,12 +104,12 @@ const EmojiReaction = React.forwardRef(function EmojiReaction(
       )}
       {...props}
     >
-      <span className="leading-unset text-14">{emoji}</span>
+      {sticker ? <StickerInline sticker={sticker} /> : <span className="leading-unset text-14">{emoji}</span>}
       {showCount && count > 0 && <AnimatedCounter count={count} size="sm" className="text-11 leading-normal" />}
     </button>
   );
 
-  if (tooltipContent && users.length > 0) {
+  if (tooltipContent && (users.length > 0 || sticker)) {
     return <Tooltip tooltipContent={tooltipContent}>{button}</Tooltip>;
   }
 

@@ -4,6 +4,7 @@
  * See the LICENSE file for details.
  */
 
+import { isStickerReaction } from "../emoji-reaction/stickers";
 import type { TPlacement, TSide, TAlign } from "../utils/placement";
 
 export const EmojiIconPickerTypes = {
@@ -137,6 +138,8 @@ export function decimalToEmojiEnhanced(decimals: number[]): string {
  * @returns String representation of decimal values
  */
 export function emojiToString(emoji: string): string {
+  // BARSOUL: 社内スタンプ値 "sticker:<id>" は素通し
+  if (isStickerReaction(emoji)) return emoji;
   const decimals = emojiToDecimalEnhanced(emoji);
   return decimals.join("-");
 }
@@ -148,6 +151,8 @@ export function emojiToString(emoji: string): string {
  */
 export function stringToEmoji(emojiString: string): string {
   if (!emojiString) return "";
+  // BARSOUL: 社内スタンプ値 "sticker:<id>" は素通し(描画側が getSticker で画像化)
+  if (isStickerReaction(emojiString)) return emojiString;
   const decimals = emojiString
     .split("-")
     .map((s) => Number(s.trim()))
