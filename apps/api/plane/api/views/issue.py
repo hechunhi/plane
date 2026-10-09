@@ -1775,6 +1775,17 @@ class CommentTranslationUpsertAPIEndpoint(BaseAPIView):
             )
         source_lang = (body.get("source_lang") or "").strip().lower()[:8]
         translated_by = (body.get("translated_by") or "aichan")[:64]
+        # BARSOUL 2026-10-09 (hechun, BS-403): 出口ガード。ai-bot prewarm は
+        # 「假名 1 字でもあれば ja」の粗い判定で、日文ファイル名入りの中文評論を
+        # ja→zh に"翻訳"して書きに来る。語種の正本は _detect_src(on-demand と同一)
+        # → 原文の語種 == target なら派生表に入れない(自訳キャッシュ汚染防止)。
+        from plane.app.views.issue.comment import _detect_src, _strip
+
+        if _detect_src(_strip(comment.comment_html or "")) == target_lang:
+            return Response(
+                {"skipped": True, "reason": "source_is_target"},
+                status=status.HTTP_200_OK,
+            )
         # BARSOUL 2026-06-10: source_hash = sha256(comment_html)。on-demand 端点が
         # 同じ basis でキャッシュ照合する → prewarm(此処)で書いた訳文 HTML を
         # on-demand が hit できる(再翻訳回避)。comment 編集→html 変化→hash 変化→
