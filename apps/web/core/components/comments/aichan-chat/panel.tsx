@@ -20,6 +20,14 @@
  *   ・返答待ちは jobs.ts の後台 job。閉じても / 別ページへ移っても続き、届けば右下 dock が知らせる。
  *     だから待ち行に「裏で続ける」(= 閉じる)を出し、閉じてよいことを言葉で示す。
  *   ・入力途中の下書きは課題ごとに保持(閉じて開き直しても消えない)。
+ *
+ * 2026-10-06(hechun「評論区 @愛ちゃん と同じことを。@ が多いと噪音 → だから私聊を作った」):
+ *   私聊は「話すだけ」ではなく **@愛ちゃん と同じことができる** 必要がある。差は依頼文が出ないことだけ。
+ *   ・自分の最後の発言に「実行」: @愛ちゃん と同じパイプライン(カード/審査/発送登録…)。
+ *     依頼文はコメントにならず、公開が目的の結果だけが出る。ただの回答はここに返る。
+ *   ・愛ちゃんの返答に「愛ちゃん名義で送る」: 催促・連絡の下書きを本物の @ 付きで投稿。
+ *     宛先は本文の名前から既定選択 → 人が確かめて押す。投稿には「誰の依頼か」が必ず付く。
+ *   どちらも 1 段の確認を挟む(公開になる操作なので、押し間違いで飛ばない)。
  */
 "use client";
 
@@ -33,6 +41,7 @@ import {
   GripVertical,
   Loader2,
   Maximize2,
+  Megaphone,
   MessageSquareQuote,
   Minimize2,
   MoonStar,
@@ -41,6 +50,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 // plane imports
 import { useTranslation } from "@plane/i18n";
@@ -49,7 +59,7 @@ import { cn } from "@plane/utils";
 // local
 import { markPanelOpen } from "./jobs";
 import { useAichanThread } from "./use-thread";
-import type { TChatTurn } from "./use-thread";
+import type { TChatTurn, TPostCandidate } from "./use-thread";
 
 type Props = {
   workspaceSlug: string;
@@ -147,13 +157,14 @@ export function AichanChatPanel(props: Props) {
   const { t, currentLocale } = useTranslation();
   const lang = currentLocale === "ja" ? "ja" : currentLocale.startsWith("zh") ? "zh" : "en";
 
-  const { turns, pending, elapsedSec, error, send, retry, clear, cancel } = useAichanThread({
-    workspaceSlug,
-    projectId,
-    issueId,
-    issueTitle,
-    lang,
-  });
+  const { turns, pending, pendingKind, elapsedSec, error, send, act, postCandidates, postAs, retry, clear, cancel } =
+    useAichanThread({
+      workspaceSlug,
+      projectId,
+      issueId,
+      issueTitle,
+      lang,
+    });
   // 下書き: seed があればそれ、無ければ前回書きかけ。
   const [draft, setDraft] = useState(() => {
     if (seed) return seed;
@@ -165,6 +176,17 @@ export function AichanChatPanel(props: Props) {
   });
   const [copiedAt, setCopiedAt] = useState(-1);
   const [cancelled, setCancelled] = useState(false);
+  /** 「実行」の確認を出している user 発言の index(-1 = 出していない)。 */
+  const [confirmActAt, setConfirmActAt] = useState(-1);
+  /** 「愛ちゃん名義で送る」を開いている assistant 返答の index。 */
+  const [postAt, setPostAt] = useState(-1);
+  /** 送り済みの返答(同じ返答を二度送らせない。課題を移ればリセット)。 */
+  const [postedAt, setPostedAt] = useState<number[]>([]);
+  useEffect(() => {
+    setConfirmActAt(-1);
+    setPostAt(-1);
+    setPostedAt([]);
+  }, [issueId]);
 
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(() => {
@@ -255,6 +277,10 @@ export function AichanChatPanel(props: Props) {
 
   const lastAssistantIndex = useMemo(() => {
     for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "assistant") return i;
+    return -1;
+  }, [turns]);
+  const lastUserIndex = useMemo(() => {
+    for (let i = turns.length - 1; i >= 0; i--) if (turns[i].role === "user") return i;
     return -1;
   }, [turns]);
 
@@ -368,21 +394,52 @@ export function AichanChatPanel(props: Props) {
         ) : (
           <div className="flex flex-col gap-3">
             {turns.map((turn, i) => (
-              <ChatTurn
-                key={`${i}-${turn.role}`}
-                turn={turn}
-                showActions={turn.role === "assistant" && i === lastAssistantIndex}
-                copied={copiedAt === i}
-                onCopy={() => copy(turn.content, i)}
-                onQuote={() => onQuote(turn.content)}
-                onEscalate={() => onEscalate(turn.content)}
-              />
+              <div key={`${i}-${turn.role}`} className="flex flex-col gap-1.5">
+                <ChatTurn
+                  turn={turn}
+                  showActions={turn.role === "assistant" && i === lastAssistantIndex}
+                  canAct={turn.role === "user" && i === lastUserIndex && !pending && confirmActAt !== i}
+                  posted={postedAt.includes(i)}
+                  copied={copiedAt === i}
+                  onCopy={() => copy(turn.content, i)}
+                  onQuote={() => onQuote(turn.content)}
+                  onEscalate={() => onEscalate(turn.content)}
+                  onAct={() => setConfirmActAt(i)}
+                  onPostAs={() => setPostAt(i)}
+                />
+                {confirmActAt === i && turn.role === "user" && (
+                  <ActConfirm
+                    onCancel={() => setConfirmActAt(-1)}
+                    onRun={() => {
+                      setConfirmActAt(-1);
+                      setCancelled(false);
+                      void act(turn.content);
+                    }}
+                  />
+                )}
+                {postAt === i && turn.role === "assistant" && (
+                  <PostAsBox
+                    text={turn.content}
+                    loadCandidates={postCandidates}
+                    onSend={postAs}
+                    onCancel={() => setPostAt(-1)}
+                    onDone={() => {
+                      setPostAt(-1);
+                      setPostedAt((v) => [...v, i]);
+                    }}
+                  />
+                )}
+              </div>
             ))}
             {pending && (
               <div className="flex flex-col gap-1.5 rounded-md border border-subtle px-2.5 py-2">
                 <div className="flex items-center gap-2 text-11 text-secondary">
                   <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                  <span className="tabular-nums">{t("aichan_chat.thinking_elapsed", { sec: elapsedSec })}</span>
+                  <span className="tabular-nums">
+                    {pendingKind === "act"
+                      ? t("aichan_chat.acting_elapsed", { sec: elapsedSec })
+                      : t("aichan_chat.thinking_elapsed", { sec: elapsedSec })}
+                  </span>
                 </div>
                 <p className="text-11 text-tertiary">{t("aichan_chat.background_hint")}</p>
                 <div className="flex flex-wrap items-center gap-1">
@@ -504,13 +561,29 @@ export function AichanChatPanel(props: Props) {
 type TurnProps = {
   turn: TChatTurn;
   showActions: boolean;
+  /** 自分の最後の発言にだけ「実行」を出す。 */
+  canAct: boolean;
+  posted: boolean;
   copied: boolean;
   onCopy: () => void;
   onQuote: () => void;
   onEscalate: () => void;
+  onAct: () => void;
+  onPostAs: () => void;
 };
 
-function ChatTurn({ turn, showActions, copied, onCopy, onQuote, onEscalate }: TurnProps) {
+function ChatTurn({
+  turn,
+  showActions,
+  canAct,
+  posted,
+  copied,
+  onCopy,
+  onQuote,
+  onEscalate,
+  onAct,
+  onPostAs,
+}: TurnProps) {
   const { t } = useTranslation();
 
   // 自分の発言 = 淡い塊。愛ちゃんの返答 = 素のテキスト + 左の印。
@@ -518,8 +591,17 @@ function ChatTurn({ turn, showActions, copied, onCopy, onQuote, onEscalate }: Tu
   // 「これは投稿ではない」を形で分からせるため。
   if (turn.role === "user") {
     return (
-      <div className="self-end rounded-md bg-layer-1 px-2.5 py-1.5 text-13 whitespace-pre-wrap text-primary">
-        {turn.content}
+      <div className="flex flex-col items-end gap-1">
+        <div className="rounded-md bg-layer-1 px-2.5 py-1.5 text-13 whitespace-pre-wrap text-primary">
+          {turn.content}
+        </div>
+        {canAct && (
+          <Tooltip tooltipContent={t("aichan_chat.act_hint")}>
+            <span>
+              <TurnAction icon={<Zap className="size-3" />} label={t("aichan_chat.act")} onClick={onAct} />
+            </span>
+          </Tooltip>
+        )}
       </div>
     );
   }
@@ -541,6 +623,14 @@ function ChatTurn({ turn, showActions, copied, onCopy, onQuote, onEscalate }: Tu
               label={t("aichan_chat.quote_to_comment")}
               onClick={onQuote}
             />
+            {posted ? (
+              <span className="flex items-center gap-1 px-1.5 py-0.5 text-11 text-tertiary">
+                <Check className="size-3" />
+                {t("aichan_chat.post_as_done")}
+              </span>
+            ) : (
+              <TurnAction icon={<Megaphone className="size-3" />} label={t("aichan_chat.post_as")} onClick={onPostAs} />
+            )}
             <TurnAction icon={null} label={t("aichan_chat.to_approval")} onClick={onEscalate} />
           </div>
         )}
@@ -559,5 +649,117 @@ function TurnAction({ icon, label, onClick }: { icon: React.ReactNode; label: st
       {icon}
       {label}
     </button>
+  );
+}
+
+/* ── 公開になる操作の確認(押し間違いで飛ばないよう 1 段挟む) ─────────────── */
+
+function ConfirmShell({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-2 rounded-md border border-subtle bg-layer-1 px-2.5 py-2">{children}</div>;
+}
+
+const primaryBtn =
+  "flex items-center gap-1 rounded bg-accent-primary px-2 py-0.5 text-11 text-on-color transition-colors hover:bg-accent-primary-hover disabled:cursor-not-allowed disabled:opacity-60";
+
+function ActConfirm({ onRun, onCancel }: { onRun: () => void; onCancel: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <ConfirmShell>
+      <p className="text-11 leading-relaxed text-secondary">{t("aichan_chat.act_confirm")}</p>
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={onRun} className={primaryBtn}>
+          <Zap className="size-3" />
+          {t("aichan_chat.act_run")}
+        </button>
+        <TurnAction icon={null} label={t("aichan_chat.cancel_action")} onClick={onCancel} />
+      </div>
+    </ConfirmShell>
+  );
+}
+
+type TPostAsProps = {
+  text: string;
+  loadCandidates: (text: string) => Promise<TPostCandidate[]>;
+  onSend: (text: string, mentionIds: string[]) => Promise<void>;
+  onCancel: () => void;
+  onDone: () => void;
+};
+
+function PostAsBox({ text, loadCandidates, onSend, onCancel, onDone }: TPostAsProps) {
+  const { t } = useTranslation();
+  const [cands, setCands] = useState<TPostCandidate[] | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    loadCandidates(text)
+      .then((c) => {
+        if (!alive) return undefined;
+        setCands(c);
+        setPicked(c.filter((x) => x.selected).map((x) => x.id));
+        return undefined;
+      })
+      .catch((e: unknown) => {
+        if (alive) setErr(e instanceof Error ? e.message : "failed");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [text, loadCandidates]);
+
+  const toggle = (id: string) => setPicked((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
+
+  const send = async () => {
+    setSending(true);
+    setErr("");
+    try {
+      await onSend(text, picked);
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "failed");
+      setSending(false);
+    }
+  };
+
+  return (
+    <ConfirmShell>
+      <p className="text-11 leading-relaxed text-secondary">{t("aichan_chat.post_as_confirm")}</p>
+      <div className="flex flex-wrap items-center gap-1">
+        <span className="text-11 text-tertiary">{t("aichan_chat.post_as_to")}</span>
+        {cands === null && !err && <Loader2 className="size-3 animate-spin text-tertiary" />}
+        {cands?.map((c) => {
+          const on = picked.includes(c.id);
+          return (
+            <button
+              key={c.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(c.id)}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-11 transition-colors",
+                on
+                  ? "border-accent-strong bg-accent-subtle text-accent-primary"
+                  : "border-subtle text-tertiary hover:bg-layer-2 hover:text-primary"
+              )}
+            >
+              @{c.name}
+            </button>
+          );
+        })}
+      </div>
+      {cands !== null && picked.length === 0 && (
+        <p className="text-11 text-tertiary">{t("aichan_chat.post_as_no_mention")}</p>
+      )}
+      {err && <p className="text-11 text-danger-primary">{t("aichan_chat.post_as_failed")}</p>}
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={() => void send()} disabled={sending || cands === null} className={primaryBtn}>
+          {sending ? <Loader2 className="size-3 animate-spin" /> : <Megaphone className="size-3" />}
+          {t("aichan_chat.post_as_send")}
+        </button>
+        <TurnAction icon={null} label={t("aichan_chat.cancel_action")} onClick={onCancel} />
+      </div>
+    </ConfirmShell>
   );
 }

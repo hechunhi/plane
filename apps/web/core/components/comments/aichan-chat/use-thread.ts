@@ -15,9 +15,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   MAX_TURNS,
+  chatEndpoint,
   dismissJob,
   getJobsSnapshot,
   getServerJobsSnapshot,
+  post,
   readThread,
   startChatJob,
   subscribeJobs,
@@ -26,6 +28,8 @@ import {
 
 export type TChatRole = "user" | "assistant";
 export type TChatTurn = { role: TChatRole; content: string };
+/** 「愛ちゃん名義で送る」の宛先候補(ai-bot が在籍メンバーから作る。本文に名前があれば selected)。 */
+export type TPostCandidate = { id: string; name: string; selected: boolean };
 
 type TArgs = {
   workspaceSlug: string;
@@ -96,6 +100,52 @@ export function useAichanThread({ workspaceSlug, projectId, issueId, issueTitle,
     [workspaceSlug, projectId, issueId, issueTitle, lang, pending]
   );
 
+  /**
+   * 2026-10-06(hechun「評論区 @愛ちゃん と同じことを。@ が多いと噪音」):
+   * このユーザー発言を @愛ちゃん と同じパイプラインで実行する。依頼文はコメントに出ない。
+   * カード/審査など公開が目的の結果だけがコメント欄に出て、報告はこのスレッドに入る。
+   */
+  const act = useCallback(
+    async (text: string) => {
+      const content = text.trim();
+      if (!content || pending) return;
+      setSendError("");
+      dismissJob(issueId);
+      try {
+        await startChatJob({
+          kind: "act",
+          workspaceSlug,
+          projectId,
+          issueId,
+          issueTitle,
+          href: `${window.location.pathname}${window.location.search}`,
+          lang,
+          text: content,
+        });
+      } catch (e) {
+        setSendError(e instanceof Error ? e.message : "failed");
+      }
+    },
+    [workspaceSlug, projectId, issueId, issueTitle, lang, pending]
+  );
+
+  const ep = useMemo(() => chatEndpoint({ workspaceSlug, projectId, issueId }), [workspaceSlug, projectId, issueId]);
+
+  /** 宛先候補だけを取る(何も投稿しない)。 */
+  const postCandidates = useCallback(
+    async (text: string) =>
+      (await post<{ candidates: TPostCandidate[] }>(ep, { action: "chat_post", dry_run: true, lang, text })).candidates,
+    [ep, lang]
+  );
+
+  /** 返答を愛ちゃん名義でコメントに出す(本人がボタンで確定した時だけ)。 */
+  const postAs = useCallback(
+    async (text: string, mentionIds: string[]) => {
+      await post(ep, { action: "chat_post", lang, text, mention_ids: mentionIds });
+    },
+    [ep, lang]
+  );
+
   /** 直近のユーザー発言をもう一度投げる(返答が失敗したとき用)。 */
   const retry = useCallback(() => {
     const all = readThread(issueId);
@@ -107,16 +157,34 @@ export function useAichanThread({ workspaceSlug, projectId, issueId, issueTitle,
       }
     }
     if (at === -1) return;
+    // 実行(act)の失敗は実行し直す。発言はスレッドに残したまま。
+    if (job?.kind === "act") {
+      void act(all[at].content);
+      return;
+    }
     // 失敗した発言はいったん外して、同じ内容で投げ直す(二重表示にしない)。
     writeThread(issueId, all.slice(0, at));
     void send(all[at].content);
-  }, [issueId, send]);
+  }, [issueId, send, act, job?.kind]);
 
   /** 待つのをやめる(ai-bot 側は走り切るが、返答は捨てる)。発言は残す。 */
   const cancel = useCallback(() => dismissJob(issueId), [issueId]);
 
   return useMemo(
-    () => ({ turns, pending, elapsedSec, error, send, retry, clear, cancel }),
-    [turns, pending, elapsedSec, error, send, retry, clear, cancel]
+    () => ({
+      turns,
+      pending,
+      pendingKind: job?.kind ?? "chat",
+      elapsedSec,
+      error,
+      send,
+      act,
+      postCandidates,
+      postAs,
+      retry,
+      clear,
+      cancel,
+    }),
+    [turns, pending, job?.kind, elapsedSec, error, send, act, postCandidates, postAs, retry, clear, cancel]
   );
 }

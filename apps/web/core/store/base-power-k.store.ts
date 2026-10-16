@@ -21,6 +21,8 @@ export interface IBasePowerKStore {
   // observables
   isPowerKModalOpen: boolean;
   isShortcutsListModalOpen: boolean;
+  // BARSOUL 2026-10-08: 全屏搜索浮层(⌘K / 顶栏搜索框共用; `>` 再进 Power-K 命令)
+  isSearchOverlayOpen: boolean;
   commandRegistry: IPowerKCommandRegistry;
   activeContext: TPowerKContextType | null;
   activePage: TPowerKPageType | null;
@@ -33,12 +35,14 @@ export interface IBasePowerKStore {
   // toggle actions
   togglePowerKModal: (value?: boolean) => void;
   toggleShortcutsListModal: (value?: boolean) => void;
+  toggleSearchOverlay: (value?: boolean) => void;
 }
 
 export class BasePowerKStore implements IBasePowerKStore {
   // observables
   isPowerKModalOpen: boolean = false;
   isShortcutsListModalOpen: boolean = false;
+  isSearchOverlayOpen: boolean = false;
   commandRegistry: IPowerKCommandRegistry = new PowerKCommandRegistry();
   activeContext: TPowerKContextType | null = null;
   activePage: TPowerKPageType | null = null;
@@ -50,6 +54,7 @@ export class BasePowerKStore implements IBasePowerKStore {
       // observable
       isPowerKModalOpen: observable.ref,
       isShortcutsListModalOpen: observable.ref,
+      isSearchOverlayOpen: observable.ref,
       commandRegistry: observable.ref,
       activeContext: observable,
       activePage: observable,
@@ -58,6 +63,7 @@ export class BasePowerKStore implements IBasePowerKStore {
       // toggle actions
       togglePowerKModal: action,
       toggleShortcutsListModal: action,
+      toggleSearchOverlay: action,
       setActiveContext: action,
       setActivePage: action,
       setTopNavInputRef: action,
@@ -121,5 +127,14 @@ export class BasePowerKStore implements IBasePowerKStore {
     } else {
       this.isShortcutsListModalOpen = !this.isShortcutsListModalOpen;
     }
+  };
+
+  /**
+   * BARSOUL: 全屏搜索浮层开关。与 Power-K 互斥(开一个关另一个)。
+   */
+  toggleSearchOverlay = (value?: boolean) => {
+    const next = value !== undefined ? value : !this.isSearchOverlayOpen;
+    this.isSearchOverlayOpen = next;
+    if (next) this.isPowerKModalOpen = false;
   };
 }

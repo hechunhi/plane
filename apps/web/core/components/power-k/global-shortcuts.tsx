@@ -29,8 +29,14 @@ export const GlobalShortcutsProvider = observer(function GlobalShortcutsProvider
   // router
   const params = useParams();
   // store hooks
-  const { commandRegistry, isShortcutsListModalOpen, setActiveContext, togglePowerKModal, toggleShortcutsListModal } =
-    usePowerK();
+  const {
+    commandRegistry,
+    isShortcutsListModalOpen,
+    setActiveContext,
+    togglePowerKModal,
+    toggleShortcutsListModal,
+    toggleSearchOverlay,
+  } = usePowerK();
 
   // Detect context from URL and update store
   useEffect(() => {
@@ -65,7 +71,8 @@ export const GlobalShortcutsProvider = observer(function GlobalShortcutsProvider
     handlerRef.current = new ShortcutHandler(
       commandRegistry,
       () => contextRef.current,
-      () => togglePowerKModal(true)
+      () => togglePowerKModal(true),
+      () => toggleSearchOverlay(true)
     );
 
     document.addEventListener("keydown", handlerRef.current.handleKeyDown);
@@ -77,7 +84,7 @@ export const GlobalShortcutsProvider = observer(function GlobalShortcutsProvider
         handlerRef.current = null;
       }
     };
-  }, [commandRegistry, togglePowerKModal]);
+  }, [commandRegistry, togglePowerKModal, toggleSearchOverlay]);
 
   return <ShortcutsModal isOpen={isShortcutsListModalOpen} onClose={() => toggleShortcutsListModal(false)} />;
 });

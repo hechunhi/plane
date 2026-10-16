@@ -20,7 +20,7 @@ import { usePowerK } from "@/hooks/store/use-power-k";
 export const usePowerKMiscellaneousCommands = (): TPowerKCommandConfig[] => {
   // store hooks
   const { toggleSidebar } = useAppTheme();
-  const { topNavInputRef, topNavSearchInputRef } = usePowerK();
+  const { toggleSearchOverlay } = usePowerK();
   // translation
   const { t } = useTranslation();
 
@@ -42,14 +42,10 @@ export const usePowerKMiscellaneousCommands = (): TPowerKCommandConfig[] => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // BARSOUL 2026-10-08: 顶栏搜索 = 全屏搜索浮层(⌘K 同一个), cmd+f 也打开它
   const focusTopNavSearch = useCallback(() => {
-    // Focus PowerK input if available, otherwise focus regular search input
-    if (topNavSearchInputRef?.current) {
-      topNavSearchInputRef.current.focus();
-    } else if (topNavInputRef?.current) {
-      topNavInputRef.current.focus();
-    }
-  }, [topNavInputRef, topNavSearchInputRef]);
+    toggleSearchOverlay(true);
+  }, [toggleSearchOverlay]);
 
   return [
     {

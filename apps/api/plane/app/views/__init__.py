@@ -222,6 +222,7 @@ from .page.version import PageVersionEndpoint
 
 from .search.base import GlobalSearchEndpoint, SearchEndpoint
 from .search.issue import IssueSearchEndpoint
+from .search.barsoul import BarsoulSearchEndpoint, BarsoulSearchAskEndpoint
 
 
 from .external.base import (

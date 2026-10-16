@@ -50,12 +50,20 @@ export class ShortcutHandler {
   private registry: IPowerKCommandRegistry;
   private getContext: () => TPowerKContext;
   private openPalette: () => void;
+  // BARSOUL 2026-10-08: ⌘K 改开全屏搜索浮层(`>` 再进命令); 未给则沿用 openPalette
+  private openSearch: () => void;
   private isEnabled = true;
 
-  constructor(registry: IPowerKCommandRegistry, getContext: () => TPowerKContext, openPalette: () => void) {
+  constructor(
+    registry: IPowerKCommandRegistry,
+    getContext: () => TPowerKContext,
+    openPalette: () => void,
+    openSearch?: () => void
+  ) {
     this.registry = registry;
     this.getContext = getContext;
     this.openPalette = openPalette;
+    this.openSearch = openSearch ?? openPalette;
   }
 
   /**
@@ -74,10 +82,10 @@ export class ShortcutHandler {
     const key = e.key.toLowerCase();
     const hasModifier = e.metaKey || e.ctrlKey || e.altKey || e.shiftKey;
 
-    // Special: Cmd+K always opens command palette
+    // Special: Cmd+K always opens the (BARSOUL) search overlay
     if ((e.metaKey || e.ctrlKey) && key === "k") {
       e.preventDefault();
-      this.openPalette();
+      this.openSearch();
       return;
     }
 

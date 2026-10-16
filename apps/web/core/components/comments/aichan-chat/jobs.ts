@@ -26,6 +26,8 @@ export type TAichanJob = {
   href: string;
   startedAt: number;
   status: TAichanJobStatus;
+  /** chat = 私聊の返答 / act = @愛ちゃん と同じ処理を実行(結果だけがコメント欄に出る)。 */
+  kind?: "chat" | "act";
   /** error のときの種別。"lost" = ai-bot 再起動等で job が消えた。 */
   error?: "lost" | "timeout" | "failed";
 };
@@ -187,7 +189,7 @@ export function consumeReopen(issueId: string): boolean {
 const endpoint = (j: Pick<TAichanJob, "workspaceSlug" | "projectId" | "issueId">) =>
   `/api/workspaces/${j.workspaceSlug}/projects/${j.projectId}/issues/${j.issueId}/ai-approval/`;
 
-async function post<T>(url: string, body: unknown): Promise<T> {
+export async function post<T>(url: string, body: unknown): Promise<T> {
   const r = await fetch(url, {
     method: "POST",
     credentials: "include",
@@ -204,22 +206,24 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return j;
 }
 
-type TStartArgs = Omit<TAichanJob, "jobId" | "startedAt" | "status" | "error"> & {
+export const chatEndpoint = endpoint;
+
+type TStartArgs = Omit<TAichanJob, "jobId" | "startedAt" | "status" | "error" | "kind"> & {
   lang: string;
-  messages: TChatTurn[];
-};
+} & ({ kind?: "chat"; messages: TChatTurn[] } | { kind: "act"; text: string });
 
 /** 後台 job を投げる。返答は待たない(届けるのはポーリング)。 */
 export async function startChatJob(args: TStartArgs): Promise<void> {
-  const { lang, messages, ...meta } = args;
-  const j = await post<{ job_id: string }>(endpoint(meta), {
-    action: "chat",
-    background: true,
-    lang,
-    messages,
-  });
+  const kind = args.kind ?? "chat";
+  const { workspaceSlug, projectId, issueId, issueTitle, href, lang } = args;
+  const meta = { workspaceSlug, projectId, issueId, issueTitle, href };
+  const body =
+    args.kind === "act"
+      ? { action: "chat_act", lang, text: args.text }
+      : { action: "chat", background: true, lang, messages: args.messages };
+  const j = await post<{ job_id: string }>(endpoint(meta), body);
   const jobs = readJobs();
-  jobs[meta.issueId] = { ...meta, jobId: j.job_id, startedAt: Date.now(), status: "running" };
+  jobs[meta.issueId] = { ...meta, kind, jobId: j.job_id, startedAt: Date.now(), status: "running" };
   writeJobs(jobs);
   ensurePolling();
 }

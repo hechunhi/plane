@@ -16,6 +16,8 @@ import { useAppRouter } from "@/hooks/use-app-router";
 import { ProjectLevelModals } from "@/components/modals/project-level";
 import { WorkItemLevelModals } from "@/components/modals/work-item-level";
 import { WorkspaceLevelModals } from "@/components/modals/workspace-level";
+// BARSOUL 2026-10-08: 全屏搜索浮层(⌘K / 顶栏)
+import { BarsoulSearchOverlay } from "@/components/search-overlay/root";
 // local imports
 import { useProjectsAppPowerKCommands } from "./config/commands";
 import type { TPowerKCommandConfig, TPowerKContext } from "./core/types";
@@ -90,6 +92,7 @@ export const ProjectsAppPowerKProvider = observer(function ProjectsAppPowerKProv
         isOpen={isPowerKModalOpen}
         onClose={() => togglePowerKModal(false)}
       />
+      {workspaceSlug && <BarsoulSearchOverlay />}
     </>
   );
 });

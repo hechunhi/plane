@@ -956,6 +956,36 @@ class IssueAIApprovalEndpoint(BaseAPIView):
             body = {"actor_id": str(request.user.id), "job_id": job_id,
                     "issue_id": str(issue_id)}
             ep = "/ai/chat-job/poll"
+        elif action in ("chat_act", "chat_post"):
+            # BARSOUL 2026-10-06(hechun「評論区 @愛ちゃん と同じことを。@ が多いと噪音」):
+            #   chat_act  → 私聊の 1 文を @愛ちゃん と同じパイプラインで実行(後台 job)。
+            #               依頼文はコメントに出ず、カード等の結果だけが出る。
+            #   chat_post → 私聊の返答を愛ちゃん名義でコメントに出す(宛先は人が選ぶ)。
+            #               dry_run=true は宛先候補だけ(投稿しない)。
+            # どちらも本人がボタンを押した時だけ来る。actor は session 解析(不信前端)。
+            text = (data.get("text") or "").strip()[:4000]
+            if not text:
+                return Response({"error": "text required"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            actor_name = (getattr(request.user, "display_name", "")
+                          or getattr(request.user, "first_name", "")
+                          or str(getattr(request.user, "email", "") or "")).strip()
+            body = {
+                "actor_id": str(request.user.id),
+                "actor_name": actor_name,
+                "text": text,
+                "project_id": str(project_id), "issue_id": str(issue_id),
+                "workspace_slug": slug,
+                "lang": (data.get("lang") or "ja").strip()[:5],
+            }
+            if action == "chat_act":
+                ep = "/ai/chat-act-job"
+            else:
+                ids = data.get("mention_ids") or []
+                body["mention_ids"] = [str(i)[:64] for i in ids if isinstance(i, str)][:6] \
+                    if isinstance(ids, list) else []
+                body["dry_run"] = bool(data.get("dry_run"))
+                ep = "/ai/chat-post"
         else:
             return Response({"error": "action must be analyze|compose|invoke|decide|chat"},
                             status=status.HTTP_400_BAD_REQUEST)

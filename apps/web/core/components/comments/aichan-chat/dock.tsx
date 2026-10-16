@@ -65,7 +65,7 @@ export function AichanChatDock() {
         const sec = Math.max(0, Math.floor((now - job.startedAt) / 1000));
         const label =
           job.status === "running"
-            ? t("aichan_chat.dock_running")
+            ? t(job.kind === "act" ? "aichan_chat.dock_acting" : "aichan_chat.dock_running")
             : job.status === "done"
               ? t("aichan_chat.dock_done")
               : t("aichan_chat.dock_error");
