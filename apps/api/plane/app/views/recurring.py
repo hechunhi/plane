@@ -331,7 +331,10 @@ class IssueSnoozeEndpoint(BaseAPIView):
         remind_at = _remind_at_utc(data, i, now_jst_date(timezone.now()))
         if not remind_at or remind_at <= timezone.now():
             return Response({"error": "未来の日時を指定してください"}, status=status.HTTP_400_BAD_REQUEST)
-        hide = bool(data.get("hide"))
+        # BARSOUL 2026-10-16: 快捷改时间(右键/详情菜单)只传时刻。既有提醒上缺省的 key = 保留现值,
+        # 否则一改时间就把备忘/受众/频率/隐藏抹回默认。新建(无 remind_at)时缺省仍取默认。
+        keep = i.remind_at is not None
+        hide = bool(data.get("hide")) if "hide" in data else (bool(i.remind_hide) if keep else False)
         # BARSOUL 2026-06-21: カードを「全員から」隠す減算的権力は作成者 or プロジェクト/WS 管理者のみ。
         # (誰でも他人のカードを盤面から消せると不合理 — hechun)。個人専用の非表示(自分だけ)は別表が要る別機能で後回し。
         # 既に非表示のカード(remind_hide)を別の人が編集(時刻変更等)して hide を保つのは許可 — 新規に隠す遷移だけを gate。
@@ -340,8 +343,12 @@ class IssueSnoozeEndpoint(BaseAPIView):
                 {"error": "カードを全員から隠せるのは作成者またはプロジェクト管理者のみです"},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        intensity = data.get("intensity") if data.get("intensity") in ("once", "daily") else "once"
-        audience = data.get("audience") if data.get("audience") in ("self", "assignees", "members") else "self"
+        intensity = data.get("intensity") if data.get("intensity") in ("once", "daily") else (
+            (i.remind_intensity or "once") if keep and "intensity" not in data else "once"
+        )
+        audience = data.get("audience") if data.get("audience") in ("self", "assignees", "members") else (
+            (i.remind_audience or "self") if keep and "audience" not in data else "self"
+        )
         # 新 remind_at 設定時に既存の未読提醒通知を削除 — 即リフレッシュで紫が出ないよう。
         Notification.objects.filter(
             entity_identifier=issue_id,
@@ -354,7 +361,8 @@ class IssueSnoozeEndpoint(BaseAPIView):
         i.remind_hide = hide
         i.remind_intensity = intensity
         i.remind_audience = audience
-        i.remind_note = (data.get("note") or "").strip()[:200]
+        if "note" in data or not keep:
+            i.remind_note = (data.get("note") or "").strip()[:200]
         i.remind_fired_on = None
         i.snoozed_until = remind_at if hide else None  # 隐藏驱动: 只有 hide 才进 IssueManager 过滤
         i.snoozed_by_id = request.user.id if request.user.is_authenticated else None

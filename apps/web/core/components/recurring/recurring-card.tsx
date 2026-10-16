@@ -3,7 +3,7 @@
  * 见 docs/architecture/recurring-tasks-mvp.md。
  * 入口与一览「新規」共用 RecurringRuleEditor(一组件一概念); 上下文条复用 flow-context 区位、Repeat 中性标(非琥珀非蓝)。
  */
-import { useState, useRef, useEffect, type CSSProperties } from "react";
+import { useState, useRef, useEffect, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { observer } from "mobx-react";
 import { useParams } from "next/navigation";
 import useSWR, { mutate as globalMutate } from "swr";
@@ -44,6 +44,7 @@ import {
   type TSnoozeState,
 } from "@/services/recurring.service";
 import { RecurringRuleEditor } from "./recurring-editor";
+import { ymd, mkDay, nextMon, weekday, presetSub, remindWho, reminderErrorTitle } from "./reminder-utils";
 
 type Props = { issueId: string; disabled?: boolean };
 
@@ -105,21 +106,6 @@ function reminderMeta(
   return { inten, aud, vis };
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const mkDay = (add: number) => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + add);
-  return d;
-};
-const nextMon = () => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  const a = (8 - d.getDay()) % 7 || 7;
-  d.setDate(d.getDate() + a);
-  return d;
-};
 const chipStyle = (active: boolean): CSSProperties => ({
   padding: "7px 11px",
   border: `1px solid ${active ? "#c8bdf3" : "#e3e5e9"}`,
@@ -141,6 +127,7 @@ function ReminderDialog({
   pid,
   issueId,
   hasDue,
+  targetDate,
   initial,
   initialNote,
   initialDate,
@@ -151,6 +138,8 @@ function ReminderDialog({
   pid: string;
   issueId: string;
   hasDue: boolean;
+  /** 卡片截止日(YYYY-MM-DD), 「截止前 N 天」预览用 */
+  targetDate?: string | null;
   initial?: TSnoozeState | null;
   initialNote?: string;
   initialDate?: string;
@@ -163,8 +152,8 @@ function ReminderDialog({
     ...(new Date().getHours() < 18
       ? [{ k: "tonight", lbl: zh ? "今晚" : "今夜", sub: "18:00", d: ymd(new Date()), t: "18:00" }]
       : []),
-    { k: "tmrw", lbl: zh ? "明早" : "明朝", sub: "09:00", d: ymd(mkDay(1)), t: "09:00" },
-    { k: "d2", lbl: zh ? "后天" : "明後日", sub: "09:00", d: ymd(mkDay(2)), t: "09:00" },
+    { k: "tmrw", lbl: zh ? "明早" : "明朝", sub: presetSub(zh, mkDay(1), "09:00"), d: ymd(mkDay(1)), t: "09:00" },
+    { k: "d2", lbl: zh ? "后天" : "明後日", sub: presetSub(zh, mkDay(2), "09:00"), d: ymd(mkDay(2)), t: "09:00" },
     { k: "mon", lbl: zh ? "下周一" : "来週月", sub: "09:00", d: ymd(nextMon()), t: "09:00" },
   ];
   const recKey = presets.find((p) => p.d === initialDate)?.k;
@@ -178,6 +167,8 @@ function ReminderDialog({
   const [intensity, setIntensity] = useState<TReminderIntensity>(initial?.intensity ?? "once");
   const [audience, setAudience] = useState<TReminderAudience>(initial?.audience ?? "self");
   const [note, setNote] = useState(initial?.note ?? initialNote ?? "");
+  // 「已按下一步自动填」仅在真的用下一步预填时才说(已有备忘/空备忘时不撒谎)。
+  const prefilled = !initial?.note && !!initialNote;
   const [more, setMore] = useState(
     !!initial && (!!initial.hide || initial.intensity === "daily" || (initial.audience ?? "self") !== "self")
   );
@@ -192,11 +183,12 @@ function ReminderDialog({
   );
   const canHide = initial?.can_hide ?? liveState?.can_hide ?? false;
 
-  // 选中时刻的实时人读预览(月/日(周几) 时:分)
-  const WD = zh ? ["周日", "周一", "周二", "周三", "周四", "周五", "周六"] : ["日", "月", "火", "水", "木", "金", "土"];
+  // 选中时刻的实时人读预览(月/日(周几) 时:分); 「截止前 N 天」模式按截止日倒推, 与后端 _remind_at_utc 同算法。
+  const leadMode = mode === "lead" && hasDue && !!targetDate;
   const preview = (() => {
-    const d = new Date(`${date}T00:00:00`);
-    return isNaN(d.getTime()) ? "—" : `${d.getMonth() + 1}/${d.getDate()}（${WD[d.getDay()]}） ${time}`;
+    const d = new Date(`${leadMode ? targetDate!.slice(0, 10) : date}T00:00:00`);
+    if (leadMode) d.setDate(d.getDate() - lead);
+    return isNaN(d.getTime()) ? "—" : `${d.getMonth() + 1}/${d.getDate()}（${weekday(zh, d)}） ${time}`;
   })();
   const pickPreset = (p: { k: string; d: string; t: string }) => {
     setSel(p.k);
@@ -206,36 +198,23 @@ function ReminderDialog({
   };
 
   const save = async () => {
-    const body: TReminderInput = { time, hide, intensity, audience, note: note.trim() || undefined };
-    if (mode === "lead" && hasDue) body.lead_days = lead;
+    if (busy) return;
+    // note 显式传(含空串): 清空备忘也要生效; 后端对「缺 key」才保留旧值。
+    const body: TReminderInput = { time, hide, intensity, audience, note: note.trim() };
+    if (leadMode) body.lead_days = lead;
     else body.until = date;
     setBusy(true);
-    const r = await recurringService
-      .setSnooze(ws, pid, issueId, body)
-      .catch((e) => ({ __err: (e?.response?.status ?? e?.status) as number | undefined }) as const);
-    setBusy(false);
-    if (r && "__err" in r) {
-      // 403 = 无「全员隐藏」权限(后端 _can_team_hide 守门); 其余按时间错误提示。
-      const forbidden = r.__err === 403;
-      setToast({
-        type: TOAST_TYPE.ERROR,
-        title: forbidden
-          ? zh
-            ? "无权限:仅创建者/管理者可对所有人隐藏"
-            : "権限なし:全員から隠せるのは作成者/管理者のみ"
-          : zh
-            ? "设置失败(请选未来时间)"
-            : "設定失敗(未来の日時を)",
-        message: "",
-      });
+    let r: TSnoozeState | null = null;
+    try {
+      r = await recurringService.setSnooze(ws, pid, issueId, body);
+    } catch (e) {
+      setBusy(false);
+      setToast({ type: TOAST_TYPE.ERROR, title: reminderErrorTitle(zh, e), message: "" });
       return;
     }
+    setBusy(false);
     if (!r?.set) {
-      setToast({
-        type: TOAST_TYPE.ERROR,
-        title: zh ? "设置失败(请选未来时间)" : "設定失敗(未来の日時を)",
-        message: "",
-      });
+      setToast({ type: TOAST_TYPE.ERROR, title: reminderErrorTitle(zh, { response: { status: 400 } }), message: "" });
       return;
     }
     setToast({
@@ -265,17 +244,33 @@ function ReminderDialog({
     </div>
   );
 
+  // 键盘: Esc 关闭 / ⌘·Ctrl+Enter 保存。点遮罩不再关闭(避免误触丢失已填内容)。
+  const onKeyDown = (e: ReactKeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onClose();
+    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      void save();
+    }
+  };
+
   return (
     <div
       role="presentation"
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/30"
-      onMouseDown={onClose}
+      onKeyDown={onKeyDown}
     >
       <div
         role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        ref={(el) => {
+          if (el && !el.contains(document.activeElement)) el.focus();
+        }}
         data-prevent-outside-click
         onMouseDown={(e) => e.stopPropagation()}
-        className="w-[24rem] rounded-lg bg-surface-1 p-5 shadow-overlay-200"
+        className="w-[24rem] rounded-lg bg-surface-1 p-5 shadow-overlay-200 outline-none"
       >
         <div className="mb-4 flex items-center gap-2 text-14 font-medium text-primary">
           <AlarmClock className="size-4 text-accent-primary" /> {zh ? "设置提醒" : "リマインダー設定"}
@@ -336,16 +331,18 @@ function ReminderDialog({
         )}
         <div className="mt-2 flex items-center gap-1.5 text-12 text-accent-primary">
           <ArrowRight className="size-3.5 shrink-0" />
-          {preview} {zh ? "提醒你" : "に通知"}
+          {preview} {remindWho(zh, audience)}
         </div>
 
         {/* 备忘(已按「下一步」预填, 可改) */}
         <div className="mt-4 mb-1.5 flex flex-wrap items-center gap-1.5 text-11 font-semibold tracking-wide text-placeholder uppercase">
           <StickyNote className="size-3" />
           {zh ? "提醒我做什么" : "やること"}
-          <span className="font-normal tracking-normal text-placeholder normal-case">
-            · {zh ? "已按下一步自动填, 可改" : "次アクション自動補完・編集可"}
-          </span>
+          {prefilled && (
+            <span className="font-normal tracking-normal text-placeholder normal-case">
+              · {zh ? "已按下一步自动填, 可改" : "次アクション自動補完・編集可"}
+            </span>
+          )}
         </div>
         <input
           value={note}
@@ -410,10 +407,7 @@ function ReminderDialog({
             >
               <label
                 aria-label={zh ? "到点前对所有人隐藏卡片" : "それまで全員からカードを隠す"}
-                className={cn(
-                  "flex items-start gap-2.5",
-                  canHide ? "cursor-pointer" : "cursor-not-allowed opacity-60"
-                )}
+                className={cn("flex items-start gap-2.5", canHide ? "cursor-pointer" : "cursor-not-allowed opacity-60")}
               >
                 <input
                   type="checkbox"
@@ -873,11 +867,13 @@ export const ReminderActionButton = observer(function ReminderActionButton({
   const _next = s ? (pick(s.next_action, zh) || "").trim() : "";
   const remindNote = _next ? (s?.ball === "OTHER" ? (zh ? `催办: ${_next}` : `催促: ${_next}`) : _next) : undefined;
   const remindDays = s?.ball === "OTHER" ? 2 : 1;
-  const suggestDate = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + remindDays);
-    return d.toISOString().slice(0, 10);
-  })();
+  // 本地日(JST)。旧实现 toISOString() 取 UTC 日 → JST 0-9 点会少一天(高亮「明早」却填今天)。
+  const suggestDate = ymd(mkDay(remindDays));
+  // 「截止前 N 天」只对有截止日的卡开放。
+  const {
+    issue: { getIssueById },
+  } = useIssueDetail();
+  const targetDate = getIssueById(issueId)?.target_date ?? null;
   useEffect(() => {
     if (!menu) return;
     const h = (e: MouseEvent) => {
@@ -891,11 +887,20 @@ export const ReminderActionButton = observer(function ReminderActionButton({
 
   const apply = async (body: TReminderInput) => {
     setBusy(true);
-    const r = await recurringService.setSnooze(workspaceSlug, projectId, issueId, body).catch(() => null);
+    // 只传时间: 后端对缺省的 note/受众/频率/隐藏保留现值(快捷改时间不再抹掉详情配置)。
+    let r: TSnoozeState | null = null;
+    try {
+      r = await recurringService.setSnooze(workspaceSlug, projectId, issueId, body);
+    } catch (e) {
+      setBusy(false);
+      setMenu(false);
+      setToast({ type: TOAST_TYPE.ERROR, title: reminderErrorTitle(zh, e), message: "" });
+      return;
+    }
     setBusy(false);
     setMenu(false);
     if (!r?.set) {
-      setToast({ type: TOAST_TYPE.ERROR, title: zh ? "设置失败" : "設定失敗", message: "" });
+      setToast({ type: TOAST_TYPE.ERROR, title: reminderErrorTitle(zh, { response: { status: 400 } }), message: "" });
       return;
     }
     setToast({
@@ -1175,41 +1180,41 @@ export const ReminderActionButton = observer(function ReminderActionButton({
               {zh ? "自定义相对时间…" : "相対時間を指定…"}
             </button>
           )}
-          {!set && (
-            <>
-              <div style={{ height: 1, background: "#f1f1f4", margin: "4px 8px" }} />
-              <QuickSection label={zh ? "之后" : "その後"} />
-              {showTonight && (
-                <QuickRow
-                  icon={Moon}
-                  label={zh ? "今晚" : "今夜"}
-                  time="18:00"
-                  disabled={busy}
-                  onClick={() => day(mkDay(0), "18:00")}
-                />
-              )}
+          {/* 已设提醒时也给日级预设: 「改成明早」不必绕进弹窗 */}
+          <>
+            <div style={{ height: 1, background: "#f1f1f4", margin: "4px 8px" }} />
+            <QuickSection label={zh ? "之后" : "その後"} />
+            {showTonight && (
               <QuickRow
-                icon={Sunrise}
-                label={zh ? "明天上午" : "明日午前"}
-                time="09:00"
+                icon={Moon}
+                label={zh ? "今晚" : "今夜"}
+                time="18:00"
                 disabled={busy}
-                onClick={() => day(mkDay(1), "09:00")}
+                onClick={() => day(mkDay(0), "18:00")}
               />
-              <QuickRow
-                icon={Calendar}
-                label={zh ? "后天" : "明後日"}
-                time="09:00"
-                disabled={busy}
-                onClick={() => day(mkDay(2), "09:00")}
-              />
-              <QuickRow
-                icon={Calendar}
-                label={zh ? "下周一" : "来週月"}
-                disabled={busy}
-                onClick={() => day(nextMon(), "09:00")}
-              />
-            </>
-          )}
+            )}
+            <QuickRow
+              icon={Sunrise}
+              label={zh ? "明天上午" : "明日午前"}
+              time={presetSub(zh, mkDay(1), "09:00")}
+              disabled={busy}
+              onClick={() => day(mkDay(1), "09:00")}
+            />
+            <QuickRow
+              icon={Calendar}
+              label={zh ? "后天" : "明後日"}
+              time={presetSub(zh, mkDay(2), "09:00")}
+              disabled={busy}
+              onClick={() => day(mkDay(2), "09:00")}
+            />
+            <QuickRow
+              icon={Calendar}
+              label={zh ? "下周一" : "来週月"}
+              time="09:00"
+              disabled={busy}
+              onClick={() => day(nextMon(), "09:00")}
+            />
+          </>
           <div style={{ height: 1, background: "#f1f1f4", margin: "4px 8px" }} />
           <button
             type="button"
@@ -1237,7 +1242,8 @@ export const ReminderActionButton = observer(function ReminderActionButton({
           ws={workspaceSlug}
           pid={projectId}
           issueId={issueId}
-          hasDue={false}
+          hasDue={!!targetDate}
+          targetDate={targetDate}
           initial={set ? data : null}
           initialNote={set ? undefined : remindNote}
           initialDate={set ? undefined : suggestDate}

@@ -19,24 +19,29 @@ import { createCopyMenuWithDuplication } from "./copy-menu-helper";
 // BARSOUL フォローアップ・スヌーズ / 定期化(用户: 这些做进卡片右键菜单, 不进卡也能点; 删掉杵着的独立按钮)
 import { recurringService, type TReminderInput } from "@/services/recurring.service";
 import { useZh } from "@/components/issues/issue-layouts/kanban/ai-state-line";
+import {
+  ymd as _ymd,
+  mkDay as _mkDay,
+  nextMon as _nextMon,
+  presetSub,
+  reminderErrorTitle,
+} from "@/components/recurring/reminder-utils";
 
 // BARSOUL リマインダー快捷预设: 与详情页 ReminderActionButton(recurring-card.tsx)同源。
 // 客户端只算"相对时刻 / 日历起点"; 服务端按 JST 权威落地。绝不写 SoR。
-const _pad = (n: number) => String(n).padStart(2, "0");
-const _ymd = (d: Date) => `${d.getFullYear()}-${_pad(d.getMonth() + 1)}-${_pad(d.getDate())}`;
-const _mkDay = (add: number): Date => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + add);
-  return d;
-};
-const _nextMon = (): Date => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  const a = (8 - d.getDay()) % 7 || 7;
-  d.setDate(d.getDate() + a);
-  return d;
-};
+// 右键「提醒我」段标题: disabled + customContent(键盘/点击均跳过, 仅作视觉分组)
+const hdr = (key: string, label: string): TContextMenuItem => ({
+  key,
+  title: label,
+  action: () => {},
+  disabled: true,
+  customContent: (
+    <span className="tracking-wider block w-full px-1 pt-2 pb-0.5 text-[10px] font-semibold text-tertiary uppercase">
+      {label}
+    </span>
+  ),
+});
+
 // 我的常用(localStorage, 用户级 UI 偏好·非 SoR): 与 ReminderActionButton 共享 key, 只读复用。
 const _REL_PRESET_KEY = "barsoul.reminder.relPresets";
 function _loadRelPresets(): { mins: number; label: string }[] {
@@ -296,38 +301,32 @@ export const useMenuItemFactory = (props: MenuItemFactoryProps) => {
   const createSnoozeMenuItem = (): TContextMenuItem => {
     const ws = props.workspaceSlug;
     const pid = issue.project_id;
-    // 右键快捷 = 不隐藏 + 一次 + 只我(无黑洞); 富配置走详情页「提醒」条的详细设置。
+    // 右键快捷只改时间: 新建=后端默认(不隐藏/一次/只我); 已有提醒=保留其备忘/受众/频率/隐藏(后端缺 key 即保留)。
     const apply = async (body: TReminderInput) => {
       if (!ws || !pid) return;
-      const r = await recurringService
-        .setSnooze(ws, pid, issue.id, { ...body, hide: false, intensity: "once", audience: "self" })
-        .catch(() => null);
+      let err: unknown = null;
+      const r = await recurringService.setSnooze(ws, pid, issue.id, body).catch((e: unknown) => {
+        err = e;
+        return null;
+      });
       if (r?.set) {
         // 与详情页同源: 即时写入 SNOOZE SWR 缓存, 看板卡片紫色提醒态立刻反映, 无需刷新页面。
         void globalMutate(`SNOOZE:${issue.id}`, r, { revalidate: false });
         setToast({
           type: TOAST_TYPE.SUCCESS,
           title: `${zh ? "已设提醒" : "リマインダー"} · ${r.at_jst ?? ""}`,
-          message: zh ? "卡片保留可见" : "表示のまま",
+          message: r.hide ? (zh ? "到点前隐藏" : "それまで非表示") : zh ? "卡片保留可见" : "表示のまま",
         });
       } else {
-        setToast({ type: TOAST_TYPE.ERROR, title: zh ? "设置失败" : "設定に失敗しました", message: "" });
+        setToast({
+          type: TOAST_TYPE.ERROR,
+          title: reminderErrorTitle(zh, err ?? { response: { status: 400 } }),
+          message: "",
+        });
       }
     };
     const rel = (mins: number) => apply({ at: new Date(Date.now() + mins * 60000).toISOString() });
     const day = (d: Date, time: string) => apply({ until: _ymd(d), time });
-    // 段标题: disabled + customContent(键盘/点击均跳过, 仅作视觉分组)
-    const hdr = (key: string, label: string): TContextMenuItem => ({
-      key,
-      title: label,
-      action: () => {},
-      disabled: true,
-      customContent: (
-        <span className="block w-full px-1 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-tertiary">
-          {label}
-        </span>
-      ),
-    });
 
     const showTonight = new Date().getHours() < 18; // 18 点后「今晚」无意义
     const customs = _loadRelPresets();
@@ -359,9 +358,24 @@ export const useMenuItemFactory = (props: MenuItemFactoryProps) => {
             },
           ]
         : []),
-      { key: "snz-tmrw", title: zh ? "明天上午 09:00" : "明日 09:00", icon: Sunrise, action: () => void day(_mkDay(1), "09:00") },
-      { key: "snz-day2", title: zh ? "后天 09:00" : "明後日 09:00", icon: Calendar, action: () => void day(_mkDay(2), "09:00") },
-      { key: "snz-mon", title: zh ? "下周一 09:00" : "来週月 09:00", icon: Calendar, action: () => void day(_nextMon(), "09:00") },
+      {
+        key: "snz-tmrw",
+        title: `${zh ? "明天上午" : "明日"} ${presetSub(zh, _mkDay(1), "09:00")}`,
+        icon: Sunrise,
+        action: () => void day(_mkDay(1), "09:00"),
+      },
+      {
+        key: "snz-day2",
+        title: `${zh ? "后天" : "明後日"} ${presetSub(zh, _mkDay(2), "09:00")}`,
+        icon: Calendar,
+        action: () => void day(_mkDay(2), "09:00"),
+      },
+      {
+        key: "snz-mon",
+        title: zh ? "下周一 09:00" : "来週月 09:00",
+        icon: Calendar,
+        action: () => void day(_nextMon(), "09:00"),
+      },
     ];
 
     return {
