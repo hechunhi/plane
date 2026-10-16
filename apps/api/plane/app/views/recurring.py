@@ -5,7 +5,7 @@ import logging
 from rest_framework.response import Response
 from rest_framework import status
 
-from datetime import datetime, timedelta, time as _time
+from datetime import datetime, timedelta, time as _time, timezone as dt_timezone
 
 from plane.app.views.base import BaseAPIView
 from plane.app.permissions import allow_permission, ROLE
@@ -233,7 +233,7 @@ def _remind_at_utc(data, issue, today):
             return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=JST)  # 前端裸时间按 JST
-        return dt.astimezone(timezone.utc)
+        return dt.astimezone(dt_timezone.utc)
     hh, mm = 9, 0
     tt = (data.get("time") or "").strip()
     if tt:
@@ -255,7 +255,7 @@ def _remind_at_utc(data, issue, today):
         target = _snooze_target(data.get("preset"), data.get("until"), today)
     if not target:
         return None
-    return datetime.combine(target, _time(hh, mm), tzinfo=JST).astimezone(timezone.utc)
+    return datetime.combine(target, _time(hh, mm), tzinfo=JST).astimezone(dt_timezone.utc)
 
 
 class IssueSnoozeEndpoint(BaseAPIView):
