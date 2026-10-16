@@ -5,16 +5,22 @@
 #     初めてプッシュが出る。だから「ベルには出たがプッシュは来ない」「プッシュは
 #     来たがベルに無い」というズレが構造的に起きない。
 #   - **全部は送らない**。ベルは全活動を拾うが、プッシュで叩き起こしてよいのは
-#     自分に関係のある 6 種だけ(メンション / 返信 / 担当タスクへのコメント /
-#     割り当て / 期日 / 担当タスクの重要な変化)。それ以外は無音でベルに溜める。
+#     自分に関係のあるものだけ(メンション / 返信 / 担当タスクへのコメント /
+#     割り当て / 期日 / 担当タスクの重要な変化 / リマインダー / 定期タスク)。
+#     それ以外は無音でベルに溜める。
+#   - 1 タスク = 全受信者分を 1 回の send_many で並列送信。DB は受信者数に依らず
+#     一定回数(購読・設定・未読数・コメント/担当)だけ引く。
 #   - 失敗しても呼び元(通知作成)を絶対に巻き込まない。
 #
 # 文面は utils/push_copy.py、送信は utils/web_push.py。ここは「誰に何を」だけ。
 
+import base64
+import hashlib
 import logging
 import re
 
 from celery import shared_task
+from django.db.models import Count, Q
 
 from plane.db.models import (
     IssueAssignee,
@@ -24,7 +30,7 @@ from plane.db.models import (
     WebPushSubscription,
 )
 from plane.utils import push_copy
-from plane.utils.web_push import is_configured, send_to_subscription
+from plane.utils.web_push import PushJob, is_configured, send_many
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +45,29 @@ _PREFERENCE_FIELD = {
     "due_date_change": "important_update",
     "deadline_tomorrow": "deadline",
     "deadline_today": "deadline",
+    # 定期タスク: 新しい回 = 自分(or チーム)に来た仕事 → 割り当てと同じスイッチ。
+    # 期日超過 = 期限系のスイッチ。
+    "recurring_new": "assigned",
+    "recurring_overdue": "deadline",
+    # "reminder" は意図的に載せない = 常に送る。人が「この時刻に知らせて」と明示的に
+    # 頼んだもので、止めたいならリマインダー自体を消す(端末ごと止めるのは設定画面)。
 }
+
+# 同じ課題について「最新 1 通だけ届けば足りる」種類。圏外の端末に積まれた古い方は
+# プッシュサービス側で捨ててもらう(Topic ヘッダ)。メンションや返信は 1 通ずつ意味が
+# あるので載せない。
+_COLLAPSIBLE = {
+    "state_change": "upd",
+    "priority_change": "upd",
+    "due_date_change": "upd",
+    "deadline_tomorrow": "ddl",
+    "deadline_today": "ddl",
+    "recurring_overdue": "ddl",
+    "reminder": "rem",
+}
+
+# 省電力中でもすぐ鳴らすべき種類(人から直接呼ばれた / 時刻指定 / 今日が期限)。
+_HIGH_URGENCY = {"mention", "comment_reply", "assigned", "reminder", "deadline_today"}
 
 # 「担当タスクの重要な変化」として扱うフィールド。
 # name / labels / attachment / relates_to などは意図的に外している(叩き起こす
@@ -74,6 +102,12 @@ def classify(notification, receiver_has_commented: bool, is_assignee: bool) -> s
         return None
     if kind in ("deadline_tomorrow", "deadline_today"):
         return kind
+    # recurring_task._notify_bell が作る表示型通知(issue_activity を持たない)。
+    if kind == "reminder":
+        return "reminder"
+    if kind == "recurring":
+        phase = (data.get("recurring") or {}).get("phase")
+        return "recurring_overdue" if phase == "overdue" else "recurring_new"
 
     activity = (notification.data or {}).get("issue_activity") or {}
     field = activity.get("field")
@@ -148,16 +182,22 @@ def _build_payload(notification, kind: str, language: str, badge_count: int) -> 
     issue = (notification.data or {}).get("issue") or {}
     activity = (notification.data or {}).get("issue_activity") or {}
 
+    data = notification.data or {}
     value = activity.get("new_value") or ""
+    note = activity.get("new_value")
     if kind == "priority_change":
         value = push_copy.translate_priority(value, language)
+    elif kind == "recurring_overdue":
+        value = str((data.get("recurring") or {}).get("days") or "")
+    elif kind == "reminder":
+        note = (data.get("reminder") or {}).get("note") or ""
 
     body = push_copy.body_for(
         kind,
         language,
         actor=_actor_name(notification),
         issue=issue.get("name"),
-        excerpt=push_copy.excerpt(activity.get("new_value")),
+        excerpt=push_copy.excerpt(note),
         value=value,
     )
     if not body:
@@ -176,6 +216,15 @@ def _build_payload(notification, kind: str, language: str, badge_count: int) -> 
     }
 
 
+def _topic(kind: str, issue_id: str | None) -> str | None:
+    """RFC 8030 Topic(URL-safe base64 で 32 文字以内)。種類グループ + 課題で 1 本。"""
+    group = _COLLAPSIBLE.get(kind)
+    if not group or not issue_id:
+        return None
+    digest = hashlib.sha256(f"{group}:{issue_id}".encode()).digest()
+    return base64.urlsafe_b64encode(digest[:18]).decode().rstrip("=")  # 24 文字
+
+
 @shared_task
 def push_notifications(notification_ids):
     """作られたばかりの Notification をプッシュに流す。
@@ -186,73 +235,87 @@ def push_notifications(notification_ids):
         return
 
     try:
-        notifications = (
+        notifications = list(
             Notification.objects.filter(id__in=notification_ids)
-            .select_related("workspace", "triggered_by", "receiver")
+            .select_related("workspace", "triggered_by", "receiver__profile")
             .order_by("created_at")
         )
+        receiver_ids = {str(n.receiver_id) for n in notifications}
 
-        # 受信者ごとにまとめる。設定・購読先・バッジ数は受信者単位で 1 回だけ引く。
-        by_receiver: dict[str, list] = {}
+        # 購読を持つ人だけ残す。持っていない受信者には以降 1 クエリも使わない。
+        subscriptions: dict[str, list] = {}
+        for sub in WebPushSubscription.objects.filter(user_id__in=receiver_ids, is_active=True):
+            subscriptions.setdefault(str(sub.user_id), []).append(sub)
+        notifications = [n for n in notifications if str(n.receiver_id) in subscriptions]
+        if not notifications:
+            return
+        receiver_ids = set(subscriptions)
+
+        preferences = {str(p.user_id): p for p in WebPushPreference.objects.filter(user_id__in=receiver_ids)}
+        for rid in receiver_ids - set(preferences):
+            preferences[rid], _ = WebPushPreference.objects.get_or_create(user_id=rid)
+
+        # 未読件数 = ホーム画面アイコンに出す数字。受信者全員分を 1 クエリで。
+        badges = {
+            str(row["receiver_id"]): row["n"]
+            for row in Notification.objects.filter(receiver_id__in=receiver_ids)
+            .values("receiver_id")
+            .annotate(n=Count("id", filter=Q(read_at__isnull=True, archived_at__isnull=True)))
+        }
+
+        issue_ids = {(n.data or {}).get("issue", {}).get("id") for n in notifications}
+        issue_ids.discard(None)
+        # 「自分が前にコメントした課題か」= 返信されたと見なす条件。
+        # Plane のコメントはフラットで返信関係を持たないので、これで代用する。
+        commented = {
+            (str(u), str(i))
+            for u, i in IssueComment.objects.filter(issue_id__in=issue_ids, actor_id__in=receiver_ids)
+            .values_list("actor_id", "issue_id")
+            .distinct()
+        }
+        assigned = {
+            (str(u), str(i))
+            for u, i in IssueAssignee.objects.filter(issue_id__in=issue_ids, assignee_id__in=receiver_ids)
+            .values_list("assignee_id", "issue_id")
+            .distinct()
+        }
+
+        jobs: list[PushJob] = []
         for notification in notifications:
-            by_receiver.setdefault(str(notification.receiver_id), []).append(notification)
+            rid = str(notification.receiver_id)
+            job_payload = _plan(notification, rid, preferences[rid], badges.get(rid, 0), commented, assigned)
+            if not job_payload:
+                continue
+            payload, kind = job_payload
+            topic = _topic(kind, payload.get("taskId"))
+            urgency = "high" if kind in _HIGH_URGENCY else "normal"
+            jobs.extend(PushJob(sub, payload, topic, urgency) for sub in subscriptions[rid])
 
-        for receiver_id, items in by_receiver.items():
-            _push_for_receiver(receiver_id, items)
+        sent = send_many(jobs)
+        if jobs:
+            logger.info("web push: %s/%s delivered (%s notifications)", sent, len(jobs), len(notifications))
     except Exception:
         # プッシュはおまけの経路。ここでの失敗を上に伝播させない。
         logger.exception("web push dispatch failed")
 
 
-def _push_for_receiver(receiver_id: str, notifications: list) -> None:
-    subscriptions = list(WebPushSubscription.objects.filter(user_id=receiver_id, is_active=True))
-    if not subscriptions:
-        return
-
-    preference, _ = WebPushPreference.objects.get_or_create(user_id=receiver_id)
-    receiver = notifications[0].receiver
-    language = push_copy.normalize_language(getattr(getattr(receiver, "profile", None), "language", None))
-
-    # 未読件数 = ホーム画面アイコンに出す数字。まとめて 1 回だけ数える。
-    badge_count = Notification.objects.filter(
-        receiver_id=receiver_id, read_at__isnull=True, archived_at__isnull=True
-    ).count()
-
-    issue_ids = {(n.data or {}).get("issue", {}).get("id") for n in notifications}
-    issue_ids.discard(None)
-
-    # 「自分が前にコメントした課題か」= 返信されたと見なす条件。
-    # Plane のコメントはフラットで返信関係を持たないので、これで代用する。
-    commented_issue_ids = set(
-        str(x)
-        for x in IssueComment.objects.filter(issue_id__in=issue_ids, actor_id=receiver_id).values_list(
-            "issue_id", flat=True
-        )
+def _plan(notification, receiver_id, preference, badge_count, commented, assigned):
+    """1 通知 → (payload, kind)。送らないなら None。"""
+    issue_id = str((notification.data or {}).get("issue", {}).get("id"))
+    kind = classify(
+        notification,
+        receiver_has_commented=(receiver_id, issue_id) in commented,
+        is_assignee=(receiver_id, issue_id) in assigned,
     )
-    assigned_issue_ids = set(
-        str(x)
-        for x in IssueAssignee.objects.filter(issue_id__in=issue_ids, assignee_id=receiver_id).values_list(
-            "issue_id", flat=True
-        )
+    if not kind:
+        return None
+
+    field = _PREFERENCE_FIELD.get(kind)
+    if field and not getattr(preference, field, True):
+        return None
+
+    language = push_copy.normalize_language(
+        getattr(getattr(notification.receiver, "profile", None), "language", None)
     )
-
-    for notification in notifications:
-        issue_id = str((notification.data or {}).get("issue", {}).get("id"))
-        kind = classify(
-            notification,
-            receiver_has_commented=issue_id in commented_issue_ids,
-            is_assignee=issue_id in assigned_issue_ids,
-        )
-        if not kind:
-            continue
-
-        field = _PREFERENCE_FIELD.get(kind)
-        if field and not getattr(preference, field, True):
-            continue
-
-        payload = _build_payload(notification, kind, language, badge_count)
-        if not payload:
-            continue
-
-        for subscription in subscriptions:
-            send_to_subscription(subscription, payload)
+    payload = _build_payload(notification, kind, language, badge_count)
+    return (payload, kind) if payload else None

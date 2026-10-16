@@ -77,6 +77,26 @@ _TEMPLATES = {
         "zh-TW": "今天到期\n「{issue}」",
         "en": "Due today\n“{issue}”",
     },
+    # リマインダー(⏰ 時刻指定)。{excerpt} = 設定時のメモ(無ければ 1 行で終わる)。
+    "reminder": {
+        "ja": "リマインダー\n「{issue}」 {excerpt}",
+        "zh-CN": "提醒\n「{issue}」 {excerpt}",
+        "zh-TW": "提醒\n「{issue}」 {excerpt}",
+        "en": "Reminder\n“{issue}” {excerpt}",
+    },
+    # 定期タスク: 新しい回が生成された / 期日を N 日過ぎた。
+    "recurring_new": {
+        "ja": "定期タスクの新しい回です\n「{issue}」",
+        "zh-CN": "定期任务新一期已生成\n「{issue}」",
+        "zh-TW": "定期任務新一期已產生\n「{issue}」",
+        "en": "New recurring task\n“{issue}”",
+    },
+    "recurring_overdue": {
+        "ja": "期日を {value} 日過ぎています\n「{issue}」",
+        "zh-CN": "已逾期 {value} 天\n「{issue}」",
+        "zh-TW": "已逾期 {value} 天\n「{issue}」",
+        "en": "Overdue by {value} days\n“{issue}”",
+    },
 }
 
 # 優先度は DB では英語の enum。通知に "urgent" と出しても伝わらないので訳す。
@@ -129,4 +149,5 @@ def body_for(kind: str, language: str, **fields) -> str:
     template = table.get(language, table[_FALLBACK])
     safe = {"actor": "", "issue": "", "excerpt": "", "value": ""}
     safe.update({k: (v or "") for k, v in fields.items()})
-    return template.format(**safe)
+    # 空のフィールド(メモ無しリマインダー等)で行末に空白が残らないように。
+    return "\n".join(line.rstrip() for line in template.format(**safe).split("\n"))

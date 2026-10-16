@@ -10,6 +10,7 @@ from datetime import timedelta
 
 import requests
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
 from plane.db.models import (
@@ -65,15 +66,28 @@ def _notify_bell(issue: Issue, receiver_ids, title: str, sender: str = "recurrin
                          title=title, data=data) for rid in receiver_ids if rid]
     if rows:
         # 提醒通知は1枚だけ保持: 古い未読提醒を消してから新規作成。
+        # 受信者で絞る: 別の人宛の未読提醒まで巻き添えで消さない。
         if extra and extra.get("kind") == "reminder":
             Notification.objects.filter(
                 entity_identifier=issue.id,
                 entity_name="issue",
                 sender="reminder",
+                receiver_id__in=[r.receiver_id for r in rows],
                 read_at__isnull=True,
                 archived_at__isnull=True,
             ).delete()
         Notification.objects.bulk_create(rows, batch_size=50)
+        # ベルと同じ行をスマホへ(web_push_task.classify が kind=reminder/recurring を判定)。
+        # プッシュはおまけの経路: 投入失敗でベル作成を巻き込まない。
+        try:
+            from plane.bgtasks.web_push_task import push_notifications
+
+            ids = [str(r.id) for r in rows]
+            # atomic 内から呼ばれても worker が未コミット行を引かないよう commit 後に投げる
+            # (atomic 外なら on_commit は即時実行)。
+            transaction.on_commit(lambda: push_notifications.delay(ids))
+        except Exception:
+            logger.warning("recurring: web push enqueue failed (non-fatal)", exc_info=True)
 
 
 def _llm_transform(html: str, prompt: str) -> str:
@@ -220,11 +234,14 @@ def _escalate_overdue(rule: RecurringRule, now):
     if overdue_days < _OVERDUE_PUSH_DAYS:
         return
     title = f"要対応: 「{i.name}」が期日({i.target_date})を過ぎています"
+    # kind 必須: 無いと収件箱の守衛(item.tsx isBell)に空白カードとして吞まれる。
+    extra = {"kind": "recurring", "recurring": {"phase": "overdue", "days": overdue_days,
+                                                "target_date": str(i.target_date)}}
     if rule.assignee_id:
-        _notify_bell(i, [rule.assignee_id], title)
+        _notify_bell(i, [rule.assignee_id], title, extra=extra)
     else:
         member_ids = list(ProjectMember.objects.filter(project_id=rule.project_id, is_active=True).values_list("member_id", flat=True))
-        _notify_bell(i, member_ids, title)
+        _notify_bell(i, member_ids, title, extra=extra)
     rule.overdue_pushed_issue = str(i.id)
     rule.save(update_fields=["overdue_pushed_issue", "updated_at"])
 

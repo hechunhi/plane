@@ -51,9 +51,15 @@ class PushSubscriptionEndpoint(BaseAPIView):
 
     def post(self, request):
         endpoint = (request.data.get("endpoint") or "").strip()
+        # 鍵は 2 つの形を受ける: ブラウザ標準の toJSON() 形 {"keys": {p256dh, auth}} と、
+        # 設定画面(lib/web-push serializeSubscription)・sw.js pushsubscriptionchange が送る
+        # 平らな形 {p256dh, auth}。2026-10 まで平らな形を 400 で弾いており、購読が
+        # 1 件も保存されずプッシュが一度も届いていなかった(端末側は「オン」表示のまま)。
         keys = request.data.get("keys") or {}
-        p256dh = (keys.get("p256dh") or "").strip()
-        auth = (keys.get("auth") or "").strip()
+        if not isinstance(keys, dict):
+            keys = {}
+        p256dh = (keys.get("p256dh") or request.data.get("p256dh") or "").strip()
+        auth = (keys.get("auth") or request.data.get("auth") or "").strip()
 
         if not (endpoint and p256dh and auth):
             return Response({"error": "Invalid subscription"}, status=status.HTTP_400_BAD_REQUEST)

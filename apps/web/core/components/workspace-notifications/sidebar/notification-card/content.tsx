@@ -179,9 +179,7 @@ export const BASE_NOTIFICATION_CONTENT_MAP: TNotificationContentMap = {
     showConnector: false,
   }),
   attachment: ({ verb }, { t }) => ({
-    action: t(
-      verb === "created" ? "issue_activity.uploaded_a_new_attachment" : "issue_activity.removed_an_attachment"
-    ),
+    action: t(verb === "created" ? "issue_activity.uploaded_a_new_attachment" : "issue_activity.removed_an_attachment"),
     value: null,
     showConnector: false,
   }),
@@ -238,7 +236,11 @@ export function NotificationContent({
   const { t } = useTranslation();
   const { data: currentUser } = useUser();
   // BARSOUL: 提醒/定期 = 显示型通知(无 issue_activity)。专属文案 + 备忘直接显示(价值在通知本身,不骗点进卡)。
-  const ndata = notification.data as { kind?: string; reminder?: { note?: string; by_id?: string; by_name?: string } };
+  const ndata = notification.data as {
+    kind?: string;
+    reminder?: { note?: string; by_id?: string; by_name?: string };
+    recurring?: { phase?: string; days?: number };
+  };
   if (ndata?.kind === "reminder") {
     const note = (ndata.reminder?.note || "").trim();
     const byId = ndata.reminder?.by_id || "";
@@ -271,6 +273,18 @@ export function NotificationContent({
         <span className="text-tertiary">
           {" · "}
           {today ? (zh ? "今天到期" : "今日が期限です") : zh ? "明天到期" : "明日が期限です"}
+        </span>
+      </>
+    );
+  }
+  if (ndata?.kind === "recurring" && ndata?.recurring?.phase === "overdue") {
+    const days = ndata.recurring.days;
+    return (
+      <>
+        <span style={{ color: "#b45309", fontWeight: 500 }}>{zh ? "定期任务" : "定期タスク"}</span>
+        <span className="text-tertiary">
+          {" · "}
+          {zh ? `已逾期 ${days} 天,请处理` : `期日を ${days} 日過ぎています`}
         </span>
       </>
     );
