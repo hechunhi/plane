@@ -22,6 +22,7 @@ import { useLabel } from "@/hooks/store/use-label";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 import { useLaptopViewport } from "@/hooks/use-tight-viewport";
 import { LabelDropdown } from "./label-dropdown";
+import { shortLabelName } from "../bilingual-name";
 
 export interface IIssuePropertyLabels {
   projectId: string | null;
@@ -41,6 +42,8 @@ export interface IIssuePropertyLabels {
   renderByDefault?: boolean;
   fullWidth?: boolean;
   fullHeight?: boolean;
+  /** BARSOUL 2026-10: 看板カード用。色点 + 閲覧者言語の頭の語だけ(「● 総務」)・枠線なし。全文は tooltip。 */
+  shortName?: boolean;
 }
 
 type NoLabelProps = {
@@ -121,6 +124,7 @@ type LabelItemProps = {
   disabled?: boolean;
   fullWidth: boolean;
   noLabelBorder: boolean;
+  shortName?: boolean;
 };
 
 /**
@@ -149,11 +153,16 @@ const LabelItem = observer(function LabelItem({
   disabled,
   fullWidth,
   noLabelBorder,
+  shortName = false,
 }: LabelItemProps) {
   const { t, currentLocale } = useTranslation();
   const isLaptop = useLaptopViewport();
   const fullName = label?.name ?? "";
-  const shownName = isLaptop ? pickViewerHalf(fullName, currentLocale) : fullName;
+  const shownName = shortName
+    ? shortLabelName(fullName, currentLocale)
+    : isLaptop
+      ? pickViewerHalf(fullName, currentLocale)
+      : fullName;
 
   return (
     <Tooltip
@@ -168,7 +177,7 @@ const LabelItem = observer(function LabelItem({
           "flex h-full max-w-full flex-shrink-0 items-center justify-center overflow-hidden rounded-sm px-2.5 text-caption-sm-regular hover:bg-layer-1",
           !disabled && "cursor-pointer",
           fullWidth && "w-full",
-          noLabelBorder ? "rounded-none" : "border-[0.5px] border-strong"
+          shortName ? "rounded-full px-1.5" : noLabelBorder ? "rounded-none" : "border-[0.5px] border-strong"
         )}
       >
         <div className="flex max-w-full items-center gap-1.5 overflow-hidden text-secondary">
@@ -202,6 +211,7 @@ export const IssuePropertyLabels = observer(function IssuePropertyLabels(props: 
     renderByDefault = true,
     fullWidth = false,
     fullHeight = false,
+    shortName = false,
   } = props;
   // states
   const [isOpen, setIsOpen] = useState(false);
@@ -255,6 +265,7 @@ export const IssuePropertyLabels = observer(function IssuePropertyLabels(props: 
                     disabled={disabled}
                     fullWidth={fullWidth}
                     noLabelBorder={noLabelBorder}
+                    shortName={shortName}
                   />
                 }
               />

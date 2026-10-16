@@ -23,6 +23,9 @@ import { CreateUpdateEpicModal } from "@/components/epic-modal";
 // BARSOUL A2: 列ヘッダ未読集計
 import { useGroupUnreadCount } from "@/components/notifications/issue-unread-badge";
 import { Tooltip } from "@plane/propel/tooltip";
+import { useTranslation } from "@plane/i18n";
+// BARSOUL 2026-10: 列名は閲覧者の言語の片側だけ表示(全文は tooltip。保存値は不変)
+import { pickBilingualName } from "../../bilingual-name";
 
 interface IHeaderGroupByCard {
   sub_group_by: TIssueGroupByOptions | undefined;
@@ -64,6 +67,13 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
     Array.isArray(groupIssueIds) ? groupIssueIds : Object.values((groupIssueIds as any) || {}).flat() as string[]
   );
   const showGroupUnread = groupUnread > 0;
+  // BARSOUL 2026-10: 「In Progress / 対応中·处理中」は列幅で「In Progress / 対応中・…」と切れて
+  // 肝心の部分が読めなかった。状態・ラベル列だけ閲覧者の言語の片側に投影する(先頭絵文字も落とす。
+  // 列アイコンは状態アイコンが別にある)。投影で何も変わらない名前は tooltip も出さない。
+  const { currentLocale } = useTranslation();
+  const isBilingualGroup = props.group_by === "state" || props.group_by === "labels";
+  const shownTitle = isBilingualGroup ? pickBilingualName(title, currentLocale) : title;
+  const titleProjected = shownTitle !== title;
   const verticalAlignPosition = sub_group_by ? false : collapsedGroups?.group_by.includes(column_id);
   // states
   const [isOpen, setIsOpen] = React.useState(false);
@@ -135,13 +145,15 @@ export const HeaderGroupByCard = observer(function HeaderGroupByCard(props: IHea
             verticalAlignPosition ? `flex-col items-center` : `w-full flex-row items-baseline overflow-hidden`
           }`}
         >
-          <div
-            className={`line-clamp-1 inline-block truncate overflow-hidden font-medium text-primary short:text-14 ${
-              verticalAlignPosition ? `max-h-[400px] vertical-lr` : ``
-            }`}
-          >
-            {title}
-          </div>
+          <Tooltip tooltipContent={title} isMobile={false} disabled={!titleProjected}>
+            <div
+              className={`line-clamp-1 inline-block truncate overflow-hidden font-medium text-primary short:text-14 ${
+                verticalAlignPosition ? `max-h-[400px] vertical-lr` : ``
+              }`}
+            >
+              {shownTitle}
+            </div>
+          </Tooltip>
           <div
             className={`flex-shrink-0 text-13 font-medium text-tertiary ${verticalAlignPosition ? `pr-0.5` : `pl-2`}`}
           >

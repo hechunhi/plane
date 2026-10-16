@@ -22,6 +22,7 @@ import { cn } from "@plane/utils";
 import { SidebarNavItem } from "@/components/sidebar/sidebar-navigation";
 // store hooks
 import { useAppTheme } from "@/hooks/store/use-app-theme";
+import { useAppRailVisibility } from "@/lib/app-rail/context";
 import useLocalStorage from "@/hooks/use-local-storage";
 import {
   usePersonalNavigationPreferences,
@@ -43,6 +44,9 @@ export const SidebarMenuItems = observer(function SidebarMenuItems() {
   const { preferences: workspacePreferences } = useWorkspaceNavigationPreferences();
   // translation
   const { t } = useTranslation();
+  // BARSOUL 2026-10: レール表示中(PC)は、レールと重複する入口をサイドバーから外す。
+  const { shouldRenderAppRail } = useAppRailVisibility();
+  const RAIL_KEYS = ["home", "my-work", "weekly"];
 
   const toggleListDisclosure = (isOpen: boolean) => {
     toggleWorkspaceMenu(isOpen);
@@ -99,7 +103,9 @@ export const SidebarMenuItems = observer(function SidebarMenuItems() {
       <div className="flex flex-col gap-0.5">
         {filteredStaticNavigationItems.map((item, _index) => (
           // oxlint-disable-next-line react/no-array-index-key
-          <SidebarItemBase key={`static_${_index}`} item={item} />
+          <div key={`static_${_index}`} className={cn({ "md:hidden": shouldRenderAppRail && RAIL_KEYS.includes(item.key ?? "") })}>
+            <SidebarItemBase item={item} />
+          </div>
         ))}
       </div>
       <Disclosure as="div" className="flex flex-col" defaultOpen={!!isWorkspaceMenuOpen}>
