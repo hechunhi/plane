@@ -64,6 +64,15 @@ export interface IIssueProperties {
   compact?: boolean;
   /** compact 時、グルーピング列と同じ値の属性(= 列名の重複表示)を落とすための現在の列 id。 */
   currentGroupId?: string;
+  /**
+   * BARSOUL 2026-10 看板カード再構成: カードは 2 箇所にチップを置く。
+   *   "head" = 1 行目右側(優先度アイコン + 担当アバター)だけ
+   *   "body" = それ以外(期日・ラベル・子課題数…)
+   * 未指定なら従来どおり全部(リスト/スプレッドシート等は不変)。
+   */
+  slot?: "head" | "body";
+  /** ラベルを「● 総務」の短縮表示にする(看板カード用)。 */
+  shortLabels?: boolean;
 }
 
 export const IssueProperties = observer(function IssueProperties(props: IIssueProperties) {
@@ -76,6 +85,8 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
     isEpic = false,
     compact = false,
     currentGroupId,
+    slot,
+    shortLabels = false,
   } = props;
   // i18n
   const { t } = useTranslation();
@@ -209,6 +220,8 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
    * 通常時は常に true を返すので、既存レイアウト(リスト/スプレッドシート等)は一切変わらない。
    */
   const keepIfEmpty = (hasValue: boolean) => !compact || hasValue;
+  const HEAD_KEYS = ["priority", "assignee"];
+  const inSlot = (key: string) => !slot || (slot === "head") === HEAD_KEYS.includes(key);
 
   const minDate = getDate(issue.start_date);
   const maxDate = getDate(issue.target_date);
@@ -227,7 +240,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         displayProperties={displayProperties}
         displayPropertyKey="state"
         /* compact: 列そのものがステータスなので、同じ値のチップは重複。 */
-        shouldRenderProperty={() => keepIfEmpty(!!issue.state_id && issue.state_id !== currentGroupId)}
+        shouldRenderProperty={() => inSlot("state") && keepIfEmpty(!!issue.state_id && issue.state_id !== currentGroupId)}
       >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <StateDropdown
@@ -247,14 +260,14 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="priority"
-        shouldRenderProperty={() => keepIfEmpty(!!issue.priority && issue.priority !== "none")}
+        shouldRenderProperty={() => inSlot("priority") && keepIfEmpty(!!issue.priority && issue.priority !== "none")}
       >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <PriorityDropdown
             value={issue?.priority}
             onChange={handlePriority}
             disabled={isReadOnly}
-            buttonVariant="border-without-text"
+            buttonVariant={slot === "head" ? "transparent-without-text" : "border-without-text"}
             renderByDefault={isMobile}
             showTooltip
           />
@@ -265,7 +278,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey={["start_date", "due_date"]}
-        shouldRenderProperty={() => isDateRangeEnabled && keepIfEmpty(!!issue.start_date || !!issue.target_date)}
+        shouldRenderProperty={() => inSlot("date") && isDateRangeEnabled && keepIfEmpty(!!issue.start_date || !!issue.target_date)}
       >
         {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
@@ -301,7 +314,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="start_date"
-        shouldRenderProperty={() => !isDateRangeEnabled && keepIfEmpty(!!issue.start_date)}
+        shouldRenderProperty={() => inSlot("date") && !isDateRangeEnabled && keepIfEmpty(!!issue.start_date)}
       >
         {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
@@ -325,7 +338,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="due_date"
-        shouldRenderProperty={() => !isDateRangeEnabled && keepIfEmpty(!!issue.target_date)}
+        shouldRenderProperty={() => inSlot("date") && !isDateRangeEnabled && keepIfEmpty(!!issue.target_date)}
       >
         {/* oxlint-disable-next-line jsx_a11y/click-events-have-key-events oxlint-disable-next-line jsx_a11y/no-static-element-interactions */}
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
@@ -353,7 +366,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="assignee"
-        shouldRenderProperty={() => keepIfEmpty(!!issue.assignee_ids?.length)}
+        shouldRenderProperty={() => inSlot("assignee") && keepIfEmpty(!!issue.assignee_ids?.length)}
       >
         <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
           <MemberDropdown
@@ -381,7 +394,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
               <WithDisplayPropertiesHOC
                 displayProperties={displayProperties}
                 displayPropertyKey="modules"
-                shouldRenderProperty={() => keepIfEmpty(!!issue.module_ids?.length)}
+                shouldRenderProperty={() => inSlot("modules") && keepIfEmpty(!!issue.module_ids?.length)}
               >
                 <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
                   <ModuleDropdown
@@ -405,7 +418,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
               <WithDisplayPropertiesHOC
                 displayProperties={displayProperties}
                 displayPropertyKey="cycle"
-                shouldRenderProperty={() => keepIfEmpty(!!issue.cycle_id)}
+                shouldRenderProperty={() => inSlot("cycle") && keepIfEmpty(!!issue.cycle_id)}
               >
                 <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
                   <CycleDropdown
@@ -430,7 +443,9 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         <WithDisplayPropertiesHOC
           displayProperties={displayProperties}
           displayPropertyKey="estimate"
-          shouldRenderProperty={() => keepIfEmpty(issue.estimate_point !== null && issue.estimate_point !== undefined)}
+          shouldRenderProperty={() =>
+            inSlot("estimate") && keepIfEmpty(issue.estimate_point !== null && issue.estimate_point !== undefined)
+          }
         >
           <div className="h-5" onFocus={handleEventPropagation} onClick={handleEventPropagation}>
             <EstimateDropdown
@@ -452,7 +467,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
         <WithDisplayPropertiesHOC
           displayProperties={displayProperties}
           displayPropertyKey="sub_issue_count"
-          shouldRenderProperty={(properties) => !!properties.sub_issue_count && !!subIssueCount}
+          shouldRenderProperty={(properties) => inSlot("sub_issue_count") && !!properties.sub_issue_count && !!subIssueCount}
         >
           <Tooltip
             tooltipHeading={t("common.sub_work_items")}
@@ -486,7 +501,9 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="attachment_count"
-        shouldRenderProperty={(properties) => !!properties.attachment_count && !!issue.attachment_count}
+        shouldRenderProperty={(properties) =>
+          inSlot("attachment_count") && !!properties.attachment_count && !!issue.attachment_count
+        }
       >
         <Tooltip
           tooltipHeading={t("common.attachments")}
@@ -510,7 +527,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="link"
-        shouldRenderProperty={(properties) => !!properties.link && !!issue.link_count}
+        shouldRenderProperty={(properties) => inSlot("link") && !!properties.link && !!issue.link_count}
       >
         <Tooltip
           tooltipHeading={t("common.links")}
@@ -534,7 +551,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
       <WithDisplayPropertiesHOC
         displayProperties={displayProperties}
         displayPropertyKey="labels"
-        shouldRenderProperty={() => keepIfEmpty(!!issue.label_ids?.length)}
+        shouldRenderProperty={() => inSlot("labels") && keepIfEmpty(!!issue.label_ids?.length)}
       >
         <IssuePropertyLabels
           projectId={issue?.project_id || null}
@@ -545,6 +562,7 @@ export const IssueProperties = observer(function IssueProperties(props: IIssuePr
           renderByDefault={isMobile}
           hideDropdownArrow
           maxRender={3}
+          shortName={shortLabels}
         />
       </WithDisplayPropertiesHOC>
     </div>

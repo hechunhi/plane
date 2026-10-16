@@ -40,7 +40,11 @@ export const WorkspaceContentWrapper = observer(function WorkspaceContentWrapper
       <AichanChatDock />
       <div className="relative flex size-full overflow-hidden">
         {/* Conditionally render AppRailRoot based on context */}
-        {shouldRenderAppRail && <AppRailRoot />}
+        {shouldRenderAppRail && (
+          <div className="hidden h-full md:block">
+            <AppRailRoot />
+          </div>
+        )}
         <div
           className={cn(
             // BARSOUL 2026-08 密度: この外枠の余白は内側の `px-page-x` に重ねて効くため、

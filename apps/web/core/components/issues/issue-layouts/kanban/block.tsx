@@ -31,7 +31,6 @@ import { useIssueDetail } from "@/hooks/store/use-issue-detail";
 import { useKanbanView } from "@/hooks/store/use-kanban-view";
 import { useProject } from "@/hooks/store/use-project";
 import useIssuePeekOverviewRedirection from "@/hooks/use-issue-peek-overview-redirection";
-import { useCompactViewport } from "@/hooks/use-compact-viewport";
 import { usePlatformOS } from "@/hooks/use-platform-os";
 // BARSOUL: 未読関連 helper (IssueUnreadBadge は廃止 — v6 では border+bold)
 import {
@@ -115,8 +114,6 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
   const [isMenuActive, setIsMenuActive] = useState(false);
   // hooks
   const { isMobile } = usePlatformOS();
-  // BARSOUL 2026-08: 狭い画面では「値のある属性だけ」の薄いカードにする(Trello 風)。
-  const isCompact = useCompactViewport();
   const { getProjectIdentifierById } = useProject();
   const projectIdentifier = getProjectIdentifierById(issue?.project_id);
   // BARSOUL 2026-06-16: 提醒态以 SNOOZE SWR 缓存为准(设/解除即时反应, 消除"消除不掉"),
@@ -153,7 +150,9 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
 
   return (
     <>
-      <div className="relative flex items-center gap-1">
+      {/* BARSOUL 2026-10 カード 4 段構成(Plane 新 UI 準拠):
+          ① ID・★ ……… 優先度・担当者(右寄せ)  ② 件名(2 行)+ 親  ③ DIS 次の一手  ④ 値のある属性だけ */}
+      <div className="relative flex min-h-5 items-center gap-1">
         {issue.project_id && (
           <IssueIdentifier
             issueId={issue.id}
@@ -165,9 +164,22 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         )}
         {/* BARSOUL IUTEYA-9: ★ pin button (pinned→常時表示金色,未→hover ☆) */}
         <PinButton issueId={issue.id} projectId={issue.project_id} variant="card" />
+        <IssueProperties
+          className="ml-auto flex items-center gap-1 whitespace-nowrap text-tertiary"
+          issue={issue}
+          displayProperties={displayProperties}
+          activeLayout="Kanban"
+          updateIssue={updateIssue}
+          isReadOnly={isReadOnly}
+          isEpic={isEpic}
+          compact
+          slot="head"
+          currentGroupId={groupId}
+        />
+        {/* hover 時だけ右上に「…」を重ねる(頭行のアバターの上に一時的に乗る。行の高さ・並びは動かさない) */}
         <div
           role="presentation"
-          className={cn("absolute -top-1 right-0", {
+          className={cn("absolute top-1/2 right-0 -translate-y-1/2 rounded-md bg-layer-2 shadow-raised-100", {
             "hidden group-hover/kanban-block:block": !isMobile,
             "!block": isMenuActive,
           })}
@@ -182,30 +194,44 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
         </div>
       </div>
 
-      {/* BARSOUL B-2m: 子卡の帰属面包屑(↳ 親卡名) — 平铺でも迷子にならない */}
-      <ParentBreadcrumb parentId={issue.parent_id} />
-      <Tooltip tooltipContent={<TitleTooltipContent value={cardTitle} />} isMobile={isMobile} renderByDefault={false}>
-        {/* BARSOUL 未読 v6: タイトル太字 + ID 太字化(Gmail unread mail と同じ
-            タイポ言語)。赤縁取り(親 card border) と合わせて 3 信号同時提示. */}
-        <div
-          /* BARSOUL 2026-08: 狭い画面ではタイトルが「情報の全て」なので 2 行まで見せる。
-             広い画面は列が細いので従来どおり 1 行(高さの揃ったカード)。 */
-          className={cn("w-full text-body-sm-medium text-primary max-md:line-clamp-2 md:line-clamp-1", {
-            "!font-bold": hasUnread,
-          })}
-        >
-          {cardTitle.translated && (
-            <span className="mr-1 inline-flex translate-y-[1px] text-tertiary">
-              <TranslateGlyph />
-            </span>
-          )}
-          <ApproverTitle title={cardTitle.title} active={isPendingApprover} />
-        </div>
-      </Tooltip>
+      <div>
+        <Tooltip tooltipContent={<TitleTooltipContent value={cardTitle} />} isMobile={isMobile} renderByDefault={false}>
+          {/* BARSOUL 未読 v6: タイトル太字(Gmail unread mail と同じタイポ言語)。
+              2026-10: 14px/500・2 行まで(1 行で切ると肝心の後半が読めない)。 */}
+          <div
+            className={cn("line-clamp-2 w-full text-[14px] leading-snug font-medium text-primary short:text-[13px]", {
+              "!font-bold": hasUnread,
+            })}
+          >
+            {cardTitle.translated && (
+              <span className="mr-1 inline-flex translate-y-[1px] text-tertiary">
+                <TranslateGlyph />
+              </span>
+            )}
+            <ApproverTitle title={cardTitle.title} active={isPendingApprover} />
+          </div>
+        </Tooltip>
+        {/* BARSOUL B-2m: 子卡の帰属(↳ 親卡名) — 件名の下に小さく */}
+        <ParentBreadcrumb parentId={issue.parent_id} />
+      </div>
+
+      {/* BARSOUL DIS v3 → 2026-10: 次の一手を件名直下へ(「需我处理」は琥珀地)。整卡 hover → 全局富浮层 */}
+      {issue.project_id && (
+        <AICardBar
+          inline
+          issueId={issue.id}
+          projectId={issue.project_id}
+          meta={{
+            seq: issue.sequence_id ?? null,
+            identifier: projectIdentifier ?? "",
+            name: issue.name ?? "",
+          }}
+        />
+      )}
 
       {/* BARSOUL 2026-06-16: 提醒行 — 时刻 + 备忘直接显示在看板卡上(配合右上角紫色呼吸点+紫边框)。 */}
       {remindAt && (
-        <div className="flex items-center gap-1 pt-0.5 text-[11px] leading-tight" style={{ color: "#7c5cff" }}>
+        <div className="flex items-center gap-1 text-[11px] leading-tight" style={{ color: "#7c5cff" }}>
           <AlarmClock style={{ width: 12, height: 12, flexShrink: 0 }} />
           <span style={{ fontWeight: 500, flexShrink: 0 }}>
             {new Date(remindAt).toLocaleString("ja-JP", {
@@ -224,32 +250,20 @@ const KanbanIssueDetailsBlock = observer(function KanbanIssueDetailsBlock(
       )}
 
       <IssueProperties
-        /* BARSOUL 2026-08: スマホではバッジ間隔を詰めて折返し行数を減らす。
-           2026-09: 高さ 879px 以下(short:)ではカード余白・列ヘッダも一段詰める。大画面は不変。 */
-        className="flex flex-wrap items-center gap-2 pt-1.5 whitespace-nowrap text-tertiary max-md:gap-1.5 short:gap-1.5 short:pt-1"
+        /* BARSOUL 2026-10: 値のある属性だけ(空チップ・列と同じ状態チップは出さない)。
+           ラベルは色点+短名。空の項目は peek で設定する。 */
+        className="flex flex-wrap items-center gap-1.5 whitespace-nowrap text-tertiary empty:hidden"
         issue={issue}
         displayProperties={displayProperties}
         activeLayout="Kanban"
         updateIssue={updateIssue}
         isReadOnly={isReadOnly}
         isEpic={isEpic}
-        compact={isCompact}
+        compact
+        slot="body"
+        shortLabels
         currentGroupId={groupId}
       />
-
-      {/* BARSOUL DIS v3: AI 当前态摘要条(卡底 footer)。整卡 hover → 全局富浮层 */}
-      {issue.project_id && (
-        <AICardBar
-          issueId={issue.id}
-          projectId={issue.project_id}
-          meta={{
-            seq: issue.sequence_id ?? null,
-            identifier: projectIdentifier ?? "",
-            name: issue.name ?? "",
-          }}
-        />
-      )}
-
     </>
   );
 });
@@ -434,7 +448,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           href={workItemLink}
           ref={cardRef}
           className={cn(
-            "relative block w-full rounded-lg border border-subtle bg-layer-2 p-2.5 text-13 short:p-2 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
+            "relative block w-full rounded-[10px] border-[0.5px] border-subtle bg-layer-2 px-3 py-2.5 text-13 short:px-2.5 short:py-2 shadow-raised-100 outline-[0.5px] outline-transparent transition-all hover:border-strong hover:shadow-raised-200",
             { "hover:cursor-pointer": isDragAllowed },
             { "border border-accent-strong hover:border-accent-strong": getIsIssuePeeked(issue.id) },
             // BARSOUL 未読 v6(2026-05-25, Gmail/Linear 流):
@@ -462,19 +476,19 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
             // して "新消息" 信号(red dot)と "要対応" 信号(amber bar)を分離。
             isFrozen &&
               frozenRole === "pending_approver" && {
-                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:animate-pulse before:rounded-l-lg before:bg-[#ea580c] before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#ea580c]/[0.08] after:content-['']": true,
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[4px] before:animate-pulse before:rounded-l-[10px] before:bg-[#ea580c] before:content-['']": true,
               },
             isFrozen &&
               frozenRole === "initiator" && {
-                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706] before:content-[''] after:pointer-events-none after:absolute after:inset-0 after:rounded-lg after:bg-[#d97706]/[0.05] after:content-['']": true,
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-[10px] before:bg-[#d97706] before:content-['']": true,
               },
             isFrozen &&
               frozenRole === "queued_approver" && {
-                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-lg before:bg-[#d97706]/70 before:content-['']": true,
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:rounded-l-[10px] before:bg-[#d97706]/70 before:content-['']": true,
               },
             isFrozen &&
               frozenRole === "bystander" && {
-                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:rounded-l-lg before:bg-[#94a3b8] before:content-['']": true,
+                "before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-[2px] before:rounded-l-[10px] before:bg-[#94a3b8] before:content-['']": true,
               },
             // frozen 時に hover:cursor-pointer を抑制(クリックは peek 開けるが
             // ドラッグ不可を視覚的に示す)
@@ -501,7 +515,7 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           {hasNonReminderUnread && !isReminderUnread && (
             <span
               aria-label={isMentionUnread ? "mention unread" : "unread"}
-              className="barsoul-unread-breath pointer-events-none absolute top-2 right-2 z-10 rounded-full"
+              className="barsoul-unread-breath pointer-events-none absolute -top-1 -right-1 z-10 rounded-full"
               style={{
                 width: isMentionUnread ? 10 : 8,
                 height: isMentionUnread ? 10 : 8,
@@ -513,12 +527,12 @@ export const KanbanIssueBlock = observer(function KanbanIssueBlock(props: IssueB
           {isReminderUnread && (
             <span
               aria-label="reminder unread"
-              className="barsoul-remind-breath pointer-events-none absolute top-2 z-10 rounded-full"
-              style={{ width: 8, height: 8, right: 8, background: "#7c5cff" }}
+              className="barsoul-remind-breath pointer-events-none absolute -top-1 -right-1 z-10 rounded-full"
+              style={{ width: 8, height: 8, background: "#7c5cff" }}
             />
           )}
           <RenderIfVisible
-            classNames="space-y-2"
+            classNames="space-y-1.5"
             root={scrollableContainerRef}
             defaultHeight="100px"
             horizontalOffset={100}

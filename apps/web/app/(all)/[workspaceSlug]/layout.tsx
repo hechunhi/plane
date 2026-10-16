@@ -18,7 +18,8 @@ export default function WorkspaceLayout(props: Route.ComponentProps) {
   return (
     <AuthenticationWrapper>
       <WorkspaceAuthWrapper>
-        <AppRailVisibilityProvider>
+        {/* BARSOUL 2026-10: 左アイコンレール有効化(PC のみ。スマホは下部タブバー) */}
+        <AppRailVisibilityProvider isEnabled>
           <WorkspaceContentWrapper>
             <GlobalModals workspaceSlug={workspaceSlug} />
             <Outlet />

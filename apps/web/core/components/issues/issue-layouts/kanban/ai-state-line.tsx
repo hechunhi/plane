@@ -382,11 +382,18 @@ export function AICardBar({
   issueId,
   projectId,
   meta,
+  inline = false,
 }: {
   issueId: string;
   projectId: string | null | undefined;
   /** 触屏でタップ表示する浮層のヘッダ用。省略時はタップ操作を出さない。 */
   meta?: AIPopoverMeta;
+  /**
+   * BARSOUL 2026-10 看板カード再構成: 卡底 footer(上罫線)ではなく件名の直下に置く。
+   * 「次に誰が何をするか」がカードで 2 番目に大事な情報なので、属性チップより上へ。
+   * 需我处理 の行だけ暖琥珀の地色を敷く(琥珀=行動信号専属)。
+   */
+  inline?: boolean;
 }) {
   const { workspaceSlug } = useParams();
   const zh = useZh();
@@ -409,7 +416,9 @@ export function AICardBar({
 
   if (!s) return null; // 无派生 → 不渲染
 
-  const sep = { marginTop: 8, paddingTop: 7, borderTop: "1px solid #f0f1f3" } as const;
+  const sep = inline
+    ? ({ marginTop: 4 } as const)
+    : ({ marginTop: 8, paddingTop: 7, borderTop: "1px solid #f0f1f3" } as const);
   // 触屏では 44px 相当のタップ領域を確保(paddingBlock 4 + 行高 ≒ 28 で実測 36〜40px)。
   const row =
     "flex items-center gap-1.5 min-w-0 cursor-pointer rounded transition-colors group-hover/kanban-block:bg-[rgba(0,0,0,0.03)] max-md:py-1 max-md:-mx-1 max-md:px-1 max-md:active:bg-[rgba(124,92,255,0.08)]";

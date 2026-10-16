@@ -34,7 +34,11 @@ import type { TRenderQuickActions } from "../list/list-view-types";
 import type { GroupDropLocation } from "../utils";
 import { getGroupByColumns, isWorkspaceLevel, getApproximateCardHeight } from "../utils";
 // components
-import { KANBAN_COLUMN_GAP_CLASS, KANBAN_COLUMN_SURFACE_CLASS, KANBAN_COLUMN_WIDTH_CLASS } from "./column-width";
+import {
+  KANBAN_COLUMN_GAP_CLASS,
+  KANBAN_COLUMN_SURFACE_CLASS,
+  KANBAN_COLUMN_WIDTH_CLASS,
+} from "./column-width";
 import { HeaderGroupByCard } from "./headers/group-by-card";
 import { KanbanGroup } from "./kanban-group";
 
